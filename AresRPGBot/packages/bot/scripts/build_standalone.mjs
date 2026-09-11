@@ -1,0 +1,122 @@
+#!/usr/bin/env bun
+// bun run packages/bot/scripts/build_standalone.mjs [output-dir]
+//
+// Assembles a minimal, self-contained copy of everything the bot actually needs to run —
+// its own source plus the exact dependency closure of private, unpublished workspace packages
+// it pulls in (@aresrpg/sdk -> {immutable, protocol}, protocol -> {fight, immutable},
+// @aresrpg/fight itself has zero @aresrpg deps) — into its own directory, ready for
+// `bun install && bun run enoki-login`.
+//
+// This is regenerated FROM this vendor checkout every time, not a permanently separate copy:
+// the private packages it copies are pinned to an exact game version, and the whole reason the
+// bot lives inside this checkout (see the bot's own README) is to never let that drift out of
+// sync with the live game silently. Re-run this after every `git pull` here if you keep a
+// standalone copy around, rather than hand-editing the copy.
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = join(HERE, '..', '..', '..') // vendor/aresrpg-src
+const OUT_DIR = join(REPO_ROOT, '..', '..', process.argv[2] ?? 'standalone-bot') // sibling of vendor/, at the AresRPGBot repo root
+
+// The bot's own dependency closure — every OTHER package here (frontend, engine, indexer,
+// server, move, seed 3D/audio assets, etc.) is untouched by anything the bot imports.
+const WORKSPACE_PACKAGES = ['sdk', 'protocol', 'fight', 'immutable']
+
+// Runtime session/learned state — regenerated fresh on first real run, never worth carrying into
+// a new checkout (a copied .enoki-session.json in particular would duplicate a live credential
+// across two directories, which is worth avoiding outright, not just leaving stale).
+const BOT_LOCAL_STATE_FILES = [
+  '.enoki-session.json',
+  'group-state.local.json',
+  'position.local.json',
+  'session.jsonl',
+  'status.local.json',
+  'hp-state.local.json',
+  'spell-memory.local.json',
+  'learned_policy.local.json',
+  'market_history.local.json',
+  'faucet-cooldown.local.json',
+]
+
+// `exclude` matches by basename only — every excluded name here is a top-level file/dir
+// directly inside the copied package, never something nested deeper that could collide.
+const copy_dir = (from, to, { exclude = [] } = {}) => {
+  mkdirSync(to, { recursive: true })
+  cpSync(from, to, { recursive: true, filter: (src) => !exclude.includes(basename(src)) })
+}
+
+console.log(`building standalone bot into ${OUT_DIR}\n`)
+if (existsSync(OUT_DIR)) {
+  console.log('output directory already exists — removing it first')
+  rmSync(OUT_DIR, { recursive: true, force: true })
+}
+mkdirSync(OUT_DIR, { recursive: true })
+
+// ── bot package: everything except node_modules and ephemeral local state ──────────────────
+copy_dir(join(REPO_ROOT, 'packages', 'bot'), join(OUT_DIR, 'packages', 'bot'), {
+  exclude: ['node_modules', ...BOT_LOCAL_STATE_FILES],
+})
+console.log('copied packages/bot (src, package.json, README, item_prices.json)')
+
+// ── the private workspace packages the bot actually imports, src + package.json only ───────
+for (const name of WORKSPACE_PACKAGES) {
+  const src_dir = join(REPO_ROOT, 'packages', name, 'src')
+  const out_pkg_dir = join(OUT_DIR, 'packages', name)
+  copy_dir(src_dir, join(out_pkg_dir, 'src'))
+  cpSync(join(REPO_ROOT, 'packages', name, 'package.json'), join(out_pkg_dir, 'package.json'))
+  console.log(`copied packages/${name} (src, package.json)`)
+}
+
+// ── root pins.json (object ids the SDK resolves game content from) ─────────────────────────
+cpSync(join(REPO_ROOT, 'pins.json'), join(OUT_DIR, 'pins.json'))
+console.log('copied pins.json')
+
+// ── the two seed content files spell_catalog.ts/sim_content.ts read directly ───────────────
+mkdirSync(join(OUT_DIR, 'seed', 'content'), { recursive: true })
+for (const file of ['spells.json', 'mobs.json']) {
+  cpSync(join(REPO_ROOT, 'seed', 'content', file), join(OUT_DIR, 'seed', 'content', file))
+}
+console.log('copied seed/content/{spells,mobs}.json')
+
+// ── a minimal root package.json — just enough for `bun install` to link the 5 workspace
+// packages against each other the same way the real monorepo does (workspace:* in each
+// package.json is otherwise untouched — bun resolves it from this workspaces field alone). ──
+// @types/node: bot/package.json relies on the real monorepo's root devDependency for this
+// (bun hoists it workspace-wide) — carried here explicitly since this root package.json has no
+// other devDependencies to hoist it from.
+const root_package = {
+  name: 'aresrpg-bot-standalone',
+  private: true,
+  type: 'module',
+  workspaces: ['packages/*'],
+  devDependencies: { '@types/node': '^26.2.0' },
+}
+writeFileSync(join(OUT_DIR, 'package.json'), `${JSON.stringify(root_package, null, 2)}\n`)
+
+writeFileSync(
+  join(OUT_DIR, 'README.md'),
+  `# AresRPG bot — standalone build
+
+Generated by \`packages/bot/scripts/build_standalone.mjs\` from an AresRPGBot checkout on
+${new Date().toISOString().slice(0, 10)} — a minimal copy of the bot plus the exact private
+workspace packages it depends on (${WORKSPACE_PACKAGES.map((n) => `@aresrpg/${n}`).join(', ')}),
+none of the game's frontend/engine/indexer/move/assets.
+
+**This is a snapshot, not a fork to hand-edit.** Those packages are private, unpublished, and
+pinned to an exact game version — regenerate this directory from a fresh checkout after every
+game update rather than patching it in place, or it will silently drift.
+
+\`\`\`sh
+bun install
+cd packages/bot
+bun run enoki-login
+bun run session
+\`\`\`
+
+See \`packages/bot/README.md\` for the full command reference.
+`
+)
+
+console.log(`\ndone — ${OUT_DIR}\n  cd ${OUT_DIR} && bun install && cd packages/bot && bun run enoki-login`)

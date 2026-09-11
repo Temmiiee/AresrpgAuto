@@ -1,0 +1,16 @@
+node_modules
+.enoki-session.json
+group-state.local.json
+position.local.json
+session.jsonl
+status.local.json
+hp-state.local.json
+spell-memory.local.json
+learned_policy.local.json
+item_rarity.local.json
+market_history.local.json
+faucet-cooldown.local.json
+replays/
+composition_sweep_results.json
+train_checkpoint.local.json
+*_log*.txt

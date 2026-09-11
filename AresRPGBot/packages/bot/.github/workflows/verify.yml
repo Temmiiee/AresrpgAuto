@@ -1,0 +1,67 @@
+name: verify
+
+# Assembles the exact same tree scripts/build_standalone.mjs builds locally — this bot's own
+# source plus the private, unpublished game packages it depends on (@aresrpg/sdk, @aresrpg/fight,
+# @aresrpg/immutable, @aresrpg/protocol) — but sourced from a FRESH clone of the game repo's
+# `edge` branch instead of a local checkout. On push/PR this catches a real regression in this
+# repo; on the weekly schedule it catches the game itself moving out from under the bot even when
+# nobody touched this repo at all — the one signal the scheduled changelog-review routine can't
+# give, since that routine has no access to this source to compare against.
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 8 * * 1' # weekly, Monday — independent of any push here
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout bot
+        uses: actions/checkout@v4
+        with:
+          path: bot
+
+      - name: checkout game (edge)
+        uses: actions/checkout@v4
+        with:
+          repository: aresrpg/aresrpg
+          ref: edge
+          path: game
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: assemble workspace
+        run: |
+          mkdir -p workspace/packages
+          cp -r bot workspace/packages/bot
+          for pkg in sdk fight immutable protocol; do
+            cp -r "game/packages/$pkg" "workspace/packages/$pkg"
+          done
+          cp game/pins.json workspace/pins.json
+          mkdir -p workspace/seed/content
+          cp game/seed/content/spells.json game/seed/content/mobs.json workspace/seed/content/
+          cat > workspace/package.json <<'JSON'
+          {
+            "name": "aresrpg-bot-ci",
+            "private": true,
+            "type": "module",
+            "workspaces": ["packages/*"],
+            "devDependencies": { "@types/node": "^26.2.0" }
+          }
+          JSON
+
+      - name: install
+        working-directory: workspace
+        run: bun install
+
+      - name: typecheck
+        working-directory: workspace/packages/bot
+        run: bunx tsc --noEmit -p tsconfig.json
+
+      - name: test
+        working-directory: workspace/packages/bot
+        run: bun test

@@ -1,0 +1,42 @@
+{
+  "name": "@aresrpg/bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless automation bot for a real AresRPG party (zkLogin) — auto-fight, spell-aware, on Sui (SUI_NETWORK=testnet|mainnet).",
+  "scripts": {
+    "enoki-login": "bun run src/cli/cli_enoki_login.ts",
+    "group-fight": "bun run src/cli/cli_group_fight_loop.ts",
+    "session": "bun run src/cli/cli_group_session.ts",
+    "session-stats": "bun run src/cli/cli_session_stats.ts",
+    "dashboard": "bun run src/cli/cli_dashboard.ts",
+    "control-panel": "bun run src/cli/cli_control_panel.ts",
+    "faucet-check": "bun run src/cli/cli_faucet_check.ts",
+    "auto-sell": "bun run src/cli/cli_auto_sell.ts",
+    "characters": "bun run src/cli/cli_character_report.ts",
+    "tune": "bun run src/cli/cli_tune.ts",
+    "train": "bun run src/cli/cli_train.ts",
+    "record-replay": "bun run src/cli/cli_record_replay.ts",
+    "compositions": "bun run src/cli/cli_compositions.ts",
+    "validate-policy": "bun run src/cli/cli_validate_policy.ts",
+    "simulate-session": "bun run src/cli/cli_simulate_session.ts",
+    "build-standalone": "bun run scripts/build_standalone.mjs",
+    "reset-character": "bun run src/cli/cli_reset_character.ts",
+    "dungeon": "bun run src/cli/cli_dungeon_run.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@aresrpg/fight": "workspace:*",
+    "@aresrpg/immutable": "workspace:*",
+    "@aresrpg/protocol": "workspace:*",
+    "@aresrpg/sdk": "workspace:*",
+    "@mysten/enoki": "^1.2.20",
+    "@mysten/kiosk": "1.4.8",
+    "@mysten/sui": "2.29.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~6.0.3"
+  }
+}
