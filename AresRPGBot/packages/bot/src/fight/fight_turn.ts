@@ -1,12 +1,17 @@
 // Simplified fight turn handler focused on speed and minimal gas usage
 // Core loop: observe state → get RL decision → execute action → repeat
-import { create_fight, type FightCommand } from '../../../../../AresRPGBot/packages/bot/node_modules/@aresrpg/fight/dist/index.js'
+import { create_fight, type FightCommand } from '@aresrpg/fight'
 
-import type { BotSdk } from '../../../../../AresRPGBot/packages/bot/src/auth/sdk_client.ts'
-import { CHARACTERS } from '../../../../../AresRPGBot/packages/bot/src/config/party_config.ts'
-import { message_of, sleep, submit_with_retry, is_transient } from '../../../../../AresRPGBot/packages/bot/src/shared/chain_retry.ts'
-import { as_number, read_fight, type FightJson, type FighterJson } from '../../../../../AresRPGBot/packages/bot/src/fight/fight_state.ts'
-import type { PartyPrep } from '../../../../../AresRPGBot/packages/bot/src/fight/fight_progression.ts'
+import type { BotSdk } from '../auth/sdk_client.ts'
+import { CHARACTERS } from '../config/party_config.ts'
+import { message_of, sleep, submit_with_retry, is_transient } from '../shared/chain_retry.ts'
+import { as_number, read_fight, type FightJson, type FighterJson } from './fight_state.ts'
+import type { PartyPrep } from './fight_progression.ts'
+import { load_trained_policy } from '../ai/policy_store.ts'
+
+// Export the policy source for logging
+const { source } = load_trained_policy()
+export const DECISION_POLICY_SOURCE = source
 
 // Simple helper to get a decision from the RL system via subprocess
 async function getRLDecision(stateJson: any): Promise<{ action: FightCommand | null } | null> {
