@@ -57,7 +57,11 @@ export type FightJson = {
   board: { obstacles: (string | number)[] }
 }
 
-export const as_number = (v: string | number): number => (typeof v === 'number' ? v : Number(v))
+export const as_number = (v: string | number | bigint): number => {
+  if (typeof v === 'number') return v
+  if (typeof v === 'bigint') return Number(v)
+  return Number(v)
+}
 
 // The live Fight object's REAL on-chain shape (2026-09-05, after the fight.move rewrite):
 // fighters/board/closed/ended/queue/round/winner/turn_seed/turn_started_ms all moved under a

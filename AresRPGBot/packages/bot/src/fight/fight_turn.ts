@@ -166,8 +166,8 @@ const decide_and_commit_turn = async (
   let min_distance = Number.MAX_SAFE_INTEGER
 
   for (const enemy_cell of enemy_cells) {
-    const distance = Math.abs(Number(my_cell & 0xff - enemy_cell & 0xff)) +
-                     Math.abs(Number((my_cell >> 8) & 0xff - (enemy_cell >> 8) & 0xff))
+    const distance = Math.abs(Number((my_cell & 0xffn) - (enemy_cell & 0xffn))) +
+                     Math.abs(Number(((my_cell >> 8n) & 0xffn) - ((enemy_cell >> 8n) & 0xffn)))
     if (distance < min_distance) {
       min_distance = distance
       nearest_enemy_cell = enemy_cell
@@ -331,7 +331,8 @@ export const run_turn_loop = async (
 
     // Reduced wait time for faster response
     const turn_started_ms = as_number(state_json.turn_started_ms)
-    const wait = turn_started_ms + 1_500 + 200 - Date.now() // 1.7s total wait
+    const now_ms = Date.now()
+    const wait = turn_started_ms + 1_500 + 200 - now_ms // 1.7s total wait
     if (wait > 0) await sleep(wait)
 
     await decide_and_commit_turn(bot, fight_id, state_json, turn, acting_idx, acting, acting_fighter, prep, log)

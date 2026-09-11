@@ -8,6 +8,7 @@ import { get_enoki_signer } from '../auth/enoki_auth.ts'
 import { create_bot_sdk } from '../auth/sdk_client.ts'
 import { run_one_group_fight } from '../fight/fight_session.ts'
 import { message_of, is_insufficient_balance } from '../shared/chain_retry.ts'
+import { send_discord_alert, notify_session_expired, notify_session_start } from '../shared/discord_notify.ts'
 import { read_position, write_position } from '../state/position_state.ts'
 import { append_log, clear_log, type FightLogEntry } from '../state/session_log.ts'
 import { GAS_WARN_MIST, mist_to_sui } from '../state/session_stats.ts'
@@ -21,6 +22,8 @@ import { run_daily_dungeon_quest } from '../dungeon/dungeon_session.ts'
 const DELAY_BETWEEN_FIGHTS_MS = 5_000
 const RETRY_DELAY_MS = 30_000
 const NO_TARGET_RETRY_DELAY_MS = 10 * 60_000 // zones only reroll every 2h — no point hammering
+const PAID_RPC = process.env.PAID_RPC?.toLowerCase() === 'true'
+const POST_QUEST_DELAY_MS = PAID_RPC ? 0 : 10_000 // Wait 10s after quest check to avoid rate limit
 
 // Real spend circuit breakers — GAS_WARN_MIST (session_stats.ts) only ever logged a warning and
 // let the loop keep going regardless; neither an unattended run stuck losing repeatedly (bad
@@ -75,9 +78,16 @@ const retry_delay_ms = (error: unknown, message: string): number => {
 
 const main = async () => {
   clear_log()
-  const signer = await get_enoki_signer()
+  
+  // Pass callback to send login URL to Discord if re-auth is needed
+  let signer = await get_enoki_signer(async (login_url) => {
+    console.log('[Discord] Sending re-authentication link...')
+    await notify_session_expired('pending...', login_url)
+  })
+  
   const address = create_bot_sdk(signer).address
   console.log(`session start — address ${address}, up to ${max_fights === Infinity ? 'unlimited' : max_fights} fights`)
+  await notify_session_start(address, max_fights === Infinity ? 'unlimited' : max_fights)
 
   let position = read_position()
   let count = 0
@@ -101,6 +111,12 @@ const main = async () => {
     try {
       await maybe_run_daily_quest(bot, (msg) => console.log(`  [quest] ${msg}`))
 
+      // Wait after quest check to avoid rate limiting from multiple requests
+      if (POST_QUEST_DELAY_MS > 0 && count === 1) {
+        console.log(`  ⏱️  waiting ${(POST_QUEST_DELAY_MS / 1000).toFixed(0)}s after quest check to avoid rate limit...`)
+        await sleep(POST_QUEST_DELAY_MS)
+      }
+
       const { balance_mist, claim } = await ensure_min_balance(bot.sdk.read_sui_balance, bot.address)
       if (claim?.claimed) {
         console.log(
@@ -119,7 +135,9 @@ const main = async () => {
       position = outcome.new_position
       write_position(position)
 
-      const gas_sui = Number(outcome.gas_mist) / 1e9
+      // Ensure gas_mist is properly converted to number
+      const gas_mist_bigint = typeof outcome.gas_mist === 'bigint' ? outcome.gas_mist : BigInt(outcome.gas_mist)
+      const gas_sui = Number(gas_mist_bigint) / 1e9
       const valuation = value_drops(outcome.drops ?? {})
       const profit = calculate_farming_profit(valuation.total_sui, gas_sui)
 
@@ -129,7 +147,7 @@ const main = async () => {
         won: outcome.won,
         mobs: outcome.mobs,
         turns: outcome.turns,
-        gas_mist: outcome.gas_mist.toString(),
+        gas_mist: gas_mist_bigint.toString(),
         xp_gained: outcome.xp_gained,
         error: null,
         drops: outcome.drops,
@@ -149,7 +167,7 @@ const main = async () => {
           ` | drops: ${drop_summary} (+${valuation.total_sui.toFixed(4)} SUI est.)` +
           ` | NET: ${profit.net_profit_sui >= 0 ? '+' : ''}${profit.net_profit_sui.toFixed(4)} SUI`
       )
-      if (outcome.gas_mist >= GAS_WARN_MIST) {
+      if (gas_mist_bigint >= GAS_WARN_MIST) {
         console.log(
           `⚠ fight cost ${gas_sui.toFixed(4)} SUI — above the ~${mist_to_sui(GAS_WARN_MIST)} SUI expected for this ` +
             `${CHARACTERS.length}-character party (the dev's ~0.02 SUI/character baseline). ` +
@@ -158,7 +176,7 @@ const main = async () => {
       }
 
       consecutive_losses = outcome.won ? 0 : consecutive_losses + 1
-      session_gas_mist += outcome.gas_mist
+      session_gas_mist += gas_mist_bigint
       if (consecutive_losses >= MAX_CONSECUTIVE_LOSSES) {
         console.log(
           `\n⛔ stopping: ${consecutive_losses} losses in a row (MAX_CONSECUTIVE_LOSSES=${MAX_CONSECUTIVE_LOSSES}) — ` +
@@ -194,6 +212,27 @@ const main = async () => {
       const message = message_of(error)
       console.log(`[${timestamp()}] fight ${count} errored: ${message}`)
       write_status(`fight ${count}: error — ${message}`, count)
+      
+      // Detect ZKLogin expiration and re-authenticate
+      if (/ZKLogin expired|Invalid user signature/.test(message)) {
+        console.log('🔄 Session expired - requesting fresh login...')
+        await notify_session_expired(address)
+        
+        // Get fresh signer with Discord login link
+        try {
+          const new_signer = await get_enoki_signer(async (login_url) => {
+            console.log('[Discord] Sending re-authentication link...')
+            await notify_session_expired(address, login_url)
+          })
+          // Update signer for next iteration
+          signer = new_signer
+          console.log('✅ Re-authenticated successfully!')
+        } catch (auth_error) {
+          console.error(`❌ Re-authentication failed: ${message_of(auth_error)}`)
+          // Will retry with delay
+        }
+      }
+      
       append_log({
         at: new Date().toISOString(),
         fight_id: '',

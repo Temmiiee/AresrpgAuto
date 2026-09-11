@@ -34,8 +34,9 @@ fetch('/enoki-capture', { method: 'POST', body: location.hash })
 </body></html>`
 
 /** Opens the local capture server, prints the login URL, and resolves with the raw URL hash
- *  Google redirects back with (contains the id_token). */
-const capture_login_hash = (login_url: string): Promise<string> =>
+ *  Google redirects back with (contains the id_token). 
+ *  If onLoginUrlReady callback is provided, calls it with the login URL for external handling (e.g. Discord). */
+const capture_login_hash = (login_url: string, onLoginUrlReady?: (url: string) => void): Promise<string> =>
   new Promise((resolve, reject) => {
     const server = Bun.serve({
       hostname: REDIRECT_HOST,
@@ -56,6 +57,12 @@ const capture_login_hash = (login_url: string): Promise<string> =>
     console.log('\nOpen this URL in your browser and sign in with the SAME Google account you use for aresrpg.world:\n')
     console.log(login_url)
     console.log('\nWaiting for sign-in…')
+    
+    // Call the callback if provided (for Discord notification)
+    if (onLoginUrlReady) {
+      onLoginUrlReady(login_url)
+    }
+    
     setTimeout(() => {
       server.stop()
       reject(new Error('Timed out waiting for sign-in (5 minutes)'))
@@ -63,8 +70,9 @@ const capture_login_hash = (login_url: string): Promise<string> =>
   })
 
 /** Returns a Signer usable directly as `SDK({ signer })` — the real zkLogin address, not a
- *  throwaway one. Reuses a cached session when possible; otherwise runs the interactive login. */
-export const get_enoki_signer = async () => {
+ *  throwaway one. Reuses a cached session when possible; otherwise runs the interactive login. 
+ *  Optional callback receives the login URL for external handling (e.g. sending to Discord). */
+export const get_enoki_signer = async (onLoginUrlReady?: (url: string) => void) => {
   const flow = new EnokiFlow({ apiKey: ENOKI_API_KEY, store: create_file_store() })
 
   const existing = await flow.getSession()
@@ -85,7 +93,7 @@ export const get_enoki_signer = async () => {
     redirectUrl: REDIRECT_URL,
     network: NETWORK,
   })
-  const hash = await capture_login_hash(login_url)
+  const hash = await capture_login_hash(login_url, onLoginUrlReady)
   await flow.handleAuthCallback(hash) // returns the OAuth `state` param, not the address — unused
   const keypair = await flow.getKeypair({ network: NETWORK })
   console.log(`signed in as ${keypair.toSuiAddress()}`)

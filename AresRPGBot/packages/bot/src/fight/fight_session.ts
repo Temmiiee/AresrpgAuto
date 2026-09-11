@@ -171,7 +171,10 @@ export const run_one_group_fight = async (
   const xp_gained: Record<string, number> = {}
   for (const c of CHARACTERS) {
     const live = await read_live_character_stats(sdk, c.id)
-    xp_gained[c.name] = live.experience - (prep.xp_before.get(c.id) ?? 0)
+    const xp_before_val = prep.xp_before.get(c.id) ?? 0
+    const xp_current = Number(live.experience)
+    const xp_before_num = Number(xp_before_val)
+    xp_gained[c.name] = xp_current - xp_before_num
   }
 
   return { won, fight_id, new_position, gas_mist, xp_gained, turns, mobs, drops }

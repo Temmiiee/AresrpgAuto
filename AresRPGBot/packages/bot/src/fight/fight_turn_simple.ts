@@ -161,8 +161,8 @@ const decide_and_commit_turn_simple = async (
   let min_distance = Number.MAX_SAFE_INTEGER
 
   for (const enemy_cell of enemy_cells) {
-    const distance = Math.abs(Number(my_cell & 0xff - enemy_cell & 0xff)) +
-                     Math.abs(Number((my_cell >> 8) & 0xff - (enemy_cell >> 8) & 0xff))
+    const distance = Math.abs(Number((my_cell & 0xffn) - (enemy_cell & 0xffn))) +
+                     Math.abs(Number(((my_cell >> 8n) & 0xffn) - ((enemy_cell >> 8n) & 0xffn)))
     if (distance < min_distance) {
       min_distance = distance
       nearest_enemy_cell = enemy_cell
