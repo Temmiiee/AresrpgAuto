@@ -1,0 +1,24 @@
+{
+  "name": "@aresrpg/fight",
+  "version": "0.0.0",
+  "description": "Move-derived fight simulation and typed rendering event stream",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=21.0.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./move_contract": "./src/move_contract.gen.ts",
+    "./prng": "./src/prng.ts"
+  },
+  "scripts": {
+    "generate": "bun scripts/generate_move_contract.mjs",
+    "generate:check": "bun scripts/generate_move_contract.mjs --check",
+    "typecheck": "tsc --noEmit",
+    "test": "bun run generate:check && bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0"
+  }
+}

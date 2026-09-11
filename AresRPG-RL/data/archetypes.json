@@ -1,0 +1,1538 @@
+{
+  "source_commit": "d25d9d7bb7affb1f163cf8947dcdf569748e1d42",
+  "classes": [
+    {
+      "id": "asobi",
+      "primary_stat": "strength"
+    },
+    {
+      "id": "ikari",
+      "primary_stat": "strength"
+    },
+    {
+      "id": "iyashi",
+      "primary_stat": "agility"
+    },
+    {
+      "id": "mori",
+      "primary_stat": "strength"
+    },
+    {
+      "id": "rojin",
+      "primary_stat": "chance"
+    },
+    {
+      "id": "senshi",
+      "primary_stat": "strength"
+    },
+    {
+      "id": "shugo",
+      "primary_stat": "intelligence"
+    },
+    {
+      "id": "shusen",
+      "primary_stat": "strength"
+    },
+    {
+      "id": "tokei",
+      "primary_stat": "intelligence"
+    },
+    {
+      "id": "tomoda",
+      "primary_stat": "intelligence"
+    },
+    {
+      "id": "yajin",
+      "primary_stat": "strength"
+    },
+    {
+      "id": "yogan",
+      "primary_stat": "intelligence"
+    }
+  ],
+  "mob_templates": [
+    {
+      "mob_type": "protector_quartz",
+      "name": "Quartzine",
+      "level_min": 1,
+      "level_max": 5,
+      "hp": 55,
+      "ap": 6,
+      "mp": 2,
+      "agility": 5,
+      "wisdom": 5,
+      "earth_res": 32787,
+      "fire_res": 32776,
+      "water_res": 32776,
+      "air_res": 32776,
+      "xp": 640,
+      "loot": [
+        {
+          "item_type": "bag_quartz",
+          "chance_bp": 10000,
+          "min_qty": 1,
+          "max_qty": 1
+        }
+      ],
+      "spells": [
+        {
+          "name": "Prismatic Guard",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 0,
+            "range_max": 0,
+            "modifiable_range": false,
+            "line_of_sight": false,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 4,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 14,
+                "element": "earth",
+                "value": 2,
+                "value_max": 2,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "fire",
+                "value": 2,
+                "value_max": 2,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "water",
+                "value": 2,
+                "value_max": 2,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "air",
+                "value": 2,
+                "value_max": 2,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Shard Volley",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 3,
+            "range_max": 6,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": true,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "earth",
+                "value": 7,
+                "value_max": 10,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "misui__fire",
+      "name": "Misui Feu",
+      "level_min": 1,
+      "level_max": 12,
+      "hp": 30,
+      "ap": 5,
+      "mp": 3,
+      "agility": 50,
+      "wisdom": 50,
+      "earth_res": 32768,
+      "fire_res": 32788,
+      "water_res": 32758,
+      "air_res": 32768,
+      "xp": 1000,
+      "loot": [],
+      "spells": [
+        {
+          "name": "Razorfin",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 0,
+            "range_max": 1,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 50,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "fire",
+                "value": 1,
+                "value_max": 30,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              },
+              {
+                "kind": 5,
+                "element": "fire",
+                "value": 1,
+                "value_max": 3,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 1000,
+                "turns": 2,
+                "stat": 12
+              }
+            ],
+            "crit_effects": [
+              {
+                "kind": 0,
+                "element": "fire",
+                "value": 32,
+                "value_max": 32,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "aragne__earth",
+      "name": "Aragne Terra",
+      "level_min": 2,
+      "level_max": 15,
+      "hp": 52,
+      "ap": 5,
+      "mp": 3,
+      "agility": 8,
+      "wisdom": 9,
+      "earth_res": 32780,
+      "fire_res": 32770,
+      "water_res": 32770,
+      "air_res": 32759,
+      "xp": 975,
+      "loot": [],
+      "spells": [
+        {
+          "name": "Ground Web",
+          "level": {
+            "ap_cost": 2,
+            "range_min": 1,
+            "range_max": 4,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 3,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 13,
+                "element": "",
+                "value": 1,
+                "value_max": 1,
+                "area_shape": 2,
+                "area_size": 1,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 5,
+                "element": "",
+                "value": 1,
+                "value_max": 1,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 1,
+                "stat": 7
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Stone Fang",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 1,
+            "range_max": 2,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "earth",
+                "value": 20,
+                "value_max": 28,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              },
+              {
+                "kind": 9,
+                "element": "",
+                "value": 1,
+                "value_max": 1,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "misui__water",
+      "name": "Misui Nakwa",
+      "level_min": 3,
+      "level_max": 18,
+      "hp": 70,
+      "ap": 5,
+      "mp": 3,
+      "agility": 0,
+      "wisdom": 60,
+      "earth_res": 32768,
+      "fire_res": 32758,
+      "water_res": 32788,
+      "air_res": 32768,
+      "xp": 2000,
+      "loot": [
+        {
+          "item_type": "water",
+          "chance_bp": 7500,
+          "min_qty": 1,
+          "max_qty": 20
+        }
+      ],
+      "spells": [
+        {
+          "name": "Razorfin",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 0,
+            "range_max": 1,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 50,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "water",
+                "value": 1,
+                "value_max": 30,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": [
+              {
+                "kind": 0,
+                "element": "water",
+                "value": 32,
+                "value_max": 32,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "fuwa__fukuo",
+      "name": "Fukuo the Ka",
+      "level_min": 6,
+      "level_max": 26,
+      "hp": 230,
+      "ap": 6,
+      "mp": 4,
+      "agility": 200,
+      "wisdom": 200,
+      "earth_res": 32778,
+      "fire_res": 32778,
+      "water_res": 32788,
+      "air_res": 32778,
+      "xp": 9000,
+      "loot": [
+        {
+          "item_type": "fuwa_hide",
+          "chance_bp": 8000,
+          "min_qty": 1,
+          "max_qty": 2
+        },
+        {
+          "item_type": "fuwa_horn",
+          "chance_bp": 8000,
+          "min_qty": 1,
+          "max_qty": 2
+        },
+        {
+          "item_type": "fuwa_eye",
+          "chance_bp": 8000,
+          "min_qty": 1,
+          "max_qty": 2
+        },
+        {
+          "item_type": "fukuo_tidal_horn",
+          "chance_bp": 10000,
+          "min_qty": 1,
+          "max_qty": 1
+        },
+        {
+          "item_type": "key_of_tangled_aftermath",
+          "chance_bp": 8000,
+          "min_qty": 1,
+          "max_qty": 2
+        }
+      ],
+      "spells": [
+        {
+          "name": "Fuwater",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 0,
+            "range_max": 3,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 5,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "water",
+                "value": 25,
+                "value_max": 35,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": [
+              {
+                "kind": 0,
+                "element": "water",
+                "value": 50,
+                "value_max": 50,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              },
+              {
+                "kind": 6,
+                "element": "",
+                "value": 1,
+                "value_max": 2,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 7
+              }
+            ]
+          }
+        },
+        {
+          "name": "Takoya",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 0,
+            "range_max": 0,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 4,
+            "crit_1_in": 40,
+            "effects": [
+              {
+                "kind": 4,
+                "element": "",
+                "value": 10,
+                "value_max": 20,
+                "area_shape": 1,
+                "area_size": 2,
+                "target_filter": 3,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 12
+              }
+            ],
+            "crit_effects": [
+              {
+                "kind": 4,
+                "element": "",
+                "value": 25,
+                "value_max": 40,
+                "area_shape": 1,
+                "area_size": 2,
+                "target_filter": 3,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 12
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "protector_amber",
+      "name": "Ambrine",
+      "level_min": 8,
+      "level_max": 12,
+      "hp": 83,
+      "ap": 6,
+      "mp": 2,
+      "agility": 6,
+      "wisdom": 12,
+      "earth_res": 32776,
+      "fire_res": 32788,
+      "water_res": 32776,
+      "air_res": 32776,
+      "xp": 1241,
+      "loot": [
+        {
+          "item_type": "bag_amber",
+          "chance_bp": 10000,
+          "min_qty": 1,
+          "max_qty": 1
+        }
+      ],
+      "spells": [
+        {
+          "name": "Prismatic Guard",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 0,
+            "range_max": 0,
+            "modifiable_range": false,
+            "line_of_sight": false,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 4,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 14,
+                "element": "earth",
+                "value": 5,
+                "value_max": 5,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "fire",
+                "value": 5,
+                "value_max": 5,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "water",
+                "value": 5,
+                "value_max": 5,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "air",
+                "value": 5,
+                "value_max": 5,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Shard Volley",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 3,
+            "range_max": 6,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": true,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "fire",
+                "value": 18,
+                "value_max": 23,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "ant_red",
+      "name": "Red Ant",
+      "level_min": 12,
+      "level_max": 28,
+      "hp": 128,
+      "ap": 6,
+      "mp": 6,
+      "agility": 37,
+      "wisdom": 19,
+      "earth_res": 32768,
+      "fire_res": 32777,
+      "water_res": 32759,
+      "air_res": 32768,
+      "xp": 3616,
+      "loot": [],
+      "spells": [
+        {
+          "name": "War Pheromone",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 0,
+            "range_max": 0,
+            "modifiable_range": false,
+            "line_of_sight": false,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 4,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 4,
+                "element": "",
+                "value": 6,
+                "value_max": 6,
+                "area_shape": 6,
+                "area_size": 0,
+                "target_filter": 3,
+                "chance_bp": 10000,
+                "turns": 2,
+                "stat": 9
+              },
+              {
+                "kind": 19,
+                "element": "",
+                "value": 0,
+                "value_max": 0,
+                "area_shape": 6,
+                "area_size": 0,
+                "target_filter": 3,
+                "chance_bp": 10000,
+                "turns": 1,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Ember Mandibles",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 1,
+            "range_max": 1,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "fire",
+                "value": 34,
+                "value_max": 47,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              },
+              {
+                "kind": 5,
+                "element": "fire",
+                "value": 3,
+                "value_max": 3,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 2,
+                "stat": 12
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "protector_jade",
+      "name": "Jadine",
+      "level_min": 15,
+      "level_max": 25,
+      "hp": 177,
+      "ap": 6,
+      "mp": 2,
+      "agility": 10,
+      "wisdom": 24,
+      "earth_res": 32789,
+      "fire_res": 32777,
+      "water_res": 32777,
+      "air_res": 32777,
+      "xp": 3287,
+      "loot": [
+        {
+          "item_type": "bag_jade",
+          "chance_bp": 10000,
+          "min_qty": 1,
+          "max_qty": 1
+        }
+      ],
+      "spells": [
+        {
+          "name": "Prismatic Guard",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 0,
+            "range_max": 0,
+            "modifiable_range": false,
+            "line_of_sight": false,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 4,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 14,
+                "element": "earth",
+                "value": 9,
+                "value_max": 9,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "fire",
+                "value": 9,
+                "value_max": 9,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "water",
+                "value": 9,
+                "value_max": 9,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "air",
+                "value": 9,
+                "value_max": 9,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Shard Volley",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 3,
+            "range_max": 6,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": true,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "earth",
+                "value": 31,
+                "value_max": 42,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "protector_moonstone",
+      "name": "Lunarine",
+      "level_min": 20,
+      "level_max": 40,
+      "hp": 309,
+      "ap": 6,
+      "mp": 2,
+      "agility": 16,
+      "wisdom": 36,
+      "earth_res": 32777,
+      "fire_res": 32777,
+      "water_res": 32790,
+      "air_res": 32777,
+      "xp": 5262,
+      "loot": [
+        {
+          "item_type": "bag_moonstone",
+          "chance_bp": 10000,
+          "min_qty": 1,
+          "max_qty": 1
+        }
+      ],
+      "spells": [
+        {
+          "name": "Prismatic Guard",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 0,
+            "range_max": 0,
+            "modifiable_range": false,
+            "line_of_sight": false,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 4,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 14,
+                "element": "earth",
+                "value": 11,
+                "value_max": 11,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "fire",
+                "value": 11,
+                "value_max": 11,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "water",
+                "value": 11,
+                "value_max": 11,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "air",
+                "value": 11,
+                "value_max": 11,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Shard Volley",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 3,
+            "range_max": 6,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "water",
+                "value": 36,
+                "value_max": 50,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "araknomath",
+      "name": "Araknomath",
+      "level_min": 25,
+      "level_max": 30,
+      "hp": 800,
+      "ap": 8,
+      "mp": 3,
+      "agility": 41,
+      "wisdom": 54,
+      "earth_res": 32793,
+      "fire_res": 32759,
+      "water_res": 32783,
+      "air_res": 32783,
+      "xp": 16548,
+      "loot": [],
+      "spells": [
+        {
+          "name": "Axiom Cocoon",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 0,
+            "range_max": 0,
+            "modifiable_range": false,
+            "line_of_sight": false,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 5,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 14,
+                "element": "",
+                "value": 45,
+                "value_max": 45,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 10000,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 15,
+                "element": "",
+                "value": 12,
+                "value_max": 12,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 10000,
+                "turns": 2,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Prime Web",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 1,
+            "range_max": 6,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 3,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 13,
+                "element": "",
+                "value": 1,
+                "value_max": 1,
+                "area_shape": 1,
+                "area_size": 2,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 3,
+                "stat": 0
+              },
+              {
+                "kind": 5,
+                "element": "earth",
+                "value": 4,
+                "value_max": 4,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 2,
+                "stat": 12
+              },
+              {
+                "kind": 5,
+                "element": "",
+                "value": 1,
+                "value_max": 1,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 1,
+                "stat": 6
+              },
+              {
+                "kind": 5,
+                "element": "",
+                "value": 1,
+                "value_max": 1,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 1,
+                "stat": 7
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Factor Line",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 2,
+            "range_max": 7,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 2,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "earth",
+                "value": 26,
+                "value_max": 36,
+                "area_shape": 3,
+                "area_size": 4,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              },
+              {
+                "kind": 9,
+                "element": "",
+                "value": 2,
+                "value_max": 2,
+                "area_shape": 3,
+                "area_size": 4,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Remainder Slam",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 1,
+            "range_max": 2,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 2,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "earth",
+                "value": 27,
+                "value_max": 37,
+                "area_shape": 1,
+                "area_size": 1,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              },
+              {
+                "kind": 8,
+                "element": "",
+                "value": 2,
+                "value_max": 2,
+                "area_shape": 1,
+                "area_size": 1,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Final Proof",
+          "level": {
+            "ap_cost": 5,
+            "range_min": 1,
+            "range_max": 3,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 3,
+                "element": "earth",
+                "value": 45,
+                "value_max": 45,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "protector_obsidianite",
+      "name": "Obsidine",
+      "level_min": 38,
+      "level_max": 58,
+      "hp": 486,
+      "ap": 6,
+      "mp": 2,
+      "agility": 24,
+      "wisdom": 57,
+      "earth_res": 32777,
+      "fire_res": 32793,
+      "water_res": 32777,
+      "air_res": 32777,
+      "xp": 7919,
+      "loot": [
+        {
+          "item_type": "bag_obsidianite",
+          "chance_bp": 10000,
+          "min_qty": 1,
+          "max_qty": 1
+        }
+      ],
+      "spells": [
+        {
+          "name": "Prismatic Guard",
+          "level": {
+            "ap_cost": 3,
+            "range_min": 0,
+            "range_max": 0,
+            "modifiable_range": false,
+            "line_of_sight": false,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 4,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 14,
+                "element": "earth",
+                "value": 23,
+                "value_max": 23,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "fire",
+                "value": 23,
+                "value_max": 23,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "water",
+                "value": 23,
+                "value_max": 23,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              },
+              {
+                "kind": 14,
+                "element": "air",
+                "value": 23,
+                "value_max": 23,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 4,
+                "chance_bp": 2500,
+                "turns": 2,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Shard Volley",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 3,
+            "range_max": 7,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "fire",
+                "value": 67,
+                "value_max": 90,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    },
+    {
+      "mob_type": "protector_blood_bricheton",
+      "name": "Blood Bricheton",
+      "level_min": 42,
+      "level_max": 62,
+      "hp": 540,
+      "ap": 6,
+      "mp": 4,
+      "agility": 48,
+      "wisdom": 39,
+      "earth_res": 32769,
+      "fire_res": 32783,
+      "water_res": 32769,
+      "air_res": 32769,
+      "xp": 11530,
+      "loot": [
+        {
+          "item_type": "bag_blood_wheat",
+          "chance_bp": 10000,
+          "min_qty": 1,
+          "max_qty": 1
+        }
+      ],
+      "spells": [
+        {
+          "name": "Blood Harvest",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 1,
+            "range_max": 1,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 1,
+            "casts_per_target": 0,
+            "cooldown_turns": 3,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 6,
+                "element": "fire",
+                "value": 25,
+                "value_max": 34,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 12
+              },
+              {
+                "kind": 8,
+                "element": "",
+                "value": 3,
+                "value_max": 3,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        },
+        {
+          "name": "Threshing Ram",
+          "level": {
+            "ap_cost": 4,
+            "range_min": 1,
+            "range_max": 1,
+            "modifiable_range": false,
+            "line_of_sight": true,
+            "line_launch": false,
+            "free_cell": false,
+            "casts_per_turn": 0,
+            "casts_per_target": 0,
+            "cooldown_turns": 0,
+            "crit_1_in": 0,
+            "effects": [
+              {
+                "kind": 0,
+                "element": "fire",
+                "value": 33,
+                "value_max": 44,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              },
+              {
+                "kind": 8,
+                "element": "",
+                "value": 3,
+                "value_max": 3,
+                "area_shape": 0,
+                "area_size": 0,
+                "target_filter": 1,
+                "chance_bp": 10000,
+                "turns": 0,
+                "stat": 0
+              }
+            ],
+            "crit_effects": []
+          }
+        }
+      ]
+    }
+  ]
+}

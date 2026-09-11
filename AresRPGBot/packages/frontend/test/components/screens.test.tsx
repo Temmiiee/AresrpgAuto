@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
+// © 2026 Sceat — All rights reserved. See LICENSE.
+
+import { expect, test } from 'bun:test'
+import { class_names } from '@aresrpg/immutable'
+import { renderToStaticMarkup } from 'react-dom/server'
+
+import { CharacterCreateModal, character_name_error_text } from '../../src/components/CharacterCreateModal.tsx'
+import SettingsPage from '../../src/settings/SettingsPage.tsx'
+import { load_app_copy } from '../../src/i18n/copy.ts'
+
+const SETTINGS = Object.freeze({
+  quality: 'medium' as const,
+  flat_mode: false,
+  music_enabled: true,
+  render_distance: null,
+})
+
+test('each standalone screen exposes only its own surface', async () => {
+  const copy = await load_app_copy('en')
+
+  // Character creation reserves the model preview and carries no release-status copy.
+  const create = renderToStaticMarkup(
+    <CharacterCreateModal
+      cancel={() => undefined}
+      copy={copy}
+      create={async () => undefined}
+      insufficient={false}
+      view_spells={() => undefined}
+    />
+  )
+
+  expect(create).toContain('data-character-preview=""')
+  expect(create).toContain('data-character-name-error=""')
+  expect(create).toContain('maxLength="19"')
+  expect(copy).not.toHaveProperty('create_unavailable')
+  expect(create).not.toContain('next published game package')
+  expect(create).toContain('1 SUI')
+  expect(create).toContain(copy.character_price)
+  expect(create).toContain('data-class-spells-link=""')
+  expect(create).toContain('See the spells for that class')
+  class_names.forEach((classe) => expect(create).toContain(copy.simulator_page[`class_${classe}_title`]))
+  expect(character_name_error_text(copy, '')).toBeNull()
+  expect(character_name_error_text(copy, 'Sceat 6')).toBe(copy.name_invalid)
+
+  const insufficient = renderToStaticMarkup(
+    <CharacterCreateModal
+      cancel={() => undefined}
+      copy={copy}
+      create={async () => undefined}
+      insufficient
+      view_spells={() => undefined}
+    />
+  )
+  expect(insufficient).toContain('You need at least 0.2 SUI left in your balance for fees.')
+  expect(insufficient).toMatch(/<button[^>]*disabled=""[^>]*type="submit"/)
+
+  // Settings exposes the persisted audio preferences.
+  const settings = renderToStaticMarkup(<SettingsPage copy={copy} settings={SETTINGS} />)
+
+  expect(settings).toContain('Music')
+  expect(settings).toContain('General volume')
+  expect(settings).toContain('type="range"')
+  expect(settings).toContain('100%')
+  expect(settings).toContain('Footsteps')
+  expect(settings).toContain('Tutorials')
+  expect(settings).toContain('Always craft from')
+  expect(settings).toContain('Crafting character')
+  expect(settings).toContain('role="switch"')
+  expect(settings).not.toContain(copy.quality)
+  expect(settings).not.toContain(copy.flat_mode)
+  expect(settings).not.toContain('Rendering Options')
+})

@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
+// © 2026 Sceat — All rights reserved. See LICENSE.
+// The cluster heartbeat, player-facing half (legacy server_info): every 5s, whoever is
+// connected hears the network-wide online count — a flat cadence, deliberately decorrelated
+// from user activity (owner 2026-08-12). The pod-side half (the `server:<id>` key and the
+// player_connect eviction beacon) lives in index.ts — it is per-POD, not per-connection.
+
+import logger from '../logger.ts'
+import type { PlayerAction, PlayerModule } from '../player.ts'
+
+const log = logger(import.meta)
+
+const INFO_INTERVAL_MS = 5_000
+
+export default {
+  name: 'player_info',
+  observe: ({ events, game_state, indexing_health, pubsub, send, signal }) => {
+    events.on('packet/ping', ({ id }: Extract<PlayerAction, { type: 'packet/ping' }>) =>
+      send({ type: 'packet/pong', id })
+    )
+    const push = () =>
+      Promise.all([
+        pubsub.mesh.cluster_online(),
+        indexing_health().catch((error: Error) => {
+          log.warn({ error: error.message }, 'indexing health failed')
+          return Object.freeze({ lag: null, epoch: null })
+        }),
+      ])
+        .then(([online, health]) =>
+          send({ type: 'packet/server_info', online, indexing_lag: health.lag, current_epoch: health.epoch })
+        )
+        .catch((error: Error) => log.warn({ error: error.message }, 'cluster count failed'))
+    const timer = setInterval(() => void push(), INFO_INTERVAL_MS)
+    const push_game_state = (frozen: boolean | null) => send({ type: 'packet/game_state', frozen })
+    const stop_game_state = game_state.listen(push_game_state)
+    push_game_state(game_state.get())
+    void push()
+    signal.addEventListener('abort', () => {
+      clearInterval(timer)
+      stop_game_state()
+    })
+  },
+} satisfies PlayerModule

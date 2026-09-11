@@ -1,0 +1,151 @@
+// SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
+// © 2026 Sceat — All rights reserved. See LICENSE.
+// THE SILENT CLAIMER — pending grind-safe claims (loot-box rolls, crush yields) redeem
+// themselves the moment the session sees them: on load the server pushes whatever is
+// unclaimed, and every own-transaction fold that lands a claim re-enters here through
+// STATE_UPDATED. The player never manages claims. Failure is LOUD (one error toast per
+// attempt) and chain-safe — a soulbound claim survives everything and retries on the next
+// pass. TX-RETRY law: an EXECUTED failure latches its claim for the whole session (gas
+// burned twice is the crime); a pre-flight refusal (e.g. an empty gas tank) retries after
+// a cooldown, so a top-up resumes the redeem on its own.
+
+import type { ClaimRow } from '@aresrpg/protocol'
+import { item_template_id } from '@aresrpg/sdk/seed-ids'
+
+import PINS from '../../../../pins.json' with { type: 'json' }
+import { encyclopedia_catalog } from '../content/catalog.ts'
+import { env } from '../env.ts'
+import { crush_results, projected_crush_items, type PendingCrushResult } from '../crush_result.ts'
+import { toast } from '../toast.ts'
+import type { AppModule } from '../store.ts'
+import { is_rune } from '../characters/forge_eligibility.ts'
+import { encumbered_asset_ids, stack_merge_target } from '../inventory_stacks.ts'
+
+const RETRY_COOLDOWN_MS = 30_000
+/** the indexer projects a yield a beat after finality — one per-item request covers it */
+
+/** template id → item_type over the authored catalog — PURE derivation, zero chain reads. */
+export const rolled_item_types = (() => {
+  let map: Map<string, string> | null = null
+  return (): Map<string, string> => {
+    if (map) return map
+    const pins = (
+      PINS as unknown as Record<string, { content_root?: { id?: string }; seed_package_original?: string }>
+    )[env.network]
+    const content_root = pins?.content_root?.id
+    const seed_original = pins?.seed_package_original
+    map = new Map(
+      content_root && seed_original
+        ? encyclopedia_catalog.items.map(({ item_type }) => [
+            item_template_id(content_root, seed_original, item_type),
+            item_type,
+          ])
+        : []
+    )
+    return map
+  }
+})()
+
+/** A BOX CLAIM WITHOUT ITS ROLL IS NOT READY — IT IS NOT BROKEN (2026-08-22). The open receipt
+ *  names the CLAIM, never its contents: what it rolled is the PROJECTION's to tell, and it
+ *  arrives on the streamed row. Settling before then threw "not in the authored catalog" — a
+ *  lie, the catalog was fine — and left the reveal spinning on Collecting… forever. */
+export const claim_is_settleable = (claim: Readonly<ClaimRow>): boolean =>
+  claim.kind !== 'box' || !!claim.rolled_template
+
+type Attempt = Readonly<{ tried_at_ms: number; latched: boolean }>
+
+/** An EXECUTED failure carries a digest in the SDK's error message — gas burned, never refire. */
+const is_executed_failure = (error: unknown): boolean =>
+  error instanceof Error && error.message.includes('failed on-chain')
+
+const observe: NonNullable<AppModule['observe']> = ({ events, dispatch, get_state, signal }) => {
+  const attempts = new Map<string, Attempt>()
+  const pending_crush_results = new Map<string, PendingCrushResult>()
+  let active_claim_id: string | null = null
+
+  const publish_ready_crush_results = (): void => {
+    const { inventory } = get_state().session
+    for (const [claim_id, pending] of pending_crush_results) {
+      const items = projected_crush_items(pending, inventory)
+      if (items === null) continue
+      crush_results.publish(Object.freeze({ digest: pending.digest, items }))
+      pending_crush_results.delete(claim_id)
+      if (active_claim_id === claim_id) active_claim_id = null
+    }
+    if (!active_claim_id) sweep()
+  }
+
+  const settle = async (claim: Readonly<ClaimRow>): Promise<boolean> => {
+    const state = get_state()
+    const { wallet, inventory } = state.session
+    if (!wallet) return false
+    const kiosk = state.session.characters[0]?.kiosk ?? inventory[0]?.kiosk
+    const character = state.session.characters.find((row) => row.kiosk === kiosk)
+    const custody = kiosk ? { kiosk, kiosk_cap: character?.kiosk_cap } : undefined
+    const encumbered = encumbered_asset_ids(state.marketplace.own_listings, state.trade.rows)
+    if (claim.kind === 'box') {
+      const rolled_item_type = claim.rolled_template ? rolled_item_types().get(claim.rolled_template) : null
+      if (!rolled_item_type)
+        throw new Error(`The rolled template ${claim.rolled_template} is not in the authored catalog`)
+      const existing = stack_merge_target(inventory, encumbered, rolled_item_type, kiosk)
+      // the yield's CONTENTS stream from the server (ItemWritten — projection-driven);
+      // the receipt only settles the claim locally
+      await wallet.character.claim_loot({ claim_id: claim.id, rolled_item_type, existing, custody })
+      dispatch({ type: 'inventory/claim_settled', claim_id: claim.id })
+      return false
+    }
+    const runes = encyclopedia_catalog.items
+      .filter((item) => item.category === 'rune')
+      .map(({ item_type }) => ({
+        item_type,
+        existing: stack_merge_target(inventory.filter(is_rune), encumbered, item_type, kiosk),
+      }))
+    const previous_amounts = Object.freeze(Object.fromEntries(inventory.map(({ id, amount }) => [id, amount])))
+    const { digest, item_ids } = await wallet.character.redeem_crush({
+      claim_id: claim.id,
+      runes,
+      custody,
+    })
+    pending_crush_results.set(claim.id, Object.freeze({ digest, item_ids, previous_amounts }))
+    dispatch({ type: 'inventory/claim_settled', claim_id: claim.id })
+    publish_ready_crush_results()
+    return true
+  }
+
+  const sweep = (): void => {
+    const { session } = get_state()
+    if (!session.wallet || session.link_status !== 'ready' || active_claim_id) return
+    const now = Date.now()
+    const claim = session.claims.find((candidate) => {
+      // no attempt is recorded for an unready claim: the cooldown would otherwise swallow the
+      // very stream that makes it settleable
+      if (!claim_is_settleable(candidate)) return false
+      const attempt = attempts.get(candidate.id)
+      return !attempt || (!attempt.latched && now - attempt.tried_at_ms >= RETRY_COOLDOWN_MS)
+    })
+    if (!claim) return
+    active_claim_id = claim.id
+    attempts.set(claim.id, Object.freeze({ tried_at_ms: now, latched: false }))
+    void settle(claim)
+      .then((awaiting_projection) => {
+        if (!awaiting_projection && active_claim_id === claim.id) active_claim_id = null
+      })
+      .catch((error: Readonly<Error>) => {
+        if (is_executed_failure(error)) attempts.set(claim.id, Object.freeze({ tried_at_ms: now, latched: true }))
+        if (claim.kind === 'crush') crush_results.fail(error)
+        toast.add(error)
+        if (active_claim_id === claim.id) active_claim_id = null
+      })
+      .finally(sweep)
+  }
+
+  events.on('STATE_UPDATED', (state, previous) => {
+    if (state.session.inventory !== previous.session.inventory) publish_ready_crush_results()
+    if (state.session.claims !== previous.session.claims || state.session.link_status !== previous.session.link_status)
+      sweep()
+  })
+}
+
+// the no-op reduce keeps the MODULES union uniform (fight_chain precedent)
+export default Object.freeze({ name: 'claims', reduce: (state) => state, observe }) satisfies AppModule

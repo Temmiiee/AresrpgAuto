@@ -1,0 +1,1471 @@
+[
+  {
+    "world": "nauvis",
+    "entry_level": 1,
+    "cities": [
+      {
+        "city": "thebes",
+        "x": 50512,
+        "z": 50000,
+        "structure_packs": ["temperate_trees", "temperate_ruins"],
+        "dungeon": "gilded_lorito"
+      },
+      {
+        "city": "the_ruins",
+        "x": 36064,
+        "z": 48672,
+        "structure_packs": ["tropical_trees", "nauvis_rainforest_rocks", "temperate_ruins"],
+        "dungeon": "tangled_aftermath"
+      },
+      {
+        "city": "fuwage",
+        "x": 14240,
+        "z": 22688,
+        "structure_packs": [],
+        "dungeon": "ivory_rampart"
+      }
+    ],
+    "terrain": {
+      "seed": "ares-nauvis-europe",
+      "sea_level": 60,
+      "materials": {
+        "stone": {
+          "color": "#707777",
+          "preset": "stone"
+        },
+        "deep_stone": {
+          "color": "#465258",
+          "preset": "stone"
+        },
+        "limestone": {
+          "color": "#958d75",
+          "preset": "stone"
+        },
+        "thebes_limestone": {
+          "color": "#d8c89b",
+          "preset": "stone"
+        },
+        "thebes_sandstone": {
+          "color": "#b98b55",
+          "preset": "sand"
+        },
+        "thebes_tile": {
+          "color": "#2f7f86",
+          "preset": "stone"
+        },
+        "thebes_copper": {
+          "color": "#a85f3f",
+          "preset": "stone"
+        },
+        "the_ruins_stone": {
+          "color": "#252a2d",
+          "preset": "stone"
+        },
+        "the_ruins_masonry": {
+          "color": "#4a4044",
+          "preset": "stone"
+        },
+        "the_ruins_timber": {
+          "color": "#3a261f",
+          "preset": "wood"
+        },
+        "the_ruins_silk": {
+          "color": "#b9c4bd",
+          "preset": "snow"
+        },
+        "the_ruins_iron": {
+          "color": "#34383d",
+          "preset": "stone"
+        },
+        "the_ruins_bone": {
+          "color": "#c8b99a",
+          "preset": "stone"
+        },
+        "fuwage_stone": {
+          "color": "#b7aea0",
+          "preset": "stone"
+        },
+        "fuwage_dark_stone": {
+          "color": "#343a43",
+          "preset": "stone"
+        },
+        "fuwage_timber": {
+          "color": "#6a4932",
+          "preset": "wood"
+        },
+        "fuwage_tile": {
+          "color": "#6f3034",
+          "preset": "stone"
+        },
+        "fuwage_banner": {
+          "color": "#e8ddd0",
+          "preset": "snow"
+        },
+        "gravel": {
+          "color": "#766f61",
+          "preset": "stone"
+        },
+        "dirt": {
+          "color": "#654d36",
+          "preset": "earth"
+        },
+        "rich_soil": {
+          "color": "#493a2d",
+          "preset": "earth"
+        },
+        "clay": {
+          "color": "#76514b",
+          "preset": "earth"
+        },
+        "grass": {
+          "color": "#668047",
+          "preset": "grass"
+        },
+        "meadow": {
+          "color": "#89984e",
+          "preset": "grass"
+        },
+        "moss": {
+          "color": "#456a4b",
+          "preset": "grass"
+        },
+        "sand": {
+          "color": "#b9a77e",
+          "preset": "sand"
+        },
+        "wet_sand": {
+          "color": "#9d896b",
+          "preset": "sand"
+        },
+        "red_sand": {
+          "color": "#9b6248",
+          "preset": "sand"
+        },
+        "water": {
+          "color": "#2e609e",
+          "preset": "water"
+        },
+        "snow": {
+          "color": "#f4f6f3",
+          "preset": "snow"
+        },
+        "grassland_wood": {
+          "color": "#76543a",
+          "preset": "wood"
+        },
+        "grassland_foliage": {
+          "color": "#64843e",
+          "preset": "foliage"
+        },
+        "temperate_wood": {
+          "color": "#624936",
+          "preset": "wood"
+        },
+        "temperate_foliage": {
+          "color": "#416f49",
+          "preset": "foliage"
+        },
+        "tropical_wood": {
+          "color": "#5c3c2b",
+          "preset": "wood"
+        },
+        "tropical_foliage": {
+          "color": "#317149",
+          "preset": "foliage"
+        },
+        "taiga_wood": {
+          "color": "#554536",
+          "preset": "wood"
+        },
+        "taiga_foliage": {
+          "color": "#315346",
+          "preset": "foliage"
+        },
+        "desert_wood": {
+          "color": "#77533b",
+          "preset": "wood"
+        },
+        "desert_foliage": {
+          "color": "#72814b",
+          "preset": "foliage"
+        }
+      },
+      "liquid": "water",
+      "ocean": {
+        "biome": "ocean",
+        "ground_max": 0.27
+      },
+      "biomes": [
+        {
+          "name": "plains",
+          "structure_packs": ["nauvis_plains_trees", "grassland_rocks", "nauvis_plains_landmarks"],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 34.12791948920247,
+              "land": {
+                "surface": "wet_sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.16,
+              "y": 52
+            },
+            {
+              "x": 0.22,
+              "y": 57
+            },
+            {
+              "x": 0.27,
+              "y": 59.65,
+              "variance": 0.015,
+              "land": {
+                "surface": "sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.32,
+              "y": 62,
+              "land": {
+                "surface": "meadow",
+                "subsurface": "dirt",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.42,
+              "y": 66,
+              "variance": 0.02,
+              "land": {
+                "surface": "meadow",
+                "subsurface": "dirt",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.5,
+              "y": 70
+            },
+            {
+              "x": 0.52,
+              "y": 72
+            },
+            {
+              "x": 0.56,
+              "y": 84
+            },
+            {
+              "x": 0.68,
+              "y": 73
+            },
+            {
+              "x": 0.79,
+              "y": 92
+            },
+            {
+              "x": 0.89,
+              "y": 80
+            },
+            {
+              "x": 1,
+              "y": 110
+            }
+          ]
+        },
+        {
+          "name": "forest",
+          "structure_packs": ["temperate_trees", "temperate_rocks", "temperate_ruins", "nauvis_forest_landmarks"],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 42,
+              "land": {
+                "surface": "wet_sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.16,
+              "y": 52
+            },
+            {
+              "x": 0.22,
+              "y": 57
+            },
+            {
+              "x": 0.27,
+              "y": 59.65,
+              "variance": 0.015,
+              "land": {
+                "surface": "sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.32,
+              "y": 62,
+              "land": {
+                "surface": "grass",
+                "subsurface": "rich_soil",
+                "filler": "stone"
+              }
+            },
+            {
+              "x": 0.42,
+              "y": 66,
+              "variance": 0.02,
+              "land": {
+                "surface": "grass",
+                "subsurface": "rich_soil",
+                "filler": "stone"
+              }
+            },
+            {
+              "x": 0.5,
+              "y": 70
+            },
+            {
+              "x": 0.52,
+              "y": 72
+            },
+            {
+              "x": 0.56,
+              "y": 76
+            },
+            {
+              "x": 0.68,
+              "y": 108
+            },
+            {
+              "x": 0.72,
+              "y": 116,
+              "land": {
+                "surface": "moss",
+                "subsurface": "rich_soil",
+                "filler": "stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.82,
+              "y": 138
+            },
+            {
+              "x": 0.91,
+              "y": 112
+            },
+            {
+              "x": 1,
+              "y": 172
+            }
+          ]
+        },
+        {
+          "name": "rainforest",
+          "structure_packs": ["tropical_trees", "nauvis_rainforest_rocks", "nauvis_rainforest_landmarks"],
+          "ravines": true,
+          "landscape": [
+            {
+              "x": 0,
+              "y": 40,
+              "land": {
+                "surface": "wet_sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.16,
+              "y": 52
+            },
+            {
+              "x": 0.22,
+              "y": 57
+            },
+            {
+              "x": 0.27,
+              "y": 59.65,
+              "variance": 0.015,
+              "land": {
+                "surface": "sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.32,
+              "y": 62,
+              "land": {
+                "surface": "moss",
+                "subsurface": "rich_soil",
+                "filler": "stone"
+              }
+            },
+            {
+              "x": 0.42,
+              "y": 66,
+              "variance": 0.02,
+              "land": {
+                "surface": "moss",
+                "subsurface": "rich_soil",
+                "filler": "stone"
+              }
+            },
+            {
+              "x": 0.5,
+              "y": 70
+            },
+            {
+              "x": 0.52,
+              "y": 72
+            },
+            {
+              "x": 0.56,
+              "y": 78
+            },
+            {
+              "x": 0.67,
+              "y": 126
+            },
+            {
+              "x": 0.76,
+              "y": 104
+            },
+            {
+              "x": 0.86,
+              "y": 166
+            },
+            {
+              "x": 0.94,
+              "y": 198
+            },
+            {
+              "x": 1,
+              "y": 174
+            }
+          ]
+        },
+        {
+          "name": "highlands",
+          "structure_packs": ["nauvis_highland_trees", "taiga_rocks", "nauvis_highland_landmarks"],
+          "mountain_passes": true,
+          "landscape": [
+            {
+              "x": 0,
+              "y": 48,
+              "land": {
+                "surface": "wet_sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.16,
+              "y": 52
+            },
+            {
+              "x": 0.22,
+              "y": 57
+            },
+            {
+              "x": 0.27,
+              "y": 59.65,
+              "variance": 0.015,
+              "land": {
+                "surface": "sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.32,
+              "y": 62,
+              "land": {
+                "surface": "meadow",
+                "subsurface": "dirt",
+                "filler": "stone"
+              }
+            },
+            {
+              "x": 0.42,
+              "y": 66,
+              "variance": 0.02,
+              "land": {
+                "surface": "meadow",
+                "subsurface": "dirt",
+                "filler": "stone"
+              }
+            },
+            {
+              "x": 0.5,
+              "y": 70
+            },
+            {
+              "x": 0.52,
+              "y": 72
+            },
+            {
+              "x": 0.5214340604108515,
+              "y": 105.26790788202248
+            },
+            {
+              "x": 0.5980766954526855,
+              "y": 150.1943326510459,
+              "land": {
+                "surface": "stone",
+                "subsurface": "gravel",
+                "filler": "deep_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.6081058609428124,
+              "y": 167.69115448332587
+            },
+            {
+              "x": 0.7090646436539796,
+              "y": 184.8931460310389
+            },
+            {
+              "x": 0.7401633111305664,
+              "y": 256.676260906601
+            },
+            {
+              "x": 0.8283347788659283,
+              "y": 242.98817379388169,
+              "land": {
+                "surface": "snow",
+                "subsurface": "stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.01
+            },
+            {
+              "x": 0.8773043461664862,
+              "y": 289.4177944406824
+            },
+            {
+              "x": 0.9393846354961737,
+              "y": 285.6734592539967
+            },
+            {
+              "x": 1,
+              "y": 383
+            }
+          ]
+        },
+        {
+          "name": "desert",
+          "structure_packs": ["nauvis_desert_scrub", "desert_rocks", "desert_ruins", "nauvis_desert_landmarks"],
+          "ravines": true,
+          "landscape": [
+            {
+              "x": 0,
+              "y": 30.71460204533027,
+              "land": {
+                "surface": "wet_sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.16,
+              "y": 52
+            },
+            {
+              "x": 0.22,
+              "y": 57
+            },
+            {
+              "x": 0.27,
+              "y": 59.65,
+              "variance": 0.015,
+              "land": {
+                "surface": "sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.32,
+              "y": 62,
+              "land": {
+                "surface": "red_sand",
+                "subsurface": "clay",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.42,
+              "y": 66,
+              "variance": 0.02,
+              "land": {
+                "surface": "red_sand",
+                "subsurface": "clay",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.5,
+              "y": 70
+            },
+            {
+              "x": 0.52,
+              "y": 72
+            },
+            {
+              "x": 0.65,
+              "y": 76,
+              "land": {
+                "surface": "red_sand",
+                "subsurface": "clay",
+                "filler": "limestone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.75,
+              "y": 102
+            },
+            {
+              "x": 0.84,
+              "y": 128
+            },
+            {
+              "x": 0.92,
+              "y": 162
+            },
+            {
+              "x": 1,
+              "y": 178
+            }
+          ]
+        },
+        {
+          "name": "ocean",
+          "structure_packs": [],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 35,
+              "land": {
+                "surface": "wet_sand",
+                "subsurface": "sand",
+                "filler": "limestone"
+              }
+            },
+            {
+              "x": 0.12,
+              "y": 45
+            },
+            {
+              "x": 0.22,
+              "y": 56
+            },
+            {
+              "x": 0.27,
+              "y": 59
+            },
+            {
+              "x": 1,
+              "y": 59
+            }
+          ]
+        }
+      ],
+      "biome_slots": {
+        "low_low": "highlands",
+        "low_mid": "highlands",
+        "low_high": "rainforest",
+        "mid_low": "plains",
+        "mid_mid": "plains",
+        "mid_high": "forest",
+        "high_low": "desert",
+        "high_mid": "forest",
+        "high_high": "rainforest"
+      }
+    },
+    "mobs": [
+      {
+        "mob_type": "ant_red",
+        "weight_bp": 1000,
+        "biomes": ["forest", "rainforest"]
+      },
+      {
+        "mob_type": "ant_white",
+        "weight_bp": 1000,
+        "biomes": ["highlands"]
+      },
+      {
+        "mob_type": "aragne__fire",
+        "weight_bp": 1000,
+        "biomes": ["desert"],
+        "cities": ["the_ruins"]
+      },
+      {
+        "mob_type": "aragne__water",
+        "weight_bp": 1000,
+        "biomes": ["rainforest"],
+        "cities": ["the_ruins"]
+      },
+      {
+        "mob_type": "aragne__air",
+        "weight_bp": 1000,
+        "biomes": ["plains", "highlands"],
+        "cities": ["the_ruins"]
+      },
+      {
+        "mob_type": "aragne__earth",
+        "weight_bp": 1000,
+        "biomes": ["plains", "forest"],
+        "cities": ["the_ruins"]
+      },
+      {
+        "mob_type": "crab",
+        "weight_bp": 1000,
+        "biomes": ["desert"]
+      },
+      {
+        "mob_type": "cro_wani__green",
+        "weight_bp": 1000,
+        "biomes": ["rainforest", "desert"]
+      },
+      {
+        "mob_type": "cro_wani__white",
+        "weight_bp": 1000,
+        "biomes": ["highlands"]
+      },
+      {
+        "mob_type": "fuwa__white",
+        "weight_bp": 1000,
+        "biomes": ["plains", "highlands"],
+        "cities": ["fuwage"]
+      },
+      {
+        "mob_type": "fuwa__black",
+        "weight_bp": 1000,
+        "biomes": ["forest", "rainforest"],
+        "cities": ["fuwage"]
+      },
+      {
+        "mob_type": "wild_boar",
+        "weight_bp": 1000,
+        "biomes": ["plains", "forest"]
+      },
+      {
+        "mob_type": "misui__fire",
+        "weight_bp": 1000,
+        "biomes": ["desert"]
+      },
+      {
+        "mob_type": "misui__earth",
+        "weight_bp": 1000,
+        "biomes": ["plains", "forest"]
+      },
+      {
+        "mob_type": "misui__wind",
+        "weight_bp": 1000,
+        "biomes": ["plains", "forest", "highlands"]
+      },
+      {
+        "mob_type": "misui__water",
+        "weight_bp": 1000,
+        "biomes": ["rainforest"]
+      },
+      {
+        "mob_type": "misui__vitality",
+        "weight_bp": 1000,
+        "biomes": ["forest"]
+      },
+      {
+        "mob_type": "moka",
+        "weight_bp": 1000,
+        "biomes": ["plains", "forest", "rainforest", "highlands", "desert"]
+      },
+      {
+        "mob_type": "moyumi",
+        "weight_bp": 1000,
+        "biomes": ["highlands", "desert"]
+      },
+      {
+        "mob_type": "nook",
+        "weight_bp": 1000,
+        "biomes": ["forest"],
+        "cities": ["thebes"]
+      },
+      {
+        "mob_type": "lorito__earth",
+        "weight_bp": 1000,
+        "biomes": [],
+        "cities": ["thebes"]
+      },
+      {
+        "mob_type": "lorito__fire",
+        "weight_bp": 1000,
+        "biomes": [],
+        "cities": ["thebes"]
+      },
+      {
+        "mob_type": "lorito__water",
+        "weight_bp": 1000,
+        "biomes": [],
+        "cities": ["thebes"]
+      },
+      {
+        "mob_type": "lorito__air",
+        "weight_bp": 1000,
+        "biomes": [],
+        "cities": ["thebes"]
+      },
+      {
+        "mob_type": "bramble",
+        "weight_bp": 1000,
+        "biomes": ["forest"],
+        "cities": ["thebes"]
+      },
+      {
+        "mob_type": "tinker",
+        "weight_bp": 1000,
+        "biomes": ["forest"],
+        "cities": ["thebes"]
+      }
+    ],
+    "resources": [
+      {
+        "item_type": "wheat",
+        "biomes": ["plains"],
+        "cities": ["thebes"]
+      },
+      {
+        "item_type": "green_mushroom",
+        "biomes": ["forest", "rainforest"],
+        "cities": ["thebes"]
+      },
+      {
+        "item_type": "quartz",
+        "biomes": ["highlands"],
+        "cities": ["thebes"]
+      },
+      {
+        "item_type": "wheat_barley",
+        "biomes": ["plains"]
+      },
+      {
+        "item_type": "red_orchid",
+        "biomes": ["rainforest"]
+      },
+      {
+        "item_type": "amber",
+        "biomes": ["highlands"],
+        "cities": ["the_ruins"]
+      },
+      {
+        "item_type": "wheat_malt",
+        "biomes": ["plains"],
+        "cities": ["fuwage"]
+      },
+      {
+        "item_type": "ivory_shrooms",
+        "biomes": ["forest", "rainforest"],
+        "cities": ["the_ruins"]
+      },
+      {
+        "item_type": "jade",
+        "biomes": ["desert"],
+        "cities": ["fuwage"]
+      }
+    ]
+  },
+  {
+    "world": "yakutia",
+    "entry_level": 20,
+    "cities": [],
+    "terrain": {
+      "seed": "ares-yakutia",
+      "sea_level": 60,
+      "materials": {
+        "stone": {
+          "color": "#5b6f7c",
+          "preset": "stone"
+        },
+        "deep_stone": {
+          "color": "#263946",
+          "preset": "stone"
+        },
+        "limestone": {
+          "color": "#958d75",
+          "preset": "stone"
+        },
+        "gravel": {
+          "color": "#71838c",
+          "preset": "stone"
+        },
+        "dirt": {
+          "color": "#654d36",
+          "preset": "earth"
+        },
+        "rich_soil": {
+          "color": "#394c52",
+          "preset": "earth"
+        },
+        "clay": {
+          "color": "#76514b",
+          "preset": "earth"
+        },
+        "grass": {
+          "color": "#668047",
+          "preset": "grass"
+        },
+        "meadow": {
+          "color": "#89984e",
+          "preset": "grass"
+        },
+        "moss": {
+          "color": "#416b70",
+          "preset": "grass"
+        },
+        "sand": {
+          "color": "#b9a77e",
+          "preset": "sand"
+        },
+        "coral_sand": {
+          "color": "#cdbb90",
+          "preset": "sand"
+        },
+        "red_sand": {
+          "color": "#9b6248",
+          "preset": "sand"
+        },
+        "water": {
+          "color": "#2e609e",
+          "preset": "water"
+        },
+        "snow": {
+          "color": "#e8f4f5",
+          "preset": "snow"
+        },
+        "ice": {
+          "color": "#72c4df",
+          "preset": "ice"
+        },
+        "wet_sand": {
+          "color": "#9d896b",
+          "preset": "sand"
+        },
+        "golden_sand": {
+          "color": "#d8b570",
+          "preset": "sand"
+        },
+        "blackstone": {
+          "color": "#373737",
+          "preset": "stone"
+        },
+        "scorched_stone": {
+          "color": "#4f4f4f",
+          "preset": "stone"
+        },
+        "taiga_wood": {
+          "color": "#3d4650",
+          "preset": "wood"
+        },
+        "taiga_foliage": {
+          "color": "#315965",
+          "preset": "foliage"
+        },
+        "grassland_wood": {
+          "color": "#76543a",
+          "preset": "wood"
+        },
+        "grassland_foliage": {
+          "color": "#64843e",
+          "preset": "foliage"
+        },
+        "temperate_wood": {
+          "color": "#624936",
+          "preset": "wood"
+        },
+        "temperate_foliage": {
+          "color": "#416f49",
+          "preset": "foliage"
+        },
+        "swamp_wood": {
+          "color": "#52616a",
+          "preset": "wood"
+        },
+        "swamp_foliage": {
+          "color": "#395d42",
+          "preset": "foliage"
+        },
+        "desert_wood": {
+          "color": "#77533b",
+          "preset": "wood"
+        },
+        "desert_foliage": {
+          "color": "#72814b",
+          "preset": "foliage"
+        },
+        "tropical_wood": {
+          "color": "#5c3c2b",
+          "preset": "wood"
+        },
+        "tropical_foliage": {
+          "color": "#317149",
+          "preset": "foliage"
+        },
+        "cactus": {
+          "color": "#4c874f",
+          "preset": "foliage"
+        },
+        "coral": {
+          "color": "#c46975",
+          "preset": "stone"
+        },
+        "dark_ice": {
+          "color": "#17384d",
+          "preset": "ice"
+        },
+        "cold_blue_grass": {
+          "color": "#547c8b",
+          "preset": "frozen_grass"
+        },
+        "permafrost": {
+          "color": "#334b58",
+          "preset": "earth"
+        },
+        "frozen_stone": {
+          "color": "#698492",
+          "preset": "stone"
+        }
+      },
+      "liquid": "water",
+      "biomes": [
+        {
+          "name": "taiga",
+          "structure_packs": ["taiga_trees", "taiga_rocks"],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 72,
+              "land": {
+                "surface": "snow",
+                "subsurface": "permafrost",
+                "filler": "frozen_stone"
+              }
+            },
+            {
+              "x": 0.18,
+              "y": 78
+            },
+            {
+              "x": 0.28,
+              "y": 92
+            },
+            {
+              "x": 0.5,
+              "y": 102,
+              "land": {
+                "surface": "cold_blue_grass",
+                "subsurface": "permafrost",
+                "filler": "frozen_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.68,
+              "y": 126,
+              "land": {
+                "surface": "snow",
+                "subsurface": "frozen_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.03
+            },
+            {
+              "x": 0.82,
+              "y": 164
+            },
+            {
+              "x": 1,
+              "y": 140
+            }
+          ]
+        },
+        {
+          "name": "black_ice",
+          "structure_packs": ["glacier_rocks"],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 68,
+              "land": {
+                "surface": "dark_ice",
+                "subsurface": "ice",
+                "filler": "deep_stone"
+              }
+            },
+            {
+              "x": 0.12,
+              "y": 74
+            },
+            {
+              "x": 0.22,
+              "y": 92,
+              "land": {
+                "surface": "snow",
+                "subsurface": "frozen_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.35,
+              "y": 130
+            },
+            {
+              "x": 0.48,
+              "y": 220,
+              "land": {
+                "surface": "dark_ice",
+                "subsurface": "ice",
+                "filler": "deep_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.58,
+              "y": 320
+            },
+            {
+              "x": 0.65,
+              "y": 250
+            },
+            {
+              "x": 0.72,
+              "y": 180,
+              "land": {
+                "surface": "snow",
+                "subsurface": "frozen_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.84,
+              "y": 300
+            },
+            {
+              "x": 1,
+              "y": 240
+            }
+          ]
+        },
+        {
+          "name": "ice_peaks",
+          "structure_packs": ["arctic_rocks"],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 66,
+              "land": {
+                "surface": "dark_ice",
+                "subsurface": "ice",
+                "filler": "deep_stone"
+              }
+            },
+            {
+              "x": 0.16,
+              "y": 68
+            },
+            {
+              "x": 0.24,
+              "y": 74,
+              "land": {
+                "surface": "snow",
+                "subsurface": "frozen_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.03
+            },
+            {
+              "x": 0.48,
+              "y": 82
+            },
+            {
+              "x": 0.62,
+              "y": 105
+            },
+            {
+              "x": 0.72,
+              "y": 150,
+              "land": {
+                "surface": "frozen_stone",
+                "subsurface": "ice",
+                "filler": "deep_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.82,
+              "y": 190
+            },
+            {
+              "x": 0.9,
+              "y": 145,
+              "land": {
+                "surface": "snow",
+                "subsurface": "frozen_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 1,
+              "y": 120
+            }
+          ]
+        },
+        {
+          "name": "blue_steppe",
+          "structure_packs": ["taiga_rocks"],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 68,
+              "land": {
+                "surface": "snow",
+                "subsurface": "permafrost",
+                "filler": "frozen_stone"
+              }
+            },
+            {
+              "x": 0.18,
+              "y": 72,
+              "land": {
+                "surface": "cold_blue_grass",
+                "subsurface": "permafrost",
+                "filler": "frozen_stone"
+              },
+              "variance": 0.03
+            },
+            {
+              "x": 0.35,
+              "y": 84
+            },
+            {
+              "x": 0.55,
+              "y": 94
+            },
+            {
+              "x": 0.72,
+              "y": 118,
+              "land": {
+                "surface": "snow",
+                "subsurface": "frozen_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.03
+            },
+            {
+              "x": 0.84,
+              "y": 150
+            },
+            {
+              "x": 1,
+              "y": 128
+            }
+          ]
+        },
+        {
+          "name": "frostfen",
+          "structure_packs": ["swamp_ruins"],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 62,
+              "land": {
+                "surface": "dark_ice",
+                "subsurface": "clay",
+                "filler": "frozen_stone"
+              }
+            },
+            {
+              "x": 0.18,
+              "y": 64
+            },
+            {
+              "x": 0.26,
+              "y": 68,
+              "land": {
+                "surface": "snow",
+                "subsurface": "permafrost",
+                "filler": "frozen_stone"
+              },
+              "variance": 0.03
+            },
+            {
+              "x": 0.48,
+              "y": 72
+            },
+            {
+              "x": 0.58,
+              "y": 76,
+              "land": {
+                "surface": "cold_blue_grass",
+                "subsurface": "permafrost",
+                "filler": "frozen_stone"
+              },
+              "variance": 0.03
+            },
+            {
+              "x": 0.7,
+              "y": 82,
+              "land": {
+                "surface": "snow",
+                "subsurface": "permafrost",
+                "filler": "frozen_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.78,
+              "y": 88
+            },
+            {
+              "x": 1,
+              "y": 96
+            }
+          ]
+        },
+        {
+          "name": "caldera",
+          "structure_packs": ["scorched_rocks", "scorched_ruins"],
+          "landscape": [
+            {
+              "x": 0,
+              "y": 70,
+              "land": {
+                "surface": "snow",
+                "subsurface": "frozen_stone",
+                "filler": "deep_stone"
+              }
+            },
+            {
+              "x": 0.15,
+              "y": 78
+            },
+            {
+              "x": 0.24,
+              "y": 92,
+              "land": {
+                "surface": "blackstone",
+                "subsurface": "scorched_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.03
+            },
+            {
+              "x": 0.42,
+              "y": 120
+            },
+            {
+              "x": 0.55,
+              "y": 190
+            },
+            {
+              "x": 0.65,
+              "y": 280
+            },
+            {
+              "x": 0.72,
+              "y": 230
+            },
+            {
+              "x": 0.8,
+              "y": 170,
+              "land": {
+                "surface": "red_sand",
+                "subsurface": "scorched_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 0.9,
+              "y": 130
+            },
+            {
+              "x": 0.96,
+              "y": 116,
+              "land": {
+                "surface": "snow",
+                "subsurface": "frozen_stone",
+                "filler": "deep_stone"
+              },
+              "variance": 0.02
+            },
+            {
+              "x": 1,
+              "y": 110
+            }
+          ]
+        }
+      ],
+      "biome_slots": {
+        "low_low": "black_ice",
+        "low_mid": "ice_peaks",
+        "low_high": "frostfen",
+        "mid_low": "blue_steppe",
+        "mid_mid": "taiga",
+        "mid_high": "frostfen",
+        "high_low": "caldera",
+        "high_mid": "blue_steppe",
+        "high_high": "taiga"
+      }
+    },
+    "mobs": [],
+    "resources": [
+      {
+        "item_type": "wheat_burnt",
+        "biomes": ["caldera"]
+      },
+      {
+        "item_type": "aloe_vera",
+        "biomes": ["frostfen", "caldera"]
+      },
+      {
+        "item_type": "moonstone",
+        "biomes": ["black_ice"]
+      },
+      {
+        "item_type": "wheat_tanjirize",
+        "biomes": ["taiga"]
+      },
+      {
+        "item_type": "nightcap",
+        "biomes": ["taiga", "frostfen"]
+      },
+      {
+        "item_type": "bloodstone",
+        "biomes": ["caldera"]
+      },
+      {
+        "item_type": "wheat_suize",
+        "biomes": ["blue_steppe"]
+      },
+      {
+        "item_type": "crimson_truffle",
+        "biomes": ["frostfen"]
+      },
+      {
+        "item_type": "duskite",
+        "biomes": ["ice_peaks"]
+      }
+    ]
+  }
+]

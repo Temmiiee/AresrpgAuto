@@ -1,0 +1,2079 @@
+title: WebGPU is unavailable
+body: The full world needs WebGPU. A lightweight grid is running instead.
+fatal: This browser cannot create either a WebGPU or WebGL graphics context.
+world_unavailable_title: World unavailable
+world_unavailable: This world does not have an authored terrain recipe yet.
+mobile_unavailable_label: Mobile access
+mobile_unavailable_title: AresRPG is not yet available on mobile devices
+mobile_unavailable_body: We are forging a dedicated mobile experience. For now, enter the world from a desktop browser.
+mobile_unavailable_status: Desktop build online
+chrome: 'Chrome or Edge: update the browser, then enable “Use graphics acceleration when available” under Settings → System and relaunch it.'
+other: Enable hardware acceleration, update the browser and graphics driver, then restart the browser.
+continue: Continue with grid
+quality: Quality
+low: Low
+medium: Medium
+high: High
+flat_mode: Flat mode
+identity_connected: Identity connected
+sign_in_to_play: Sign in to play
+loading_universe: Loading the universe
+continue_google: Continue with Google
+connect_wallet: Connect wallet
+no_wallet: No compatible wallet installed
+watch_world: Watch the live world
+sign_in: Sign in to play
+drag_hint: Drag to pan · Scroll to zoom
+navigation: Navigation
+world: World
+characters: Characters
+leaderboard: Leaderboard
+mastery: Mastery
+encyclopedia: Encyclopedia
+marketplace: Marketplace
+airdrop: Airdrop
+kolizeum: Kolizeum
+settings: Settings
+admin: Admin
+online: Online
+account: Account
+join_discord: Join Discord
+sui_universe: Sui Universe
+server_disconnected: Disconnected
+server_connecting: Connecting
+server_reconnecting: Reconnecting
+server_syncing: Syncing
+server_connected: Connected
+server_violation: Disconnected — rule violation. Retrying soon.
+server_replaced: Connected elsewhere
+session_replaced_title: Connected from another place
+session_replaced_body: Your account opened the game somewhere else, so this window was disconnected. Close the other session or reconnect here to play in this window.
+session_replaced_reconnect: Reconnect here
+latency_unit: ms
+indexing_health: Indexing health
+online_players: Online players
+indexing_lag_warning: Actions in the game can lag behind
+indexing_block_title: Synchronizing the world
+indexing_block_body: Chain history is still being indexed. Gameplay unlocks automatically when the server reaches the safe live window.
+indexing_block_progress: Progress
+indexing_block_remaining: Checkpoints remaining
+indexing_block_eta: Estimated time
+indexing_block_estimating: Calculating…
+game_maintenance_title: Maintenance in progress
+game_maintenance_body: The AresRPG smart contract is temporarily paused for maintenance. Please check Discord for updates.
+gas_budget_toast: This action was too heavy for the network fee we reserve. It was not executed and cost you nothing — please report it.
+game_paused_toast: The game is paused for an update. Your action was not executed — try again in a few minutes.
+movement_sync_toast: Your position is still syncing. Keep moving normally, then try again in a moment.
+fight_path_changed_toast: The board changed before your move was submitted. Your turn was restored — try again.
+party_member_unavailable_toast: That character is already in a party.
+fight_turn_already_forced_toast: Someone already forced this turn to end.
+network_testnet: TESTNET
+page_pending_title: This page is being rebuilt
+page_pending_body: Its place remains visible while we restore it cleanly.
+welcome_title: Welcome to AresRPG
+welcome_body: AresRPG is a fully on-chain MMORPG with a player-driven economy. Create your first character, enter the world, and find mobs to fight.
+welcome_need_sui: You need a little SUI to play — your first character costs {{price}} SUI, and you need at least {{fee}} SUI left in your balance for fees. Deposit some SUI to your address below to begin.
+insufficient_sui: You need at least {{fee}} SUI left in your balance for fees.
+create_character: Create character
+create_title: Create your character
+create_lead: Pick a class, choose your colors, and name your character. The world is already live behind you.
+class_label: Class
+view_class_spells: See the spells for that class
+sex_label: Sex
+appearance_label: Appearance · 3 colors
+name_label: Name
+name_placeholder: Enter a name…
+name_invalid: Use 4–19 printable ASCII characters with no spaces.
+male: Male
+female: Female
+cancel: Back
+create_and_play: Create & Play
+character_price: Price
+creating_character: Creating character…
+character_created: Character created
+address_verification_failed: We could not verify this wallet address. Sign in again or contact us on Discord.
+dismiss: Dismiss
+wallet_copy_address: Copy address
+wallet_send: Send
+wallet_add_funds: Add funds
+wallet_gas_spent: Gas spent (24h)
+wallet_disconnect: Disconnect
+wallet_fund_body: Send SUI to this wallet address. Your balance refreshes when you return to the app.
+wallet_send_title: Send SUI
+wallet_recipient: Recipient address
+wallet_amount: Amount (SUI)
+wallet_send_pending: Sending SUI…
+wallet_send_success: SUI sent
+wallet_send_failed: The SUI transfer failed
+wallet_close: Close
+kolizeum_page:
+  title: Kolizeum — War Table
+  tagline: winners split 90% of the pot · 10% platform cut
+  tab_open: Open lobbies
+  tab_mine: My lobbies
+  col_format: Format
+  col_access: Access
+  col_status: Status
+  col_pledge: Pledge
+  col_full_pot: Full pot
+  col_creator: Creator
+  access_public: Public
+  access_friends: Friends
+  status_open: Open
+  status_started: Started
+  status_settling: Fight over
+  empty: No lobbies
+  selected: Selected lobby
+  side_a: Side A
+  side_b: Side B
+  total_pot: Current pot
+  settlement_remaining: Remaining escrow
+  paid_out: Paid out
+  free: Free
+  join_a: Join side A
+  join_b: Join side B
+  join_confirm_title: Confirm Kolizeum wager
+  join_confirm_body: '{{character}} will wager {{amount}} SUI and join {{side}}. This transaction commits the stake.'
+  join_confirm_cta: 'Wager {{amount}} SUI · Join {{side}}'
+  create_title: Create a lobby
+  form_format: Format
+  form_access: Access
+  form_pledge: Pledge per player (SUI)
+  form_max_diff: Max level difference
+  form_character: As character
+  no_character: No idle character available
+  full_pot_summary: Full {{format}} pot = {{pot}} SUI · 90% goes to winners
+  create_cta: Create lobby
+friends_panel:
+  title: Friends
+  observed: Observed nearby
+  unseen: Not currently observed
+  none_observed: No friends observed nearby
+  empty: No friends yet
+  placeholder: Name, SuiNS, or 0x address
+  add: Add friend
+  remove: Remove
+  remove_title: Remove friend
+  remove_body: Remove {{name}} from your friend list?
+  error_no_suins: No SuiNS address matches {{name}}.
+  error_target: Enter a character name, SuiNS name, or complete Sui address.
+  error_self: You cannot add yourself.
+  error_duplicate: This player is already in your friend list.
+  cancel: Cancel
+party_panel:
+  title: Party
+  adventurer: Adventurer
+  invited_by: '{{name}} invited you to join his group'
+  accept: Accept
+  decline: Decline
+  leader: Leader
+  leave: Leave
+  disband: Disband
+  kick: Kick
+  rescind: Cancel invitation
+  invite_owned: Invite own character
+  follow_leader: Follow leader
+  run_to_position: Run to position
+  run_to_started: "You are running toward {{name}}'s last on-chain position. This may not be their current live position."
+  run_to_started_position: You are running toward the linked position.
+  run_to_progress: Running to position
+  run_to_position_wrong_world: The linked position is not in your current world.
+  run_to_wrong_world: That party member is not in your current world.
+  run_to_unavailable: That party member's on-chain position is unavailable.
+trade_panel:
+  close: Close
+  title: Player trade
+  invite_sent: Trade invitation sent
+  invited_by: '{{name}} invited you to trade'
+  request_waiting: Waiting for {{name}} to accept your trade
+  accept_request: Accept
+  decline: Decline
+  cancel_request: Cancel request
+  trades: Trades
+  your_offer: Your offer
+  their_offer: Their offer
+  accepted: Accepted
+  reviewing: Reviewing
+  remove_item: Remove from offer
+  drop_items: Drop items here
+  empty_offer: No items offered
+  offer_item_unavailable: One staged item is no longer available. Review your offer and try again.
+  sui: Offered SUI
+  inventory: Your inventory
+  drag_hint: Drag or double-click to add
+  amount_title: Choose amount
+  amount_for: 'Amount of {{name}}'
+  amount_add: Add to offer
+  amount_cancel: Cancel
+  confirm_changes: Confirm changes
+  discard_changes: Discard changes
+  empty_inventory: No tradable assets
+  accept: Accept offer
+  cancel: Cancel trade
+  accept_notice: Accepting authorizes one settlement transaction. {{count}} incoming assets cost {{amount}} SUI in royalties, plus gas.
+  settle: Complete exchange
+  recover: Recover offer
+  settle_notice: Receive every remaining asset and SUI in one wallet transaction.
+  recover_notice: Recover your complete offer in one wallet transaction.
+  waiting_counterparty: Your side is complete. Waiting for the counterparty.
+  finalizing: Finalizing…
+world_hud:
+  compass_label: Compass
+  zone: ZONE
+  unsearched: UNSEARCHED
+  searched: SEARCHED
+  out_of_bounds: OUT OF BOUNDS
+  mob_group: Mob group ({{size}})
+  resource: Resource
+  cluster_count: +{{extra}} more
+  zone_edge: Zone edge {{dist}}
+  coordinates: Coordinates
+  biome: Biome
+  world_map: World map
+  world_map_zoom_in: Zoom in
+  world_map_zoom_out: Zoom out
+  world_map_extent: '{{blocks}} blocks'
+  menu_group: Invite to group
+  menu_friend: Add friend
+  menu_trade: Trade
+  menu_message: Send a message
+  message_title: 'Message {{name}}'
+  message_placeholder: Write a private message…
+  message_send: Send
+  message_cancel: Cancel
+  mount_prompt: 'Press {{key}} to mount'
+  portal_prompt: 'Press {{key}} to travel to another world'
+  dungeon_portal: Dungeon portal
+  dungeon_city: 'City of {{city}}'
+  dungeon_press_enter: Enter
+  dungeon_entry_body: Use the dungeon key to enter this portal's private staging lobby.
+  dungeon_required_key: Required key
+  dungeon_enter: Enter dungeon
+  dungeon_entering: Opening portal…
+  dungeon_instance: Dungeon expedition
+  dungeon_room: 'Room {{room}}'
+  dungeon_explorers: explorers
+  dungeon_abandon: Abandon run
+  dungeon_confirm_abandon: Confirm abandon
+  dungeon_route: Expedition route
+  dungeon_mysterious_room: Mysterious room
+  dungeon_undiscovered: Undiscovered
+  dungeon_creatures: '{{count}} creatures'
+  dungeon_current_room: Current room enemies
+  dungeon_open_fights: Available fights
+  dungeon_forming_party: Forming party
+  dungeon_in_progress: Fight in progress
+  dungeon_waiting_players: Waiting for fighters
+  dungeon_join: Join fight
+  dungeon_joining: Joining…
+  dungeon_locked: Locked
+  dungeon_no_fights: No fight has started in this room
+  dungeon_public: Public
+  dungeon_group: Group only
+  dungeon_start_fight: Start new fight
+  dungeon_starting: Starting…
+  dungeon_key_required: '{{key}} is required to enter this dungeon.'
+  dungeon_group_refusal: This fight is locked to the opener's group.
+  travel_title: Star gate
+  travel_search: 'Search {{title}}…'
+  travel_entry_level: 'Entry level {{level}}'
+  travel_pending: Opening the gate…
+  travel_success: 'Welcome to {{world}}'
+  travel_empty: No worlds
+  travel_showing: '{{filtered}} / {{total}} results'
+  travel_selected: 'Selected · {{label}}'
+  fight_press_join: 'Press {{key}} to join'
+  fight_press_spectate: 'Press {{key}} to spectate'
+  fight_locked: 'Private fight'
+  fight_join_title: 'Join the fight'
+  fight_spectate_title: 'Spectate fight'
+  fight_side_a: 'Side A'
+  fight_side_b: 'Side B'
+  fight_empty_side: 'No fighter yet'
+  fight_unknown: 'Unknown fighter'
+  fight_join_button: 'Join'
+  fight_spectate_button: 'Spectate'
+  fight_started_ago: 'Started'
+  fight_placement: 'Placement'
+  fight_wallet_hint: 'Connect a wallet to join'
+  fight_close: 'Close'
+  menu_duel: Challenge to a duel
+  duel_invite: '{{name}} challenges you to a duel'
+  duel_challenging: 'Challenging {{name}}…'
+  duel_canceled_afraid: '{{name}} canceled the fight — he got scared.'
+  duel_no_position: No position — the duel was not created.
+  duel_unknown_challenger: a challenger
+  duel_accept: Accept
+  duel_decline: Decline
+  zone_unsearched_title: 'Unexplored zone'
+  zone_press_search: 'Press {{key}} to discover the zone'
+  zone_reroll_title: 'Zone ready to renew'
+  zone_press_reroll: 'Press {{key}} to reroll the zone'
+  zone_searching: 'Scouting the zone…'
+  zone_revealed: 'Zone revealed'
+  zone_coordinates: 'Sector {{zx}} · {{zz}}'
+  zone_mobs_found: '{{count}} mobs found'
+  zone_resources_found: '{{count}} resources found'
+  spawn_group: 'Pack of {{size}}'
+  spawn_unknown_mob: 'Unknown creature'
+  spawn_press_attack: 'Press {{key}} to attack'
+  spawn_engaging: 'Engaging the pack…'
+  spawn_engage_conflict: 'That pack changed before your attack landed. Another player may have engaged it.'
+  spawn_never_arrived: 'The fight executed, but its board never arrived'
+  resource_press_collect: 'Press {{key}} to collect {{name}}'
+  resource_need_level: 'You need {{job}} lvl {{level}} to collect'
+  resource_need_tool: 'You need a {{job}} tool to collect'
+  resource_gathering: 'Gathering…'
+  resource_gathered: 'Resource gathered'
+  resource_gathered_amount: 'Gathered {{quantity}} × {{name}}'
+  resource_gathered_amount_ambushed: 'Gathered {{quantity}} × {{name}} · A protector ambushes you'
+  resource_ambushed: 'A protector ambushes you'
+  resource_resolving_ambush: 'The protector blocks your path…'
+  resource_ambush_title: 'Protector ambush'
+  resource_face_protector: 'Press {{key}} to face it'
+  zone_never_arrived: 'The search went through, but the world never showed it — the read layer may be behind'
+demo_page:
+  title: Render lab
+  world_lab: World lab
+  fight_lab: Fight lab
+  fight_board: Fight boards
+  board_new: New board
+  board_delete: Delete board
+  board_back: All boards
+  board_canvas: Canvas
+  board_output: Final board
+  board_draw_hint: Select a cell type, then click or drag to draw
+  board_cell_type: Cell type
+  board_cell_void: Void
+  board_cell_floor: Floor
+  board_cell_obstacle: Obstacle
+  board_cell_hole: Hole
+  board_cell_start_a: Start A
+  board_cell_start_b: Start B
+  board_loading: Loading board editor…
+  board_saving: Saving…
+  board_unsaved: Unsaved changes
+  board_saved: Saved · autosave on
+  board_read_only: Read-only · use the local development server to edit
+  no_terrain: No terrain recipe
+  time: Time of day
+  live: Live
+  remove_character: Remove model
+  control_character: Control model
+  hat: Hat
+  cloak: Cloak
+  pet: Pet
+  none: None
+  ride_pet: Ride pet
+  dismount_pet: Dismount
+  mob_group: Mob group
+  crowd_load: Character crowd load test
+  crowd_benchmark: Benchmark
+  crowd_loading: Loading character models…
+  crowd_result: Phase
+  mob: Mob
+  amount: Amount
+  spawn_group: Spawn group
+  clear: Clear
+  resources: Resources
+  resources_missing: Resource rendering has not been restored yet. The authored roster remains available in seed data.
+  control_hint: Click canvas · WASD to move · Space to jump · Mouse to look
+  back: Back to app
+marketplace_page:
+  title: Marketplace
+  subtitle: Player listings on Sui
+  disclaimer_kicker: Before you trade
+  disclaimer_title: Trade for progression, not profit
+  disclaimer_body: Items are traded directly between players for SUI.
+  disclaimer_supply: Items are not long-term investments. As more players farm them, supply grows and prices can be diluted.
+  disclaimer_fun: Buy and sell alongside your progression for fun and utility, not with an expectation of profit.
+  disclaimer_wallet: Keep only the SUI you plan to use in AresRPG. Store meaningful savings in a separate self-custody wallet whose recovery keys you control.
+  disclaimer_acknowledge: I understand
+  tab_buy: Buy
+  tab_sell: Sell
+  tab_history: History
+  browse: Browse
+  group_equipment: Equipment
+  group_pets: Pets
+  group_runes: Runes
+  group_consumable: Consumables
+  group_resources: Resources
+  group_characters: Characters
+  level: Level
+  class: Class
+  search: Search items…
+  no_results: No listings here yet
+  select_item: Select an item to view listings
+  listing_count: '{{count}} listings'
+  rolled_stats: Rolled stats
+  characteristics: Characteristics
+  damages: damage
+  range_to: to
+  seller: Seller
+  buy: Buy
+  pay: Pay
+  yours: Yours
+  insufficient: Not enough SUI
+  cancel: Cancel
+  your_listings: Your listings
+  no_listings: You have no active listings
+  withdraw: Delist
+  list_for_sale: List for sale
+  select_to_list: Select an item from your inventory
+  price: Price
+  lot_size: Lot size
+  paid_automatically: Sale proceeds arrive in your kiosk automatically.
+  lot_required: 'This stack has ×{{amount}}. Stackable listings must be ×1, ×10, ×100, or ×1000.'
+  inventory: Inventory
+  characters: Characters
+  items: Items
+  empty_inventory: Nothing is available to list
+  revenue_30d: Last 30 days
+  sales_count: '{{count}} sales'
+  unclaimed: Unclaimed proceeds
+  collect: Collect
+  no_history: No sales history yet
+  item: Item
+  date: Date
+  buyer: Buyer
+  load_more: Load more
+  list_pending: Creating listing…
+  list_success: Listing created
+  delist_pending: Removing listing…
+  delist_success: Listing removed
+  buy_pending: Buying listing…
+  buy_success: Purchase complete
+  sold_toast: Sold {{amount}} {{name}} for {{price}}
+  character_roster_full: A 7th character cannot join your roster — 6 is the cap
+  collect_pending: Collecting marketplace proceeds…
+  collect_success: Marketplace proceeds collected
+mastery_page:
+  subtitle: Daily challenges
+  title: Mastery
+  lead: Complete dungeons every day to get unique rewards.
+  balance: Mastery points
+  daily_ready: Daily quest available
+  daily_syncing: Updating daily quest…
+  daily_title: Choose today's dungeon quest
+  daily_lead: Choose a world. You will be assigned one dungeon to find and complete.
+  unknown_dungeon: Unknown dungeon
+  quest_reward: Earn {{points}} Mastery points
+  quest_objective_before: Find and complete the dungeon
+  quest_objective_after: to claim your Mastery points.
+  completed: Validated
+  in_progress: In progress
+  required_level: Requires level {{level}}
+  dungeon_count: '{{count}} dungeons'
+  starting: Assigning dungeon…
+  start: Start daily quest
+  locked: Locked
+  world_reward: +{{points}}pts
+  shop_title: Mastery shop
+  shop_lead: Spend Mastery points to buy unique loot boxes.
+  shop_empty: No Mastery items are for sale yet
+  ready_to_buy: Ready to buy
+  points_missing: '{{points}} points missing'
+  buying: Buying…
+  buy: Buy · {{cost}} pts
+  quest_started: Daily quest assigned.
+  offer_purchased: Mastery reward purchased.
+
+airdrop_page:
+  title: 'Airdrops'
+  subtitle: 'Claim reserved items for eligible holders'
+  minted: '{{count}} minted'
+  eligible_count: '{{count}} eligible'
+  eligible: 'Eligible'
+  not_eligible: 'Not eligible'
+  claimed: 'Claimed'
+  claim: 'Claim'
+  holder_title: 'Holder wallet'
+  holder_connect_hint: 'Connect the wallet holding the eligible NFT'
+  holder_connect: 'Connect wallet'
+  holder_connecting: 'Connecting…'
+  holder_connected: 'Connected'
+  holder_select: 'Select'
+  holder_close: 'Close wallet selection'
+  holder_wallet_missing: 'No compatible Sui wallet installed'
+  giftcards_title: 'Giftcards awaiting redemption'
+  gift_login: 'Continue with Google to claim this gift into your game wallet'
+  gift_ready: 'Your printed giftcard is ready to claim'
+  gift_claiming: 'Claiming your printed giftcard…'
+  gift_retry: 'Claim giftcard'
+  redeem: 'Redeem'
+  empty: 'No active airdrops'
+  empty_hint: 'Airdrops for holders of partner collections will appear here when they go live.'
+  pending_claim: 'Claiming airdrop…'
+  toast_claimed: 'Airdrop claimed'
+  set:
+    title: 'The set'
+    subtitle: 'Reserved items — showcase only'
+    error: 'The airdrop set could not be loaded'
+    retry: 'Retry'
+    empty: 'The airdrop set is not published yet'
+    no_preview: 'Preview pending'
+    aura: 'Aura'
+    aura_pending: 'Aura pending'
+    awaiting_ruling: 'Awaiting ruling'
+    kind:
+      pet_glb: 'Pet'
+      title_relic: 'Title relic'
+      outfit: 'Outfit'
+settings_page:
+  title: 'Settings'
+  subtitle: 'Your AresRPG preferences'
+  master_volume_label: General volume
+  master_volume_hint: Adjust all music and sound effects.
+  music_label: 'Music'
+  music_hint: 'Play world and combat music.'
+  footsteps_label: Footsteps
+  footsteps_hint: Play movement step sounds.
+  auto_switch_fighter_label: Auto-switch fighter
+  auto_switch_fighter_hint: Select an owned character automatically when their fight turn begins.
+  always_craft_from_label: Always craft from
+  always_craft_from_hint: Lock the Jobs tab and every craft to one owned character.
+  always_craft_from_picker: Crafting character
+  always_craft_from_none: Disabled
+  render_distance_label: Render distance
+  render_distance_hint: How far the world loads around you. Higher costs performance.
+tutorial:
+  progress: '{{current}} / {{total}}'
+  skip: Skip tutorial
+  back: Back
+  next: Next
+  finish: Finish
+  fight_enter: Enter the fight
+  reset_title: Tutorials
+  reset_hint: Show each introduction again when you next visit its page.
+  reset_action: Reset
+  world_compass_title: Worlds and shared zones
+  world_compass_body: AresRPG contains multiple worlds unlocked during your progression. Each world is divided into zones containing monsters, resources, and dungeons. Anyone can discover a zone, and that discovery is shared with every player.
+  world_hud_title: Health and quick slots
+  world_hud_body: This HUD shows your health and quick-use item slots. When a fight begins, the same area becomes your spell bar.
+  world_fps_title: Your world controls
+  world_fps_body: World terrain is generated deterministically from published data. Sui stores the world and authoritative X/Z position while terrain derives height locally, so Flat changes only the presentation of that same space. You can also change visual quality and restrict world fights to Party members.
+  world_character_title: Players in the world
+  world_character_body: This is your active character. Right-click another nearby character to open the available player interactions.
+  world_character_tabs_title: Play several characters
+  world_character_tabs_body: You can own up to six characters. Invite your other characters into a Party and enable Party Follow to make them travel with you and automatically join eligible world fights when they arrive.
+  fight_title: Your first on-chain fight
+  fight_body: Fights are turn-based. Choose movement and spells, and your actions are prepared together. End Turn submits the complete turn as one Sui transaction and computes the following monster turns until another player can act. All authoritative fight state is settled on Sui. After victory, a final Sui transaction uses on-chain randomness to roll shared loot and place each reward in its assigned player’s inventory.
+  equipment_gear_title: Equipment
+  equipment_gear_body: Equipped items belong to the selected character. Drag gear onto the doll, review the resulting bonuses, then confirm the changes together.
+  equipment_inventory_title: Shared inventory
+  equipment_inventory_body: Your inventory is shared by all characters on this account. Select another character above to equip those same available items on them.
+  stats_title: Characteristics
+  stats_body: Spend characteristic points to become stronger. Vitality increases health, Wisdom improves XP and resistance to AP/MP loss, Chance improves water damage and loot chance, and Agility improves air damage, critical hits, tackle, and tackle escape.
+  spells_title: Spells
+  spells_body: New spells unlock as your character progresses. Leveling grants spell points that you can spend here to upgrade unlocked spells.
+  jobs_title: Jobs
+  jobs_body: Track gathering and crafting progression, inspect recipes, and craft available items here. With several characters, Settings can lock this page to one dedicated crafter.
+  runeforge_title: Runeforge
+  runeforge_body: At job level 70, the matching crafting profession can improve equipment with runes. Obtain runes by crushing items, then apply them here.
+admin_page:
+  kicker: Publisher
+  title: Publish game content
+  body: Inspect deterministic seed addresses, submit one simulated batch at a time, then seal content forever.
+  objects: Published objects
+  publisher: Publisher object ID
+  inspect: Inspect seed plan
+  inspecting: Inspecting…
+  plan: Seed plan
+  targets: deterministic targets
+  not_inspected: Add the published object IDs, then inspect the plan.
+  execute: Execute
+  executing: Executing…
+  seal_title: Permanent seal
+  seal_body: Sealing removes every future content-writing door. This cannot be undone by an upgrade or admin capability.
+  arm_seal: Arm permanent seal
+  seal_forever: Seal content forever
+  sealed: Content is sealed
+  admin_wallet: Admin wallet
+  admin_wallet_body: Separate signer for publishing and marketplace withdrawals.
+  connect_admin_wallet: Connect
+  choose_admin_wallet: Choose wallet
+  choose_admin_address: Choose address
+  cancel_wallet_selection: Cancel
+  wallet_account: Account
+  select_wallet: Select
+  connecting: Connecting…
+  loading_wallets: Loading wallets…
+  no_admin_wallet: No compatible browser wallet installed.
+  royalties: royalties
+  cap_owned: cap owned
+  cap_missing: cap missing
+  reading_royalties: Reading policies…
+  reading: Reading…
+  refresh_revenue: Refresh revenue
+  arm_claim: Arm claim
+  claiming: Claiming…
+  confirm_claim: Confirm claim
+  disconnect_admin_wallet: Disconnect
+  claim_digest: Claim transaction
+  range_24h: 24 hours
+  range_7d: 7 days
+  range_30d: 30 days
+  range_90d: 90 days
+  range_1y: 1 year
+  overview_title: Overview
+  overview_body: Player activity and revenue, without the control-room noise.
+  overview_unavailable: Overview unavailable
+  loading_overview: Loading overview…
+  all_systems_current: All systems current
+  checkpoint: checkpoint
+  refresh: Refresh
+  retry: Retry
+  active_players: Active players
+  active_players_bucket: Active players per bucket
+  daily_active: Daily active players
+  active_interval: Active per interval
+  active_30d: 30-day active players
+  active_last_30d: active in the last 30 days
+  player_activity: Player activity
+  population: Population
+  player_activity_body: Daily activity and rolling 30-day reach
+  stickiness: DAU / 30D
+  online_players: Online players
+  online_players_body: Peak authenticated connections per bucket
+  online_now: Players online
+  peak: Peak
+  revenue: Revenue
+  revenue_over_time: Revenue over time
+  revenue_over_time_body: All protocol revenue by source
+  item_royalties: Item royalties
+  character_royalties: Character royalties
+  character_creation_revenue: Character creation
+  kolizeum_revenue: Kolizeum fees
+  game_transactions: Game transactions
+  game_gas_fees: Game gas fees
+  all_time: All time
+  game_transactions_over_time: Transactions over time
+  game_transactions_body: Successful AresRPG transactions, counted once per PTB
+  today: Today
+  selected_period: Selected period
+  lifetime: lifetime
+  average_order: average order
+  chart_revenue: Revenue
+  chart_players: Players
+  chart_online: Online
+  bucket_15m: 15-minute buckets
+  bucket_hour: Hourly buckets
+  bucket_day: Daily buckets
+  bucket_week: Weekly buckets
+  bucket_month: Monthly buckets
+  unique_addresses: Unique addresses
+  unique_addresses_body: Addresses with successful AresRPG module calls
+  unique_addresses_over_time: Unique addresses over time
+  successful_game_calls: Successful game-module callers
+  total_characters: Total characters
+  current_characters: Current on-chain characters
+  total_characters_body: Current on-chain Character objects
+  characters_over_time: Characters over time
+  revenue_30d: 30-day revenue
+  revenue_mtd: Month-to-date revenue
+  last_30_days: Last 30 days
+  calendar_month_to_date: Calendar month to date
+  buyer: Buyer
+  item: Item
+  quantity: Quantity
+  unit_price: Unit price
+  total: Total
+  when: When
+  transaction: Transaction
+  treasury: Treasury
+  treasury_body: Current balances, separate from earned revenue
+  available_balance: Available balance
+  claim: Claim
+  close: Close
+  loading: Loading…
+  load_more: Load more
+  transactions: transactions
+simulator_page:
+  title: Fight simulator
+  local_only: Local deterministic setup
+  board_seed: Seed {seed}
+  reroll: Reroll board
+  back_to_setup: Back to setup
+  characters: Characters
+  create_character: Create
+  no_characters: Create a character, then place it on a blue cell
+  edit_character: Edit character
+  new_character: New character
+  appearance: Appearance
+  create: Create
+  delete: Delete
+  level_label: Level
+  stats: Stats
+  spells: Spells
+  points_left: '{left} / {total} pts'
+  equipment_short: Equipment
+  spell_level: Level of {name}
+  spell_level_option: 'Lv {level} · {cost} pts'
+  class_shugo_title: Guardian
+  class_tomoda_title: Beastmaster
+  class_rojin_title: Prospector
+  class_yajin_title: Assassin
+  class_tokei_title: Chronomancer
+  class_asobi_title: Gambler
+  class_iyashi_title: Healer
+  class_senshi_title: Warrior
+  class_yogan_title: Archer
+  class_mori_title: Druid
+  class_ikari_title: Berserker
+  class_shusen_title: Brawler
+  delete_character: Delete character
+  assigned_cell: Assigned · Cell {cell}
+  pick_character: Choose character
+  pick_mob: Choose mob
+  character_editor: Local character
+  character_editor_hint: Identity, appearance, level, stats, and unlocked spells
+  character_level: Character level
+  character_stats: Allocated stats
+  character_spells: Spell levels
+  stat_points: '{points} stat points remaining'
+  spell_points: '{points} spell points remaining'
+  spell_unlock: Unlocks {level}
+  reset: Reset
+  delete_confirm: Confirm delete
+  class_change_hint: Changing class resets natural stats and invested spell levels
+  spells_unavailable: No spells are unlocked at this level
+  save_character: Save character
+  equipment: Equipment and relics
+  max_roll: Maximum roll
+  remove_mob: Remove mob
+  stat_vitality: Vitality
+  stat_wisdom: Wisdom
+  stat_strength: Strength
+  stat_intelligence: Intelligence
+  stat_chance: Chance
+  stat_agility: Agility
+  stat_range: Range
+  stat_movement: Movement
+  stat_action: Action
+  stat_critical: Critical chance
+  stat_raw_damage: Raw damage
+  stat_resistance: Resistance
+  stat_power: Power
+  stat_earth_resistance: Earth resistance
+  stat_fire_resistance: Fire resistance
+  stat_water_resistance: Water resistance
+  stat_air_resistance: Air resistance
+  level: Level {level}
+  level_range: Levels {min}–{max}
+  place: Place fighter
+  start_fight: Start fight
+  fight_board: Fight board
+  board_hint: Left click a starting cell · Right drag to pan · Wheel to zoom
+  fight_active: Fight started · {events} canonical events
+  picker_search: Search {title}…
+  picker_all: All
+  picker_no_results: No results
+  picker_results: '{filtered} / {total} results'
+  picker_selected: Selected · {label}
+  picker_new: New
+  blob_debug: Board blobs
+  blob_color: Color
+  blob_range: Range
+  blob_per_cell: Per cell
+  blob_single: Single shape
+  blob_click: Place on cell click
+fight_hud:
+  board_label: Fight board
+  turn_order: Turn order
+  turn_order_collapse: Collapse turn order
+  turn_order_expand: Expand turn order
+  placement_title: Prepare for battle
+  placement_hint: Place your fighters and mark them ready
+  placement_gas_title: Move fighter again?
+  placement_gas_body: Each time you switch cells, a transaction executes and you pay a gas fee. Avoid spamming placements.
+  placement_gas_hide: Do not show again
+  placement_gas_confirm: Move anyway
+  placement_ready: Ready
+  placement_ready_all: Ready all
+  placement_ready_all_progress: Ready all · {completed}/{total}
+  placement_ready_all_complete: All ready · {completed}/{total}
+  placement_ready_all_failed: Ready interrupted · {completed}/{total}
+  placement_waiting: Waiting for the others…
+  placement_starting: Starting fight…
+  placement_force_prompt: A player is away — force the fight to start?
+  placement_force_button: Force start
+  placement_no_opponent: Nobody accepted the challenge
+  crank_prompt: The current player is not ending their turn.
+  crank_button: Force end turn
+  end_turn: End turn
+  end_turn_queued: End turn queued
+  reset_turn: Reset
+  weapon_attack: Weapon attack
+  bare_hands: Bare hands
+  log_fight_started: The fight begins
+  log_cast: '{caster} casts {spell}'
+  log_critical_cast: 'Critical! {caster} casts {spell}'
+  log_heal: '{source} heals {target} for {amount} HP'
+  log_ap_change: '{target}: {delta} AP'
+  log_mp_change: '{target}: {delta} MP'
+  log_lost: '{target} lost {amount} HP'
+  log_lost_reduced: '{target} lost {amount} HP (reduced {reduced})'
+  log_absorbed: '{target} absorbed {reduced} damage'
+  log_returned: '{target} returned the spell'
+  log_stat_change: '{target}: {delta} {stat} ({turns} {turns_word})'
+  unit_ap: AP
+  unit_mp: MP
+  log_points_loss: '{target} loses {amount} {unit}'
+  log_points_steal: '{source} steals {amount} {unit} from {target}'
+  log_points_partial: '{target} dodges {dodged} {unit} and loses {amount}'
+  log_points_dodge: '{target} dodges the {attempted} {unit} loss'
+  log_trap_placed: '{owner} places a trap'
+  log_glyph_placed: '{owner} places a glyph'
+  log_death: '{target} dies'
+  log_forfeit: '{target} gave up'
+  log_draw: The fight ends in a draw
+  log_team_wins: Team {team} wins
+  forfeit: Forfeit
+  forfeit_title: Forfeit {name}?
+  forfeit_body: '{name} will lose all remaining HP and leave this fight.'
+  confirm_forfeit: Confirm forfeit
+  unit_turns: turns
+  chat_title: Chat
+  chat_tab_general: General
+  chat_tab_party: Party
+  chat_tab_private: Private
+  chat_tab_combat: Combat
+  chat_placeholder: Say something…
+  chat_fetching_item: Fetching stats on chain…
+  chat_item_unavailable: This item is unavailable on chain.
+  chat_you: You
+  chat_line: '{name}: {message}'
+  chat_party_line: '(party) {name}: {message}'
+  chat_whisper_to: '(to {name}) {message}'
+  result_title: Fight result
+  result_duration: Duration
+  result_gas_spent: Gas spent
+  result_wager_won: SUI won
+  result_wager_lost: SUI lost
+  result_wager_even: Wager result
+  result_party: Your party
+  result_enemies: Enemies
+  result_victory: Victory
+  result_defeat: Defeat
+  result_you: You
+  result_fallen: Fallen
+  result_survived: Survived
+  result_collecting: Collecting loot…
+  result_collecting_progress: Collecting character loot · {completed}/{total}
+  result_collecting_complete: All character loot collected · {completed}/{total}
+  result_collecting_failed: Loot collection interrupted · {completed}/{total}
+  result_continue: Continue
+  result_close: Close
+  fight_finalize_pending: Fight cleanup is ready.
+  fight_finalize_button: Finalize
+  result_retry: Retry
+  result_version_changed: Some game objects changed while your fight rewards were being collected. Nothing was lost. Retry to refresh them and collect your rewards.
+  level_up_title: Level up
+  level_up_reached: Level reached
+  level_up_stat_points: Stat points
+  level_up_spell_points: Spell points
+  level_up_new_spell: New spell unlocked
+  level_up_new_worlds: New worlds unlocked
+  level_up_worlds_note: New destinations are now available
+  level_up_allocate: Allocate points
+  level_up_later: Later
+wallet_legacy:
+  sui: SUI
+  how_to_get: How to get SUI
+  your_address: Your Wallet Address
+  send_sui: Send SUI to this address. Click to copy.
+  buy_directly: Buy Directly
+  buy_with_card: Buy SUI with a credit card. Delivered straight to your wallet.
+  buy_on_exchange: Buy on an Exchange
+  withdraw_to_wallet: Buy SUI on an exchange, then withdraw it to your wallet address
+    shown above.
+  faq: FAQ
+  wallet_description: Your personal wallet. Only you can access it. Deposit SUI for
+    network fees and peer marketplace trades.
+  moonpay_desc: Credit card, Apple Pay, bank transfer
+  transak_desc: Credit card, bank transfer, 100+ countries
+  faq_what_is_sui: What is SUI?
+  faq_what_is_sui_answer: SUI is a digital currency, like digital cash. It lives on
+    a fast, secure network called the Sui blockchain. You use small amounts of SUI
+    for network fees and may trade directly with other players in the marketplace.
+  faq_why_sui: Why does AresRPG use SUI?
+  faq_why_sui_answer: SUI is our preferred payment method. Transactions are instant
+    (under 1 second) and cost fractions of a cent. No middleman fees. We may support
+    traditional currencies (USD, EUR, etc.) in the future, but that requires significant
+    legal work and comes with heavy fees and taxes we're not ready to take on yet.
+  faq_legal: Is it legal?
+  faq_legal_answer: Yes. Buying and holding cryptocurrency is legal in most countries.
+    SUI is a legitimate digital asset traded on major regulated exchanges worldwide.
+    AresRPG uses it for network fees and peer marketplace trades.
+  faq_eula: Is it allowed by the game's terms?
+  faq_eula_answer: Yes. As long as cryptocurrency is used solely as a payment method
+    and doesn't involve NFTs or speculative crypto schemes, it's fully compliant.
+    Many major game stores even support crypto payments.
+  faq_access: Who can access my wallet?
+  faq_access_answer: "Only you. Your wallet is created from your Google login using
+    Sui's zkLogin technology. Nobody (not even the AresRPG team) can access your
+    funds or move them. Important: this wallet is meant for AresRPG activity only. Do
+    not store large amounts here. Deposit only what you plan to use."
+  faq_balance: I sent SUI but my balance didn't update?
+  faq_balance_answer: No worries. Our refresh system might be temporarily slow. Double
+    check that you sent SUI to the correct address (copy it from above), and if it
+    still doesn't show up, contact the team on Discord with your transaction ID for
+    further help.
+  add_funds: Add Funds
+  testnet_faucet_title: Testnet SUI
+  testnet_faucet_body: AresRPG is running on Sui Testnet. Testnet SUI is free and has no monetary value. Request tokens from the official Sui faucet.
+  testnet_faucet_action: Open Sui Faucet
+  how_to_pay: How would you like to pay?
+  add_funds_desc: Choose your preferred payment method. SUI is delivered directly
+    to your wallet.
+  method_paypal: PayPal
+  method_paypal_desc: Pay with your PayPal account
+  method_card: Credit / Debit Card
+  method_card_desc: Visa, Mastercard
+  method_apple_pay: Apple Pay
+  method_apple_pay_desc: Pay with Face ID / Touch ID
+  method_google_pay: Google Pay
+  method_google_pay_desc: Pay with your Google account
+  method_bank: Bank Transfer
+  method_bank_desc: SEPA (EU) or ACH (US)
+  method_have_sui: I already have SUI
+  method_have_sui_desc: Send from another wallet or exchange
+  paypal_note: Available in US, UK, and most of Europe via MoonPay
+  card_note: Choose a provider below. All accept Visa and Mastercard
+  bank_note: Lowest fees (~1%). SEPA for Europe, ACH for US.
+  steps_paypal: 1. Click the link below  2. Select PayPal as payment  3. Enter the
+    amount. SUI arrives in your wallet
+  steps_card: Select a provider, enter your card details, and SUI arrives in your
+    wallet.
+  method_swap: From Solana, ETH, and more..
+  method_swap_desc: Bridge assets to Sui with Portal Bridge
+  swap_note: Cross-chain transfers are powered by Portal Bridge.
+  steps_swap: Open Portal Bridge, connect both wallets, choose Sui, and complete the transfer.
+  steps_wallet: Send SUI to your wallet address below. It arrives in seconds.
+  advanced_exchange: 'Advanced: Buy on an Exchange'
+  age_notice: All payment providers require you to be 18 or older.
+  send:
+    button: Send
+    title: Send SUI
+    building_title: Preparing transfer
+    building_body: Building your transaction...
+    confirm_title: Confirm transfer
+    executing_title: Sending
+    executing_body: Broadcasting your transfer to the Sui network.
+    success_title: Transfer complete
+    success_body: You sent {{amount}} to {{recipient}}.
+    failed_title: Transfer failed
+    recipient_label: Recipient
+    recipient_placeholder: Player name or 0x... address
+    address_valid: Valid Sui address
+    address_invalid: Invalid Sui address
+    hint: Enter a player name (4+ chars) or a 0x Sui address
+    player_resolved: 'Player found: {{name}}'
+    player_resolved_address: '{{name}} → {{address}}'
+    player_not_found: No player with that name
+    player_lookup_failed: Couldn't look up that player name. Try again.
+    no_results: No players found
+    amount_label: Amount
+    submit: Continue
+    send_confirm: Send
+    sending_to: Sending to
+    sent: Sent
+    send_more: Send more
+    suins_resolving: Resolving name…
+    suins_resolved: 'Name resolved: {{name}}'
+    err:
+      recipient_not_found: No player named {{name}} was found.
+      recipient_no_wallet: "{{name}} hasn't linked a wallet on the web app yet. Ask
+        them to connect at aresrpg.world first."
+      self_send: You can't send SUI to your own wallet.
+      invalid_address: The address you entered isn't a valid Sui address.
+      insufficient_balance: Not enough SUI in your wallet for this transfer.
+      rate_limited: Too many transfers. Wait a minute and try again.
+      tx_failed: Transaction failed on-chain. No funds were moved.
+      user_rejected: Signature was rejected in your wallet.
+      recipient_required: Please enter a recipient before sending.
+      suins_not_found: No SuiNS name "{{name}}" was found.
+      amount_positive: Enter an amount greater than 0.
+      amount_invalid: That isn't a valid amount.
+    drain_hint: MAX empties your wallet — the network fee comes out of the transfer.
+    drain_warning: This empties your wallet. The network fee is paid from the transfer
+      itself, so your balance will be exactly 0 SUI afterwards.
+    drain_sending: Your entire balance
+    drain_fee_note: taken from the transfer
+    drain_remaining: Left in your wallet
+    success_drain_body: Your wallet is now empty — everything went to {{recipient}}.
+
+wallet_send_shared:
+  cancel: Cancel
+  close: Close
+  retry: Retry
+  copied: Copied
+  gas_estimated: Est. gas
+  signing: Signing...
+  dont_close: Do not close this window
+  add_funds: Add funds
+  total: Total
+  transaction: Transaction
+
+encyclopedia_page:
+  minimum: MIN
+  maximum: MAX
+  terrain_seed: Terrain seed
+  sea_level: Sea level
+  world_role:
+    trash: Common
+    archi: Archimob
+    elite: Elite
+    boss: Boss
+    dungeon_boss: Dungeon Boss
+  gather_job:
+    farmer: Farmer
+    herbalist: Herbalist
+    miner: Miner
+  world_resource_tier: T{{tier}}
+  world_address_copied: Copied!
+  search_items: SEARCH ITEMS...
+  search_mobs: SEARCH MOBS...
+  all_families: ALL FAMILIES
+  elements_filter: ELEMENTS
+  advanced_filters: ADVANCED FILTERS
+  no_entries: No entries found
+  select_item: Select an item to view details
+  select_mob: Select a mob to view details
+  select_class: Select a class to view details
+  loading_details: Loading details...
+  loading_encyclopedia: Loading encyclopedia...
+  items: Items
+  mobs: Mobs
+  pets: Pets
+  classes: Classes
+  gameplay_tab: Gameplay
+  jobs_tab: Jobs
+  search_jobs: SEARCH JOBS...
+  select_job: SELECT A JOB
+  crafts: Crafts
+  gathering_tiers: GATHERING PROGRESSION
+  craftable_items: CRAFTABLE ITEMS
+  tier: Tier
+  required_level: Req. Lv.
+  resource: Resource
+  rare_variant: Rare Variant
+  xp_per_harvest: XP / Harvest
+  job_desc:
+    FARMER: Farmers harvest cereals from fields across the world. Higher tiers unlock rarer crops needed for advanced recipes.
+    HERBALIST: Herbalists gather plants and flowers used in alchemy. Each tier requires a higher job level to collect.
+    MINER: Miners extract ores and minerals from rock deposits. Rare metals become available as your mining level increases.
+    FORGER: 'Forgers craft swords, daggers, and axes.'
+    CARVER: 'Carvers craft bows and spears.'
+    TAILOR: 'Tailors craft hats and cloaks.'
+    JEWELER: 'Jewelers craft rings and amulets.'
+    TANNER: 'Tanners craft boots and belts.'
+    HANDYMAN: 'Handymen craft tools, keys, and intermediates.'
+    ALCHEMIST: 'Alchemists craft potions and intermediates.'
+    BAKER: 'Bakers craft breads and intermediates.'
+  dungeons_tab: DUNGEONS
+  search_dungeons: SEARCH DUNGEONS...
+  select_dungeon: SELECT A DUNGEON
+  dropped_by: DROPPED BY
+  recipe: RECIPE
+  price_history: PRICE HISTORY
+  no_price_data: No price history available
+  no_recipe: No recipe data available
+  ingredient_of: INGREDIENT OF
+  no_ingredient_of: Not used in any recipe
+  no_drops: No known drop sources
+  pet_stats: PET STATS
+  pet_diet: PET DIET
+  food_sources: FOOD SOURCES
+  stat_bonuses_max: STAT BONUSES (AT MAX POWER)
+  characteristics: CHARACTERISTICS
+  damages: damages
+  range_to: to
+  level_short: Lv. {{level}}
+  no_diet: No diet information
+  newborn: Newborn
+  max_power: Max power
+  back_to_list: Back to list
+  showing_mobs: SHOWING {{count}} OF {{total}} MOBS
+  no_mobs_match: NO MOBS MATCH YOUR FILTERS
+  clear_all: CLEAR ALL
+  all_jobs: ALL JOBS
+  sort_name_asc: NAME A-Z
+  level_bracket: LEVEL {{range}}
+  unknown_zone: UNKNOWN
+  showing_count: SHOWING {{count}} OF {{total}}
+  sort_level_asc: LEVEL ↑
+  sort_level_desc: LEVEL ↓
+  sort_name: NAME A-Z
+  sort_newest: NEWEST
+  clear_filters: CLEAR ALL
+  no_results: NO ITEMS MATCH YOUR FILTERS
+  filter_by_category: BY CATEGORY
+  filter_by_resource: BY RESOURCE TYPE
+  filter_by_job: BY CRAFTING JOB
+  filter_by_world: BY WORLD
+  filter_by_mob_family: BY MOB FAMILY
+  filter_biome: BIOME
+  filter_city: CITY
+  group_armor: ARMOR
+  group_weapons: WEAPONS
+  group_accessories: ACCESSORIES
+  group_pets: PETS
+  group_runes: RUNES
+  group_relics: RELICS
+  group_tools: TOOLS
+  group_consumables: CONSUMABLES
+  group_raw_resources: RAW RESOURCES
+  group_gatherable_resources: GATHERABLE RESOURCES
+  group_intermediary_resources: INTERMEDIARY RESOURCES
+  group_pet_food_resources: PET FOODS
+  item_category_pet_food: PET FOOD
+  boss_only: BOSS ONLY
+  view_all: ALL
+  item_type: TYPE
+  view_by_zone: BY ZONE
+  view_by_level: BY LEVEL
+  view_by_family: BY FAMILY
+  unknown_family: Unknown Family
+  stats_filter: STATS
+  filter_life_steal: LIFE STEAL
+  gameplay:
+    game_mechanics: GAME MECHANICS
+    section_combat: COMBAT
+    section_leveling: LEVELING
+    section_stats: STATS
+    section_loot: LOOT & DROPS
+    section_groups: GROUPS
+    section_dungeons: DUNGEONS
+    section_classes: CLASSES
+    section_economy: ECONOMY
+    combat_desc: Combat is turn-based on a grid. On your turn you spend Action Points (AP) to cast spells and Movement Points (MP) to move. Line of sight is a per-spell flag — most spells need it, some don't. You fight mob groups in the world and other players in the Kolizeum. Damage scales with the matching elemental stat and any raw damage bonus.
+    elements: ELEMENTS
+    element_earth: EARTH
+    element_fire: FIRE
+    element_water: WATER
+    element_air: AIR
+    stat_strength: Strength
+    stat_intelligence: Intelligence
+    stat_chance: Chance
+    stat_agility: Agility
+    critical_hits: CRITICAL HITS
+    crit_desc: Each spell or weapon has its own base crit rate, written as a 1 in N chance. Critical reduces N, but the final rate can never exceed 1 in 2 (50%).
+    crit_bonus_desc: On a critical hit the spell applies its dedicated critical effects (stronger damage or extra effects) in place of its normal ones.
+    blocking: SHIELDS
+    blocking_desc: Some spells grant a shield that soaks incoming damage of a matching element until it is used up. There is no stamina or guard stance, shields are the only damage absorption.
+    resistance: RESISTANCE
+    resistance_desc: Elemental resistance is a percentage reduction applied to the final damage, capped at 50% per element. Negative resistance (a weakness) amplifies the damage instead.
+    mob_level_bands: MOB LEVEL BANDS
+    mob_level_bands_desc: Within an authored level range, mob HP, XP, Agility, Wisdom, positive resistance, and scalable spell values rise from 60% to 160%. AP and MP rise from 100% to 130%. Negative resistance reverses that curve, shrinking the weakness magnitude from 160% at minimum level to 60% at maximum level.
+    life_steal: LIFE STEAL
+    life_steal_desc: "Drain spell effects deal damage and heal the caster for half of the health the target actually loses. Only a player's drain heals: a mob casting the same spell deals its damage and heals nothing."
+    life_steal_note: Damage runs through the standard damage formula first, then the caster heals for half of the health the intended target actually lost — a hit redirected onto another fighter, or one the target converts into healing, steals nothing back.
+    chatiment: CHÂTIMENT
+    chatiment_desc: Châtiment converts actual nonlethal HP lost into its characteristic. Each active fighter turn has its own cap; later turns stack as separate five-turn bonuses. Mob damage feeds fully. Player-sourced damage and its cap are halved. Ares does not use erosion.
+    healing: HEALING
+    healing_desc: Heals apply the spell's authored base value, scaled up by a percentage of your Intelligence, plus a flat Heal bonus from gear and buffs. Healing is capped at the target's maximum health.
+    healing_intel_value: +1% healing per Intelligence point
+    heal_bonus: Heal bonus
+    heal_bonus_value: Flat bonus from gear/buffs, added after the Intelligence scaling
+    mobs: Mobs
+    healing_mobs_value: Scale with Intelligence only, no heal bonus
+    leveling_desc: Max level is 200. Fight mobs within your level range for optimal XP.
+    points_per_level: POINTS PER LEVEL
+    stat_points: Stat points
+    stat_points_value: '{{n}} per level'
+    stat_costs_desc: Characteristic costs depend on class and current natural value. See each class page for its complete ladder.
+    spell_points: Spell points
+    spell_points_value: '{{n}} per level'
+    xp_milestones: XP MILESTONES
+    level_10: Level 10
+    level_50: Level 50
+    level_100: Level 100
+    base_stats: BASE STATS
+    stat_vitality: Vitality
+    stat_vitality_desc: +1 max HP per point
+    stat_wisdom: Wisdom
+    stat_wisdom_desc: XP gain bonus
+    stat_strength_desc: Earth damage scaling
+    stat_intelligence_desc: Fire damage, healing scaling
+    stat_chance_desc: Water damage, more loot
+    stat_agility_desc: Air damage scaling
+    derived_formulas: DERIVED FORMULAS
+    max_health: MAX HEALTH
+    loot_desc: Each defeated mob rolls every entry in its loot table once. A successful entry produces a random quantity within its authored range.
+    stat_rolling: STAT ROLLING
+    stat_rolling_desc: Each stat is rolled uniformly within its template range. Every value is equally likely.
+    archimobs: ARCHIMOBS
+    archimobs_desc: Each eligible mob has a 1% chance to be replaced by its named, permanently stronger archimob. Every member rolls independently.
+    max_members: Max members
+    groups_desc: A party is a shared roster of up to {{max}} players with leader election. Being partied does nothing by itself in a fight — everyone, partied or not, must send their own join-fight transaction to enter; there is no passive or proximity inclusion.
+    groups_xp: XP SHARING
+    groups_xp_desc: Defeated mobs form one base-XP pool. Eligible fighters give it the Retro party coefficient, mismatched total player and mob levels reduce it, then each player receives their level's share of the party total. A player below one third of the highest player's level does not increase the coefficient. Wisdom applies last; personal damage does not matter.
+    groups_loot: LOOT SHARING
+    groups_loot_desc: Each defeated mob makes one shared loot roll. Successful drops are assigned round-robin across winning players; adding players never creates extra rolls.
+    dungeons_desc: Travel to the dungeon entrance in its authored city, spend its key, then clear the rooms in order. Each dungeon has one live staging lobby.
+    dungeon_entry: Entry
+    dungeon_entry_value: A matching key at the city entrance
+    dungeon_instance: Instance
+    dungeon_instance_value: Dungeon lobby with public or group fights
+    dungeon_completion: Completion
+    dungeon_completion_value: Clear every room
+    dungeon_reward: Reward
+    dungeon_reward_value: Standard loot distribution
+    classes_desc: 12 classes. Weapons are universal — any class can equip and use any weapon type — but wielding the weapon designed for your class grants +10% damage and crit damage. Each class unlocks its spells at fixed levels as you rank up.
+    table_class: CLASS
+    table_weapon: AFFINITY
+    table_hp: HP
+    role_warrior: Warrior
+    role_assassin: Assassin
+    role_berserker: Berserker
+    role_druid: Druid
+    role_chronomancer: Chronomancer
+    role_guardian: Guardian
+    role_archer: Archer
+    role_prospector: Prospector
+    role_brawler: Brawler
+    role_tomoda: Beastmaster
+    role_gambler: Gambler
+    role_healer: Healer
+    weapon_daggers: Daggers
+    weapon_spear: Spear
+    weapon_bow: Bow
+    weapon_axe: Axe
+    weapon_sword: Sword
+    marketplace: MARKETPLACE
+    marketplace_desc: Gear and characters list on the kiosk at any price you set; buyers pay instantly. Resources trade against SUI in swap pools instead, no listings. Every sale pays a 10% royalty — the marketplace is the only way to sell.
+    section_forgemagie: FORGEMAGIE
+    forgemagie_desc: Forgemagie is the rune crafting system. Crush equipment into runes, then apply those runes to other gear to modify its stats. A high-risk, high-reward endgame system for perfecting equipment.
+    crushing: CRUSHING
+    crushing_desc: "Each stat line on the crushed item rolls independently — higher stat values and heavier stats produce more runes. There is no server: the yield divisor combines a fixed per-item-level curve with the item template's own taux, a shared on-chain inflation coefficient (1%-4000%) that crushing itself pushes down for that template and up for its neighbors."
+    crushing_tiers_desc: Rune tier (Ba/Pa/Ra) is selected probabilistically. Higher stat values bias toward Ra runes.
+    rune_tiers: RUNE TIERS
+    rune_ba: 'Tier 1: lowest weight per rune'
+    rune_pa: 'Tier 2: medium weight per rune'
+    rune_ra: 'Tier 3: highest weight per rune, double XP'
+    rune_weight_desc: Each rune starts from value × unit weight; Retro rounds the result up to a whole weight. Weight is auto-computed.
+    rune_table_stat: STAT
+    rune_table_note: Range, Movement, and Action runes apply once each; Critical Chance up to 10 times. Critical and Critical Outcomes have no rune at all.
+    rune_stat_range: Range
+    rune_stat_movement: Movement
+    rune_stat_action: Action
+    rune_stat_raw_damage: Raw Damage
+    rune_stat_critical_chance: Critical Chance
+    rune_stat_earth_resist: Earth Resistance
+    rune_stat_fire_resist: Fire Resistance
+    rune_stat_water_resist: Water Resistance
+    rune_stat_air_resist: Air Resistance
+    stat_unit_weights: STAT UNIT WEIGHTS
+    stat_unit_weights_desc: Each stat has a unit weight reflecting its combat power. Items with heavy stat lines yield more runes when crushed, consume more item budget, and are harder to over-mage.
+    rune_application: RUNE APPLICATION
+    rune_application_desc: 'Temporarily unlocked at level 1 of the gear category’s corresponding craft job for testing. Apply runes to equipment, one at a time, to modify its stats. Three outcomes are possible:'
+    outcome_critical_success: Critical Success
+    outcome_critical_success_desc: Rune passes, no stats lost
+    outcome_neutral: Neutral Success
+    outcome_neutral_desc: Rune passes, other stats may decrease
+    outcome_critical_failure: Critical Failure
+    outcome_critical_failure_desc: Rune fails, stats lost equal to rune weight
+    success_rate: SUCCESS RATE
+    success_rate_desc: 'Success depends on how close the stat is to its maximum: near 0% is ~99% success, near max is ~50%, and exotic stats sit at ~1% regardless of level. Whether a success lands Critical (no loss) or Neutral (weight paid) shifts the same way, plus a small +0.2% per job level above 1. There is no cap on which item level your job can work on.'
+    puits: SINK (PUITS)
+    puits_desc: A weight counter, shown in the UI, that accumulates when stat losses exceed the rune weight. It absorbs future losses before other stats are affected. It persists on the item and follows it between workbenches and owners.
+    over_maging: OVER-MAGING
+    over_maging_desc: Push stats above their natural maximum. Each stat line is capped at 101 extra weight. Max over-mage depends on the stat's unit weight — a light stat like Vitality (weight 0.25) can be pushed ~404 points over, a heavy one like Wisdom (weight 3) only ~33.
+    forgemagie_tips: TIPS
+    forgemagie_tips_desc: "For exotic/over-mage: strip cheap stats first to build a large sink, then pass the hard stat while buffered, then re-add lost stats (easy since they're far below max). Over-maged and exotic stats are lost first on failure."
+    forgemagie_xp: EXPERIENCE
+    forgemagie_xp_desc: 'XP is awarded only on success (Critical or Neutral). Higher level items and heavier runes give significantly more XP. Ra runes grant double XP compared to Ba and Pa runes. Formula: max(1, runeWeight × (1 + itemLevel / 50) × tierMultiplier) where tierMultiplier is 2 for Ra, 1 otherwise.'
+    action_points: ACTION POINTS (AP)
+    movement_points: MOVEMENT POINTS (MP)
+    critical_stat: CRITICAL
+    wisdom_xp: WISDOM XP BONUS
+    wisdom_xp_desc: Every point of effective Wisdom, including active effects, adds 1% to the XP you earn. At 100 effective Wisdom you gain double XP.
+    chance_loot: CHANCE & LOOT
+    chance_loot_desc: The winning team's average effective Chance, including active effects, multiplies every resolved drop rate. At 600 average team Chance the rate doubles. A drop rate can never exceed 100%.
+    mob_loot_band: MOB LEVEL & DROP RATE
+    mob_loot_band_desc: The authored chance is the midpoint. Across a mob's level band it scales from 80% to 120%, capped at 100%. Fixed-level mobs use the authored chance exactly. Drop quantity does not scale with mob level.
+  unlocks_at_level: UNLOCKS AT LV. {{level}}
+  level: LEVEL
+  aoe_radius: AOE RADIUS
+  effects: EFFECTS
+  life_cost: life cost
+  duration_short: 'DUR: {{duration}}s'
+  coming_soon: COMING SOON
+  health: HEALTH
+  spells_count: SPELLS ({{count}})
+  mob_spells: SPELLS
+  pet_food: FOOD
+  pet_full_fed_note: These are the full-fed stats. The pet grows from 0 to this maximum over {{count}} once-daily feeds.
+  pet_diet_note: Eats one unit of any of these {{count}} foods, once per day.
+  consumable_heal: Restores {{amount}} HP
+  consumable_reset_stats: Reset stat points
+  consumable_reset_spells: Reset spell points
+  consumable_recall: Returns to the world portal
+  consumable_city: 'Travels to the City of {{city}}'
+  consumable_loot_box: Opens a random reward
+  consumable_reward_heading: REWARD
+  consumable_rewards: POSSIBLE REWARDS
+  consumable_reward: '{{item}} · {{chance}}%'
+  rune_effect: Adds {{amount}} {{stat}} on an item
+  rune_obtained_by_crushing: Obtained by crushing items
+  spell_n: SPELL {{n}}
+  range: RANGE
+  range_modifiability: RANGE MODIFIABILITY
+  no_spells_minted: No spells minted on-chain
+  xp_suffix: +{{xp}} XP
+  boss_badge: BOSS
+  archi_badge: ARCHI
+  recommended_short: Rec. {{level}}
+  level_range: Lv. {{min}}-{{max}}
+  up_to_plus: Up to +{{val}}
+  element:
+    fire: Fire
+    water: Water
+    earth: Earth
+    air: Air
+    neutral: Neutral
+  job_category:
+    gathering: Gathering
+    weapon_craft: Weapon Craft
+    equipment_craft: Equipment Craft
+    consumable_craft: Consumable Craft
+  ap_cost: AP COST
+  casts_per_turn: CASTS / TURN
+  casts_per_target: CASTS / TARGET
+  unlimited: UNLIMITED
+  cooldown: COOLDOWN
+  cooldown_none: NONE
+  characteristic_costs: Characteristic costs
+  characteristic_costs_desc: Natural points follow this class ladder. Equipment does not change the cost.
+  characteristic_cost_band: '{{cost}} pts → +{{gain}} · ≤{{cap}}'
+  characteristic_cost_unlimited: '{{cost}} pts → +{{gain}} · unlimited'
+  turns_value: '{{n}} TURNS'
+  targeting: TARGETING
+  effect_zone: AREA OF EFFECT
+  line_of_sight: LINE OF SIGHT
+  los_required: REQUIRED
+  los_not_required: NOT REQUIRED
+  target_cell: TARGET CELL
+  target_cell_empty: MUST BE EMPTY
+  target_cell_any: ANY (EMPTY OR OCCUPIED)
+  cast_line: CAST LINE
+  cast_line_straight: STRAIGHT LINE ONLY
+  cast_line_free: FREE AIM
+  critical: CRITICAL
+  crit_chance: CRIT CHANCE
+  crit_chance_value: 1 IN {{n}}
+  on_crit: ON CRITICAL
+  proc_chance: '{{n}}% CHANCE'
+  aoe_shape:
+    point: SINGLE TARGET
+    circle: CIRCLE {{size}}
+    cross: CROSS {{size}}
+    line: LINE {{size}}
+    tbar: T-BAR {{size}}
+    ring: RING {{size}}
+    allmap: ENTIRE BOARD
+    cone: CONE {{size}}
+  no_items_onchain: No item templates on-chain
+  no_mobs_onchain: No creatures on-chain
+  obtention_crafted: Craftable
+  obtention_dropped_by: Dropped by {{count}} mobs
+  obtention_unknown: Obtention unknown
+  total_supply: Total supply
+  marketcap: Marketcap
+  marketcap_unknown: Unknown
+  worlds_tab: Worlds
+  search_worlds: Search world name…
+  no_worlds: No worlds on-chain
+  select_world: Select a world
+  world_level_unknown: Level range not yet available
+  world_biomes: Biomes
+  world_no_mobs: No mobs known
+  world_cities: Cities
+  world_no_resources: No resources known
+  world_gap_note: Not yet projected by the RPC
+  world_dungeon: Dungeon
+  world_dungeon_room: Room {{n}}
+  world_stat_lean: Stat lean
+  world_appears_in: 'Appears in:'
+  found_in: FOUND IN
+  item_descriptions:
+    abyssal_blood_wheat: ''
+    aloe_crystal_salve: ''
+    aloe_vera: ''
+    amber: ''
+    amber_powder: ''
+    arcane_reagent: ''
+    arcane_spore: ''
+    arcaneshroom: ''
+    arcanite: ''
+    arcanite_powder: ''
+    arcanize_flour: ''
+    barley_flour: ''
+    basic_pickaxe: ''
+    blood_wheat: ''
+    blood_wheat_flour: ''
+    bloodstone: ''
+    bloodstone_powder: ''
+    bloodveil_orchid: ''
+    burnt_wheat_flour: ''
+    crimson_truffle: ''
+    crimson_truffle_heart: ''
+    crystallized_tanjirize: ''
+    cursed_amalgam: ''
+    cursed_fungus: ''
+    cursed_gem: ''
+    cursed_gem_powder: ''
+    cursed_root: ''
+    cursed_wheat: ''
+    diamond: ''
+    diamond_powder: ''
+    draconite: ''
+    draconite_powder: ''
+    draconize_flour: ''
+    dragon_petal_extract: ''
+    dragon_pollen: ''
+    dragonlily: ''
+    duskite: ''
+    duskite_powder: ''
+    ethereal_ukranize: ''
+    genesis_suize: ''
+    ghost_cap: ''
+    golden_mushroom: ''
+    golden_nightcap: ''
+    golden_wheat: ''
+    green_mushroom: ''
+    green_mushroom_powder: ''
+    himalayan_flour: ''
+    infinity_amber: ''
+    infinity_arcanite: ''
+    infinity_bloodstone: ''
+    infinity_cursed_gem: ''
+    infinity_diamond: ''
+    infinity_draconite: ''
+    infinity_duskite: ''
+    infinity_jade: ''
+    infinity_moonstone: ''
+    infinity_obsidianite: ''
+    infinity_quartz: ''
+    ivory_orchid_paste: ''
+    ivory_shrooms: ''
+    jade: ''
+    jade_powder: ''
+    malt_flour: ''
+    moonstone: ''
+    moonstone_powder: ''
+    nightcap: ''
+    nightcap_elixir_base: ''
+    obsidianite: ''
+    obsidianite_powder: ''
+    old_hoe: ''
+    orchid_spore_blend: ''
+    phantom_distillate: ''
+    phantom_essence: ''
+    phantom_spore: ''
+    primordial_draconize: ''
+    pristine_malt: ''
+    quartz: ''
+    quartz_powder: ''
+    red_orchid: ''
+    rune_action_ba: ''
+    rune_agility_ba: ''
+    rune_agility_pa: ''
+    rune_agility_ra: ''
+    rune_air_resistance_ba: ''
+    rune_air_resistance_pa: ''
+    rune_air_resistance_ra: ''
+    rune_chance_ba: ''
+    rune_chance_pa: ''
+    rune_chance_ra: ''
+    rune_critical_ba: ''
+    rune_earth_resistance_ba: ''
+    rune_earth_resistance_pa: ''
+    rune_earth_resistance_ra: ''
+    rune_fire_resistance_ba: ''
+    rune_fire_resistance_pa: ''
+    rune_fire_resistance_ra: ''
+    rune_intelligence_ba: ''
+    rune_intelligence_pa: ''
+    rune_intelligence_ra: ''
+    rune_movement_ba: ''
+    rune_range_ba: ''
+    rune_raw_damage_ba: ''
+    rune_strength_ba: ''
+    rune_strength_pa: ''
+    rune_strength_ra: ''
+    rune_vitality_ba: ''
+    rune_vitality_pa: ''
+    rune_vitality_ra: ''
+    rune_water_resistance_ba: ''
+    rune_water_resistance_pa: ''
+    rune_water_resistance_ra: ''
+    rune_wisdom_ba: ''
+    rune_wisdom_pa: ''
+    rune_wisdom_ra: ''
+    scroll_of_oblivion: Returns all invested spell points and resets every upgraded spell to level 1.
+    scroll_of_rebirth: Returns all invested characteristic points so they can be assigned again.
+    shiny_barley: ''
+    smoldering_wheat: ''
+    spectral_arcanize: ''
+    suize_flour: ''
+    tanjirize_flour: ''
+    title_veteran: ''
+    tool_herbalist: ''
+    truffle_essence_compound: ''
+    ukranize_flour: ''
+    verdant_aloe: ''
+    water: ''
+    wheat: ''
+    wheat_barley: ''
+    wheat_burnt: ''
+    wheat_draconize: ''
+    wheat_flour: ''
+    wheat_malt: ''
+    wheat_purple: ''
+    wheat_suize: ''
+    wheat_tanjirize: ''
+    wheat_ukraine: ''
+    wheat_white: ''
+    wither_concentrate: ''
+    wither_petal: ''
+    witherbloom: ''
+out_of_sui_body: You ran out of SUI to pay for transaction fees. Please top up your wallet to continue playing.
+characters_page:
+  tab_equipment: Equipment
+  tab_stats: Stats
+  tab_spells: Spells
+  tab_jobs: Jobs
+  tab_runeforge: Runeforge
+  no_character: No character selected — pick one in the tab bar above
+  level: 'Lv {{level}}'
+  experience: Experience
+  # equipment
+  equipment_head: Equipment
+  equipped_totals: Equipped totals
+  no_gear_equipped: No gear equipped
+  bag_equipment: Equipment
+  bag_consumables: Consumables
+  bag_resources: Resources
+  accept: Accept
+  cancel: Cancel
+  equip_pending: Updating equipment…
+  equip_success: Equipment updated
+  consume_pending: Using item…
+  consume_success: Item used
+  already_full_hp: Health is already full
+  refusal_wrong_slot: This item does not fit that slot
+  refusal_level_too_low: Your level is too low for this item
+  refusal_relic_duplicate: A relic of the same kind is already worn
+  refusal_item_listed: This item is listed for sale
+  # stats
+  points_to_assign: Points to assign
+  spend_hint: Spend points on the six characteristics, then confirm
+  reset: Reset
+  confirm: Confirm
+  tx_pending: Confirming…
+  stats_pending: Assigning points…
+  stats_success: Points assigned
+  health: Health
+  action: Action
+  movement: Movement
+  characteristics: Characteristics
+  resistances: Resistances
+  secondary: Secondary
+  element_fire: Fire
+  element_water: Water
+  element_earth: Earth
+  element_air: Air
+  add_point: 'Add a point to {{stat}}'
+  remove_point: 'Remove a point from {{stat}}'
+  # spells
+  grimoire: Grimoire
+  spell_points: Spell points
+  unlocked: '{{unlocked}} / {{total}} unlocked'
+  unlocks_at: 'Unlocks at Lv {{level}}'
+  unlock_line: 'Lv {{level}}'
+  lv_of: '{{current}} / {{max}}'
+  locked: Locked
+  mastered: Mastered
+  no_points: Not enough spell points
+  upgrading: Leveling up…
+  upgrade_success: '{{spell}} leveled up'
+  level_up: 'Level up · {{cost}} pts'
+  # jobs
+  lv: 'Lv {{level}}'
+  xp_progress: '{{current}} / {{needed}} XP'
+  max: Max
+  resources: Resources
+  back: Back
+  # runeforge
+  gate_note: Available from craft job level {{level}}
+  detail_title: Item
+  forge_title: Forge
+  inventory_title: Inventory
+  tab_gear: Gear
+  tab_runes: Runes
+  place_gear: Place gear
+  place_rune: Place rune
+  random_notice: The outcome is rolled on-chain. A rune can apply, fizzle, or cost another stat — nothing is guaranteed.
+  one_rune_note: One rune is consumed per attempt
+  apply: Apply rune
+  scribing: Scribing…
+  outcome_critical_success: Critical success
+  outcome_neutral_success: Neutral success
+  outcome_critical_failure: Critical failure
+  runeforge_history: History
+  runeforge_history_empty: Apply a rune to begin this item's history
+  runeforge_puits: Puits
+  runeforge_no_stat_change: No stat changed
+  requires_job: 'Requires {{job}} level {{level}}'
+  clear: Clear
+  inspect_empty: Pick a gear piece to inspect
+  no_forge_gear: No forgeable gear in the bag
+  no_runes: No runes in the bag
+  menu_feed: Feed
+  menu_consume: Consume
+  menu_crush: Crush
+  menu_destroy: Destroy
+  menu_view_recipes: View recipes
+  menu_explorer: See on explorer
+  menu_link_chat: Link in chat
+  feed_title: Feed pet
+  feed_power_label: Power
+  feed_power: '{{count}} / {{max}}'
+  feed_pick_food: Pick a food
+  feed_no_food: No suitable food in the bag
+  feed_already_today: Already fed today — come back tomorrow
+  feed_full: Fully fed
+  feed_pending: Feeding…
+  feed_success: Pet fed
+  claim_success: Reward claimed
+  crush_title: Crush gear
+  crush_confirm_body: 'Crush {{name}}? The item is destroyed forever and yields runes.'
+  crush_cta: Crush
+  crush_pending: Crushing…
+  crush_success: Gear crushed
+  crush_result_title: Crush result
+  crush_result_empty: Better luck next time.
+  destroy_title: Destroy item
+  destroy_confirm_body: 'Destroy {{name}} ×{{amount}}? This cannot be undone.'
+  destroy_cta: Destroy
+  destroy_pending: Destroying…
+  destroy_success: Item destroyed
+  unsealing: Unsealing…
+  skip_hint: Click to skip
+  reveal_eyebrow: You received
+  revealing: Revealing…
+  collecting: Collecting…
+  continue_cta: Continue
+  stat_maxed: This stat has reached its rune cap on this item
+  stat:
+    movement: 'MP'
+    action: 'AP'
+    range: 'Range'
+    critical_chance: 'Critical Chance'
+    critical_outcomes: 'Critical Chance'
+    vitality: 'Vitality'
+    wisdom: 'Wisdom'
+    strength: 'Strength'
+    intelligence: 'Intelligence'
+    chance: 'Chance'
+    agility: 'Agility'
+    heal: 'Heal'
+    critical_hit: 'Critical Hit'
+    percent_damage: 'Damage'
+    raw_damage: 'Raw Damage'
+    fire_resistance: 'Fire Resistance'
+    water_resistance: 'Water Resistance'
+    earth_resistance: 'Earth Resistance'
+    air_resistance: 'Air Resistance'
+  stats:
+    no_character: 'No character selected'
+    unavailable: 'Stats unavailable'
+    level: 'Lv. {{level}}'
+    adventurer: 'Adventurer'
+    points_to_assign: 'Points to assign'
+    spend_hint: 'Spend them on your characteristics'
+    reset: 'Reset'
+    health: 'Health'
+    action: 'Action'
+    move: 'Move'
+    characteristics: 'Characteristics'
+    resistances: 'Resistances'
+    secondary: 'Secondary'
+    element:
+      fire: 'Fire'
+      water: 'Water'
+      earth: 'Earth'
+      air: 'Air'
+    description:
+      vitality: 'Increases your max HP'
+      wisdom: 'Increases your XP gain and resistance to AP/MP loss'
+      strength: 'Increases your earth damage'
+      intelligence: 'Increases your fire damage and healing'
+      chance: 'Increases your water damage and loot drop chance'
+      agility: 'Increases your air damage, critical hits, tackle, and tackle escape'
+      critical_hit: 'Improves your odds of landing a critical hit'
+      raw_damage: 'Adds a flat amount to damage and life-steal effects'
+    add_point: 'Add a point to {{stat}}'
+    remove_point: 'Remove a point from {{stat}}'
+    tx_pending: 'Assigning…'
+    point_cost: '{{cost}} pts → +{{gain}}'
+    tx_success: 'Stat points assigned'
+  spells:
+    range_modifiable: 'Modifiable range'
+    no_character: 'No character selected'
+    select_prompt: 'Select a spell'
+    level: 'Level {{level}}'
+    spell_points: 'Spell Points'
+    available: 'Available'
+    grimoire: 'Grimoire'
+    unlocked: '{{unlocked}} / {{total}} Unlocked'
+    locked: 'Locked'
+    lv: 'Lv {{level}}'
+    lv_of: 'Lv {{cur}}/{{max}}'
+    unlocks_at: 'Unlocks at Lv {{level}}'
+    current_level: 'Current Level'
+    ap_cost: 'AP Cost'
+    range: 'Range'
+    cooldown: 'Cooldown'
+    crit_chance: 'Crit Chance'
+    casts_per_turn: 'Casts / Turn'
+    unlimited: 'Unlimited'
+    description: 'Description'
+    effects: 'Effects'
+    levels_head: 'Levels'
+    mastered: 'Mastered'
+    upgrade_success: '{{spell}} leveled up!'
+    upgrading: 'Leveling up…'
+    level_up_spell: 'Level up spell'
+    pts: '{{count}} pts'
+    pts_one: '{{count}} pt'
+    pts_other: '{{count}} pts'
+    requires_lv: 'Requires Lv {{level}}'
+    no_points: 'No Points'
+    tag_self: 'Self'
+    tag_melee: 'Melee'
+    tag_ranged: 'Ranged'
+    tag_zone: 'Zone'
+    tag_line_of_sight: 'Line of Sight'
+    el_fire: 'Fire'
+    el_water: 'Water'
+    el_earth: 'Earth'
+    el_air: 'Air'
+    buff: 'Buff'
+    utility: 'Utility'
+    heal: 'Heal'
+    neutral: 'Neutral'
+    element: 'Element'
+    damage: 'Damage'
+    turns: 'turns'
+    crit_val: 'crit {{value}}'
+    range_fixed: 'FIXED — +RANGE STAT DOES NOT APPLY'
+  jobs:
+    level_up_title: Profession level up
+    level_up_reached: Level reached
+    level_up_character: '{{name}} improved'
+    level_up_progress: 'Level {{before}} → {{after}}'
+    level_up_continue: Continue
+    category:
+      gathering: 'Gathering'
+      weapon: 'Weapon craft'
+      equipment: 'Equipment craft'
+      consumable: 'Consumable craft'
+    recipes_fallback: 'Recipes'
+    equipped: 'Equipped'
+    better_character: '{{name}} is {{job}} Lv {{level}}'
+    switch: 'Switch'
+    switch_to_character: 'Switch to {{name}}'
+    table:
+      tier: 'Tier'
+      req_lvl: 'Req. lvl'
+      resource: 'Resource'
+      yield: 'Yield'
+      xp: 'XP'
+      unlocks_at: '{{name}} (unlocks at level {{level}})'
+      gather_detail: '{{name}} · gather {{gather}}s · respawn {{respawn}}s'
+      locked: 'locked'
+    lv_badge: 'Lv {{level}}'
+    tier_badge: 'T{{tier}}'
+    craft:
+      recipe_head: 'Recipe'
+      recipe_not_seeded: 'This recipe is not yet in the content seed.'
+      ingredients_head: 'Ingredients'
+      requires_level: 'Requires {{job}} Lv {{required}} (you are Lv {{level}})'
+      not_enough: 'Not enough ingredients'
+      starting_chance: 'Starting chance'
+      amount: 'Attempts'
+      prepare_tooltip: 'Prepare {{count}} × {{name}}'
+      craft_tooltip: 'Craft {{count}} × {{name}}'
+      craft_button: 'Craft ×{{count}}'
+      crafting: 'Crafting…'
+      craft_result: '{{successes}} / {{attempts}} {{name}} crafted'
+      locked_level: 'Locked · Lv {{level}}'
+    detail:
+      close_aria: 'Close item detail'
+      item_not_seeded: 'This item is not in the content seed.'
+      tool_label: 'Tool'
+      crafts_label: 'Crafts {{covers}}'
+      xp_progress: '{{current}} / {{needed}} XP'
+    recipes:
+      empty_seed: 'Recipes for this profession arrive with the crafting content seed.'
+      unlocked: 'Unlocked'
+      locked: 'Locked'
+      ingredients: '{{count}} ingredients'
+      required_level: 'Requires job Lv {{level}}'
+      best_progress: 'Best'
+    gather:
+      in_progress: 'Gathering {{name}}…'
+      button: 'Gather {{name}}'
+      hint: 'Click a {{job}} node in the world to gather.'
+    tabs:
+      resources: 'Resources'
+      recipes: 'Recipes'
+    no_character: 'No character selected'
+  common:
+    experience: 'Experience'
+    confirm: 'Confirm'
+    max: 'MAX'
+spell_names:
+  'Absorption': 'Absorption'
+  'Absorptive Arrow': 'Absorptive Arrow'
+  'Acceleration': 'Acceleration'
+  'Aggressive Brambles': 'Aggressive Brambles'
+  'Aggressive Glyph': 'Aggressive Glyph'
+  'Alcoholic Breath': 'Alcoholic Breath'
+  'All or Nothing': 'All or Nothing'
+  'Chimeric Venom': 'Chimeric Venom'
+  'Animal Healing': 'Animal Healing'
+  'Aqueous Armour': 'Aqueous Armour'
+  'Aqueous Vulnerability': 'Aqueous Vulnerability'
+  'Art of Staff': 'Art of Staff'
+  "Asobi's Fate": "Asobi's Fate"
+  "Asobi's Luck": "Asobi's Luck"
+  'Assault': 'Assault'
+  'Atonement Arrow': 'Atonement Arrow'
+  'Attraction': 'Attraction'
+  'Backlash': 'Backlash'
+  'Bamboo Milk': 'Bamboo Milk'
+  "Bat's Eye": "Bat's Eye"
+  'Bear Cry': 'Bear Cry'
+  'Blazing Fist': 'Blazing Fist'
+  'Blazing Vulnerability': 'Blazing Vulnerability'
+  'Blinding Protection': 'Blinding Protection'
+  'Blindness': 'Blindness'
+  'Bloodthirsty Madness': 'Bloodthirsty Madness'
+  'Blow': 'Blow'
+  'Bluff': 'Bluff'
+  'Bold Punishment': 'Bold Punishment'
+  'Boozer': 'Boozer'
+  'Bow Skill': 'Bow Skill'
+  'Bramble': 'Bramble'
+  'Bravery Guide': 'Bravery Guide'
+  'Bribery': 'Bribery'
+  'Bubble': 'Bubble'
+  'Burning Arrow': 'Burning Arrow'
+  'Burning Glyph': 'Burning Glyph'
+  'Bush Fire': 'Bush Fire'
+  'Celestial Sword': 'Celestial Sword'
+  'Chakra Concentration': 'Chakra Concentration'
+  'Chakra Impulse': 'Chakra Impulse'
+  'Hurl': 'Hurl'
+  'Claw of Ceangal': 'Claw of Ceangal'
+  'Clock': 'Clock'
+  'Cloudy Attack': 'Cloudy Attack'
+  'Clover': 'Clover'
+  'Clumsiness': 'Clumsiness'
+  'Coins Throwing': 'Coins Throwing'
+  'Compulsion': 'Compulsion'
+  'Con': 'Con'
+  'Concentration': 'Concentration'
+  'Cooperation': 'Cooperation'
+  'Counter': 'Counter'
+  'Critical Shooting': 'Critical Shooting'
+  'Crow': 'Crow'
+  'Curative Word': 'Curative Word'
+  'Cut': 'Cut'
+  'Dark Ray': 'Dark Ray'
+  'Destructive Arrow': 'Destructive Arrow'
+  'Destructive Sword': 'Destructive Sword'
+  'Deviousness': 'Deviousness'
+  'Devotion': 'Devotion'
+  'Dissolution': 'Dissolution'
+  'Distant Shooting': 'Distant Shooting'
+  'Divine Sword': 'Divine Sword'
+  'Dolly Sacrifice': 'Dolly Sacrifice'
+  'Shadowstep': 'Shadowstep'
+  'Draining Word': 'Draining Word'
+  'Earth Armour': 'Earth Armour'
+  'Earth Vulnerability': 'Earth Vulnerability'
+  'Earthquake': 'Earthquake'
+  'Bloodstep': 'Bloodstep'
+  'Explosive Arrow': 'Explosive Arrow'
+  'Explosive Flask': 'Explosive Flask'
+  'Fangs of Boowolf': 'Fangs of Boowolf'
+  'Fear': 'Fear'
+  'Feline Leap': 'Feline Leap'
+  'Feline Movement': 'Feline Movement'
+  'Feline Spirit': 'Feline Spirit'
+  'Flight': 'Flight'
+  'Blood Blade': 'Blood Blade'
+  'Forbidden Word': 'Forbidden Word'
+  'Forced Punishment': 'Forced Punishment'
+  'Fortune': 'Fortune'
+  'Bonding Word': 'Bonding Word'
+  'Frightening Word': 'Frightening Word'
+  'Frostbite': 'Frostbite'
+  'Frozen Arrow': 'Frozen Arrow'
+  'Fury': 'Fury'
+  'Ghostly Claw': 'Ghostly Claw'
+  'Ghostly Shovel': 'Ghostly Shovel'
+  'Glowing Armour': 'Glowing Armour'
+  'Glyph of Blindness': 'Glyph of Blindness'
+  'Glyph of Silence': 'Glyph of Silence'
+  'Greed': 'Greed'
+  'Hand': 'Hand'
+  'Hangover': 'Hangover'
+  'Haziness': 'Haziness'
+  'Heads or Tails': 'Heads or Tails'
+  'Healing Word': 'Healing Word'
+  'High-Energy Shot': 'High-Energy Shot'
+  'Clockwork Pursuit': 'Clockwork Pursuit'
+  "Ikari's Foot": "Ikari's Foot"
+  'Immunity': 'Immunity'
+  'Increase': 'Increase'
+  'Insidious Poison': 'Insidious Poison'
+  'Insolent Bramble': 'Insolent Bramble'
+  'Intimidation': 'Intimidation'
+  'Invisibility': 'Invisibility'
+  'Invisibility of Others': 'Invisibility of Others'
+  'Jump': 'Jump'
+  'Undertow': 'Undertow'
+  'Toxic Knowledge': 'Toxic Knowledge'
+  'Lashing Arrow': 'Lashing Arrow'
+  'Lashing Claw': 'Lashing Claw'
+  'Lethal Attack': 'Lethal Attack'
+  'Lethal Trap': 'Lethal Trap'
+  'Life Transfer': 'Life Transfer'
+  'Lifting Word': 'Lifting Word'
+  'Dead Weight': 'Dead Weight'
+  'Golden Fever': 'Golden Fever'
+  'Shovel Uprising': 'Shovel Uprising'
+  'Silent Mark': 'Silent Mark'
+  'Loss of Motivation': 'Loss of Motivation'
+  'Magic Arrow': 'Magic Arrow'
+  'Manifold Bramble': 'Manifold Bramble'
+  'Mass Clumsiness': 'Mass Clumsiness'
+  'Mass Trap': 'Mass Trap'
+  'Melancholy': 'Melancholy'
+  'Mistake': 'Mistake'
+  'Mound': 'Mound'
+  'Mummification': 'Mummification'
+  'Mutilation': 'Mutilation'
+  'Natural Attack': 'Natural Attack'
+  'Blood Scent': 'Blood Scent'
+  'Nimble Punishment': 'Nimble Punishment'
+  'Pandatak': 'Pandatak'
+  'Pandiniuras': 'Pandiniuras'
+  "Pandora's Box": "Pandora's Box"
+  'Paralyzing Arrow': 'Paralyzing Arrow'
+  'Paralyzing Glyph': 'Paralyzing Glyph'
+  'Paralyzing Poison': 'Paralyzing Poison'
+  'Paralyzing Trap': 'Paralyzing Trap'
+  'Paralyzing Word': 'Paralyzing Word'
+  'Read the Table': 'Read the Table'
+  'Plaguing Arrow': 'Plaguing Arrow'
+  'Playful Claw': 'Playful Claw'
+  'Poisoned Arrow': 'Poisoned Arrow'
+  'Poisoned Trap': 'Poisoned Trap'
+  'Poisoned Wind': 'Poisoned Wind'
+  'Power': 'Power'
+  'Powerful Shooting': 'Powerful Shooting'
+  'Pressure': 'Pressure'
+  'Preventing Word': 'Preventing Word'
+  'Prime of Life': 'Prime of Life'
+  'Mountain Punch': 'Mountain Punch'
+  'Punishment': 'Punishment'
+  'Punitive Arrow': 'Punitive Arrow'
+  'Reducing Key': 'Reducing Key'
+  'Reflex': 'Reflex'
+  'Regenerating Word': 'Regenerating Word'
+  'Rekop': 'Rekop'
+  'Repelling Trap': 'Repelling Trap'
+  'Repercussion': 'Repercussion'
+  'Retreat Arrow': 'Retreat Arrow'
+  'Revitalising Word': 'Revitalising Word'
+  'Rough Tongue': 'Rough Tongue'
+  'Roulette': 'Roulette'
+  'Sacrifice': 'Sacrifice'
+  "Senshi's Sword": "Senshi's Sword"
+  "Senshi's Wrath": "Senshi's Wrath"
+  'Shovel Kiss': 'Shovel Kiss'
+  'Shovel of Judgement': 'Shovel of Judgement'
+  'Shovel Throwing': 'Shovel Throwing'
+  'Shriveling': 'Shriveling'
+  "Shugo's Shield": "Shugo's Shield"
+  "Shugo's Teleportation": "Shugo's Teleportation"
+  'Slaughtering Shovel': 'Slaughtering Shovel'
+  'Slow Down': 'Slow Down'
+  'Slow Down Arrow': 'Slow Down Arrow'
+  'Smell': 'Smell'
+  'Soothing Bramble': 'Soothing Bramble'
+  'Spell Rebound': 'Spell Rebound'
+  'Spirit Rift': 'Spirit Rift'
+  'Spiritual Punishment': 'Spiritual Punishment'
+  'Rooted Guard': 'Rooted Guard'
+  'Stain': 'Stain'
+  'Stimulating Word': 'Stimulating Word'
+  'Strengthstorm': 'Strengthstorm'
+  'Lucky Pounce': 'Lucky Pounce'
+  'Stampede': 'Stampede'
+  'Suppressing Roar': 'Suppressing Roar'
+  'Seismic Command': 'Seismic Command'
+  'Rending Pounce': 'Rending Pounce'
+  'Binding Howl': 'Binding Howl'
+  'Primal Cataclysm': 'Primal Cataclysm'
+  'Pack Totem': 'Pack Totem'
+  'Swap': 'Swap'
+  'Sword of Fate': 'Sword of Fate'
+  'Sword of Judgement': 'Sword of Judgement'
+  'Sylvan Power': 'Sylvan Power'
+  'Tear': 'Tear'
+  'Temporal Dust': 'Temporal Dust'
+  'Terror': 'Terror'
+  'Root Snare': 'Root Snare'
+  'Reviving Spores': 'Reviving Spores'
+  'Maddening Spores': 'Maddening Spores'
+  'Sacrificial Bloom': 'Sacrificial Bloom'
+  'Overgrowth': 'Overgrowth'
+  'Time Theft': 'Time Theft'
+  'Toad': 'Toad'
+  'Temporal Dial': 'Temporal Dial'
+  "Tokei's Punch": "Tokei's Punch"
+  "Tokei's Sandglass": "Tokei's Sandglass"
+  "Tokei's Teleportation": "Tokei's Teleportation"
+  'Topkaj': 'Topkaj'
+  'Tormenting Arrow': 'Tormenting Arrow'
+  'Transposition': 'Transposition'
+  'Trap of Silence': 'Trap of Silence'
+  'Tree': 'Tree'
+  'Tricky Blow': 'Tricky Blow'
+  'Tricky Trap': 'Tricky Trap'
+  'Truce': 'Truce'
+  'Unsummoning': 'Unsummoning'
+  'Vampiric Word': 'Vampiric Word'
+  'Vital Exchange': 'Vital Exchange'
+  'Second Wind': 'Second Wind'
+  'Wheel of Fortune': 'Wheel of Fortune'
+  'Whip': 'Whip'
+  'Wild Grass': 'Wild Grass'
+  'Wind Armour': 'Wind Armour'
+  'Wind Vulnerability': 'Wind Vulnerability'
+  'Word of Altruism': 'Word of Altruism'
+  'Word of Recovery': 'Word of Recovery'
+  'Word of Sacrifice': 'Word of Sacrifice'
+  'Word of Silence': 'Word of Silence'
+  'Word of Thorn': 'Word of Thorn'
+  'Word of Youth': 'Word of Youth'
+  'Wounding Word': 'Wounding Word'
+  'Zatoishwan Stance': 'Zatoishwan Stance'

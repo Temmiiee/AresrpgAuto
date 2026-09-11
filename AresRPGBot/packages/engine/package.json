@@ -1,0 +1,23 @@
+{
+  "name": "@aresrpg/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./recipe": "./src/world_recipe.ts",
+    "./biomes": "./src/biome_grid.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "simplex-noise": "4.0.3",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "@types/three": "0.185.4"
+  }
+}

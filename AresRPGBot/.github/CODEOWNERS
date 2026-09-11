@@ -1,0 +1,18 @@
+# CODEOWNERS — every path defaults to the owner; the explicit rows exist to make the fortress
+# surfaces visible to future maintainers, not to change coverage.
+*                   @Sceat
+
+# Contracts are money.
+/packages/move/     @Sceat
+/packages/move-combat/ @Sceat
+# The deterministic core + the replay gate — the correctness spine.
+/packages/fight/    @Sceat
+# CI and release control are execution policy.
+/.github/workflows/ @Sceat
+/.github/scripts/   @Sceat
+/.github/CODEOWNERS @Sceat
+# Every remaining GitHub surface stays owner-held.
+/.github/           @Sceat
+# The identity class.
+/LICENSE            @Sceat
+/CLA.md             @Sceat

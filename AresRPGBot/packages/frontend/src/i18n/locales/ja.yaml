@@ -1,0 +1,2052 @@
+title: WebGPU を利用できません
+body: 完全なワールドには WebGPU が必要です。代わりに軽量グリッドを表示しています。
+fatal: このブラウザは WebGPU または WebGL のグラフィックコンテキストを作成できません。
+world_unavailable_title: ワールドを利用できません
+world_unavailable: このワールドにはまだ地形レシピがありません。
+mobile_unavailable_label: モバイルアクセス
+mobile_unavailable_title: AresRPGは現在、モバイル端末ではご利用いただけません
+mobile_unavailable_body: モバイル専用の体験を開発中です。それまでは、デスクトップのブラウザからワールドにアクセスしてください。
+mobile_unavailable_status: デスクトップ版はオンラインです
+chrome: Chrome または Edge を更新し、設定 → システムで「ハードウェア アクセラレーションが使用可能な場合は使用する」を有効にして再起動してください。
+other: ハードウェアアクセラレーションを有効にし、ブラウザとグラフィックドライバーを更新してからブラウザを再起動してください。
+continue: グリッドで続行
+quality: 品質
+low: 低
+medium: 中
+high: 高
+flat_mode: フラットモード
+identity_connected: アイデンティティ接続済み
+sign_in_to_play: サインインしてプレイ
+loading_universe: 宇宙を読み込み中
+continue_google: Google で続行
+connect_wallet: ウォレットを接続
+no_wallet: 対応ウォレットがインストールされていません
+watch_world: ライブワールドを見る
+sign_in: サインインしてプレイ
+drag_hint: ドラッグで移動 · スクロールでズーム
+navigation: ナビゲーション
+world: ワールド
+characters: キャラクター
+leaderboard: ランキング
+mastery: マスタリー
+encyclopedia: エンサイクロペディア
+marketplace: マーケット
+airdrop: エアドロップ
+kolizeum: コリゼウム
+settings: 設定
+admin: 管理
+online: オンライン
+account: アカウント
+join_discord: Discord に参加
+sui_universe: Suiユニバース
+server_disconnected: 切断
+server_connecting: 接続中
+server_reconnecting: 再接続中
+server_syncing: 同期中
+server_connected: 接続済み
+server_violation: 切断 — ルール違反。まもなく再試行します。
+server_replaced: 別の場所で接続中
+session_replaced_title: 別の場所から接続されました
+session_replaced_body: アカウントが別の場所でゲームを開いたため、このウィンドウは切断されました。他のセッションを閉じるか、ここで再接続してこのウィンドウでプレイしてください。
+session_replaced_reconnect: ここで再接続
+latency_unit: ms
+indexing_health: インデックス状態
+online_players: オンラインプレイヤー
+indexing_lag_warning: ゲーム内の操作が遅れて反映される場合があります
+indexing_block_title: ワールドを同期中
+indexing_block_body: チェーン履歴をインデックス中です。サーバーが安全なライブ範囲に達すると、ゲームプレイは自動的に解除されます。
+indexing_block_progress: 進捗
+indexing_block_remaining: 残りチェックポイント
+indexing_block_eta: 推定時間
+indexing_block_estimating: 計算中…
+game_maintenance_title: メンテナンス中
+game_maintenance_body: AresRPGのスマートコントラクトはメンテナンスのため一時停止中です。最新情報はDiscordをご確認ください。
+gas_budget_toast: このアクションは確保しているネットワーク手数料を超えました。実行されておらず、費用もかかっていません。ご報告ください。
+game_paused_toast: アップデートのためゲームは一時停止中です。アクションは実行されませんでした。数分後にもう一度お試しください。
+movement_sync_toast: 位置情報を同期しています。通常どおり移動し、少し待ってからもう一度お試しください。
+fight_path_changed_toast: 移動を送信する前に盤面が変わりました。ターンを復元しました — もう一度お試しください。
+party_member_unavailable_toast: そのキャラクターはすでにパーティーに参加しています。
+fight_turn_already_forced_toast: すでに別の誰かがこのターンを強制終了しました。
+network_testnet: TESTNET
+page_pending_title: このページは再構築中です
+page_pending_body: 正しく復元する間も、この場所は表示し続けます。
+welcome_title: AresRPG へようこそ
+welcome_body: AresRPG は、プレイヤー主導の経済を持つ完全オンチェーン MMORPG です。最初のキャラクターを作り、世界に入ってモンスターと戦いましょう。
+welcome_need_sui: プレイには少額の SUI が必要です — 最初のキャラクター作成には {{price}} SUI かかり、手数料のため残高に少なくとも {{fee}} SUI を残す必要があります。下のアドレスに SUI を入金して始めましょう。
+insufficient_sui: 手数料のため、残高に少なくとも {{fee}} SUI を残す必要があります。
+create_character: キャラクター作成
+create_title: キャラクターを作成
+create_lead: クラス、色、名前を選んでください。背景では世界がすでに動いています。
+class_label: クラス
+view_class_spells: このクラスのスペルを見る
+sex_label: 性別
+appearance_label: 外観 · 3 色
+name_label: 名前
+name_placeholder: 名前を入力…
+name_invalid: 4～19文字の印刷可能なASCII文字を使用し、空白は入れないでください。
+male: 男性
+female: 女性
+cancel: 戻る
+create_and_play: 作成してプレイ
+character_price: 価格
+creating_character: キャラクターを作成中…
+character_created: キャラクターを作成しました
+address_verification_failed: このアドレスを確認できませんでした。再度ログインするか、Discord でお問い合わせください。
+dismiss: 閉じる
+wallet_copy_address: アドレスをコピー
+wallet_send: 送信
+wallet_add_funds: 入金
+wallet_gas_spent: ガス使用量（24時間）
+wallet_disconnect: 接続解除
+wallet_fund_body: このウォレットアドレスに SUI を送信してください。アプリに戻ると残高が更新されます。
+wallet_send_title: SUI を送信
+wallet_recipient: 送信先アドレス
+wallet_amount: 金額（SUI）
+wallet_send_pending: SUI を送信中…
+wallet_send_success: SUI を送信しました
+wallet_send_failed: SUI の送信に失敗しました
+wallet_close: 閉じる
+kolizeum_page:
+  title: コリゼウム — 作戦卓
+  tagline: 勝者がポットの90%を分配 · 手数料10%
+  tab_open: 公開ロビー
+  tab_mine: 自分のロビー
+  col_format: 形式
+  col_access: 参加
+  col_status: 状態
+  col_pledge: 賭け金
+  col_full_pot: 満額ポット
+  col_creator: 作成者
+  access_public: 公開
+  access_friends: フレンド
+  status_open: 募集中
+  status_started: 進行中
+  status_settling: バトル終了
+  empty: ロビーはありません
+  selected: 選択中のロビー
+  side_a: Aサイド
+  side_b: Bサイド
+  total_pot: 現在のポット
+  settlement_remaining: 残りのエスクロー
+  paid_out: 支払済み
+  free: 無料
+  join_a: Aサイドに参加
+  join_b: Bサイドに参加
+  join_confirm_title: コリゼウムの賭けを確認
+  join_confirm_body: '{{character}}は{{amount}} SUIを賭けて{{side}}に参加します。この取引で賭け金が確定します。'
+  join_confirm_cta: '{{amount}} SUIを賭ける · {{side}}に参加'
+  create_title: ロビー作成
+  form_format: 形式
+  form_access: 参加範囲
+  form_pledge: 1人あたりの賭け金（SUI）
+  form_max_diff: 最大レベル差
+  form_character: 使用キャラクター
+  no_character: 利用可能なキャラクターがいません
+  full_pot_summary: '{{format}}満額ポット = {{pot}} SUI · 勝者に90%'
+  create_cta: ロビーを作成
+friends_panel:
+  title: フレンド
+  observed: 近くで確認
+  unseen: 現在は未確認
+  none_observed: 近くにフレンドはいません
+  empty: まだフレンドはいません
+  placeholder: 名前、SuiNS、または0xアドレス
+  add: フレンド追加
+  remove: 削除
+  remove_title: フレンドを削除
+  remove_body: '{{name}}をフレンドリストから削除しますか？'
+  error_no_suins: '{{name}}に一致するSuiNSアドレスがありません。'
+  error_target: キャラクター名、SuiNS名、または完全なSuiアドレスを入力してください。
+  error_self: 自分自身は追加できません。
+  error_duplicate: このプレイヤーはすでにフレンドです。
+  cancel: キャンセル
+party_panel:
+  title: パーティー
+  adventurer: 冒険者
+  invited_by: '{{name}} がグループへの参加に招待しました'
+  accept: 承認
+  decline: 辞退
+  leader: リーダー
+  leave: 脱退
+  disband: 解散
+  kick: 除名
+  rescind: 招待を取り消す
+  invite_owned: 所有キャラクターを招待
+  follow_leader: リーダーを追従
+  run_to_position: 位置まで走る
+  run_to_started: '{{name}} の最新オンチェーン位置に向かって走っています。現在のリアルタイム位置とは異なる場合があります。'
+  run_to_started_position: リンクされた位置に向かって走っています。
+  run_to_progress: 位置へ移動中
+  run_to_position_wrong_world: リンクされた位置は現在のワールドにありません。
+  run_to_wrong_world: そのパーティーメンバーは現在のワールドにいません。
+  run_to_unavailable: そのパーティーメンバーのオンチェーン位置を取得できません。
+trade_panel:
+  close: 閉じる
+  title: プレイヤー取引
+  invite_sent: 取引招待を送信しました
+  invited_by: '{{name}}から取引に招待されました'
+  request_waiting: '{{name}}の承認を待っています'
+  accept_request: 承認
+  decline: 拒否
+  cancel_request: 招待を取り消す
+  trades: 取引
+  your_offer: あなたの提示
+  their_offer: 相手の提示
+  accepted: 承認済み
+  reviewing: 確認中
+  remove_item: 提示から外す
+  drop_items: ここにアイテムをドロップ
+  empty_offer: 提示アイテムなし
+  offer_item_unavailable: 追加予定のアイテムが利用できなくなりました。提示内容を確認して、もう一度お試しください。
+  sui: 提示SUI
+  inventory: 所持品
+  drag_hint: ドラッグまたはダブルクリックで追加
+  amount_title: 数量を選択
+  amount_for: '{{name}} の数量'
+  amount_add: オファーに追加
+  amount_cancel: キャンセル
+  confirm_changes: 変更を確定
+  discard_changes: 変更を破棄
+  empty_inventory: 取引可能な資産なし
+  accept: 提示を承認
+  cancel: 取引を中止
+  accept_notice: 承認すると最終取引を許可します。受取資産{{count}}個のロイヤリティは{{amount}} SUIとガスです。
+  settle: 取引を完了
+  recover: 提示を回収
+  settle_notice: 残りの資産とSUIを1回の取引で受け取ります。
+  recover_notice: 提示全体を1回の取引で回収します。
+  waiting_counterparty: あなた側は完了しました。相手を待っています。
+  finalizing: 完了中…
+world_hud:
+  compass_label: コンパス
+  zone: ゾーン
+  unsearched: 未探索
+  searched: 探索済み
+  out_of_bounds: 範囲外
+  mob_group: モンスター群 ({{size}})
+  resource: 資源
+  cluster_count: 他{{extra}}件
+  zone_edge: ゾーン境界 {{dist}}
+  coordinates: 座標
+  biome: バイオーム
+  world_map: ワールドマップ
+  world_map_zoom_in: 拡大
+  world_map_zoom_out: 縮小
+  world_map_extent: '{{blocks}} ブロック'
+  menu_group: グループに招待
+  menu_friend: フレンド追加
+  menu_trade: 取引
+  menu_message: メッセージを送る
+  message_title: '{{name}} にメッセージ'
+  message_placeholder: プライベートメッセージを入力…
+  message_send: 送信
+  message_cancel: キャンセル
+  mount_prompt: '{{key}} で騎乗'
+  portal_prompt: '{{key}} を押して別のワールドへ移動'
+  dungeon_portal: ダンジョンポータル
+  dungeon_city: '{{city}}の都市'
+  dungeon_press_enter: 入る
+  dungeon_entry_body: ダンジョンキーを使い、このポータル専用のロビーに入ります。
+  dungeon_required_key: 必要な鍵
+  dungeon_enter: ダンジョンに入る
+  dungeon_entering: ポータルを開いています…
+  dungeon_instance: ダンジョン遠征
+  dungeon_room: 'ルーム {{room}}'
+  dungeon_explorers: 探索者
+  dungeon_abandon: 探索を中止
+  dungeon_confirm_abandon: 中止を確認
+  dungeon_route: 遠征ルート
+  dungeon_mysterious_room: 謎のルーム
+  dungeon_undiscovered: 未発見
+  dungeon_creatures: '{{count}} 体の敵'
+  dungeon_current_room: 現在の敵
+  dungeon_open_fights: 参加可能な戦闘
+  dungeon_forming_party: パーティ編成中
+  dungeon_in_progress: 戦闘中
+  dungeon_waiting_players: 参加者を待っています
+  dungeon_join: 戦闘に参加
+  dungeon_joining: 参加中…
+  dungeon_locked: ロック中
+  dungeon_no_fights: このルームに戦闘はありません
+  dungeon_public: 公開
+  dungeon_group: グループ限定
+  dungeon_start_fight: 新しい戦闘を開始
+  dungeon_starting: 開始中…
+  dungeon_key_required: 'このダンジョンに入るには {{key}} が必要です。'
+  dungeon_group_refusal: この戦闘は開始者のグループ限定です。
+  travel_title: スターゲート
+  travel_search: '{{title}}を検索…'
+  travel_entry_level: '必要レベル {{level}}'
+  travel_pending: ゲートを開いています…
+  travel_success: '{{world}}へようこそ'
+  travel_empty: ワールドがありません
+  travel_showing: '{{filtered}} / {{total}} 件'
+  travel_selected: '選択中 · {{label}}'
+  fight_press_join: '{{key}} で参加'
+  fight_press_spectate: '{{key}} で観戦'
+  fight_locked: 'プライベートな戦闘'
+  fight_join_title: '戦闘に参加'
+  fight_spectate_title: '戦闘を観戦'
+  fight_side_a: 'サイドA'
+  fight_side_b: 'サイドB'
+  fight_empty_side: 'まだファイターなし'
+  fight_unknown: '不明なファイター'
+  fight_join_button: '参加'
+  fight_spectate_button: '観戦'
+  fight_started_ago: '開始'
+  fight_placement: '配置中'
+  fight_wallet_hint: '参加にはウォレット接続が必要'
+  fight_close: '閉じる'
+  menu_duel: 決闘を申し込む
+  duel_invite: '{{name}} が決闘を申し込んできた'
+  duel_challenging: '{{name}} に決闘を挑んでいます…'
+  duel_canceled_afraid: '{{name}} は怖くなって決闘を取り消した。'
+  duel_no_position: 位置が取得できません。決闘は作成されませんでした。
+  duel_unknown_challenger: 挑戦者
+  duel_accept: 受ける
+  duel_decline: 断る
+  zone_unsearched_title: '未探索のゾーン'
+  zone_press_search: '{{key}} を押してゾーンを探索'
+  zone_reroll_title: 'ゾーンを更新できます'
+  zone_press_reroll: '{{key}} を押してゾーンを再生成'
+  zone_searching: 'ゾーンを探索中…'
+  zone_revealed: 'ゾーンを発見'
+  zone_coordinates: 'セクター {{zx}} · {{zz}}'
+  zone_mobs_found: 'モンスター {{count}} 体を発見'
+  zone_resources_found: '資源 {{count}} 個を発見'
+  spawn_group: '{{size}}体の群れ'
+  spawn_unknown_mob: '未知の生物'
+  spawn_press_attack: '{{key}} を押して攻撃'
+  spawn_engaging: '群れに交戦中…'
+  spawn_engage_conflict: '攻撃前に群れの状態が変わりました。他のプレイヤーが先に交戦した可能性があります。'
+  spawn_never_arrived: '戦闘は実行されましたが、ボードが届きませんでした'
+  resource_press_collect: '{{key}} で {{name}} を採集'
+  resource_need_level: '{{job}} レベル {{level}} が必要'
+  resource_need_tool: '{{job}} の道具が必要'
+  resource_gathering: '採集中…'
+  resource_gathered: '資源を採集しました'
+  resource_gathered_amount: '{{name}} × {{quantity}}を採集しました'
+  resource_gathered_amount_ambushed: '{{name}} × {{quantity}}を採集 · プロテクターが襲ってきた'
+  resource_ambushed: '守護者が襲ってきた'
+  resource_resolving_ambush: '守護者が道を塞いでいる…'
+  resource_ambush_title: '守護者の待ち伏せ'
+  resource_face_protector: '{{key}} で立ち向かう'
+  zone_never_arrived: '探索は成立したが、世界に反映されなかった — 読み取り層が遅れている可能性がある'
+demo_page:
+  title: レンダリングラボ
+  world_lab: ワールド
+  fight_lab: 戦闘
+  fight_board: 戦闘ボード
+  board_new: 新しいボード
+  board_delete: ボードを削除
+  board_back: すべてのボード
+  board_canvas: キャンバス
+  board_output: 最終ボード
+  board_draw_hint: セル種類を選び、クリックまたはドラッグして描画
+  board_cell_type: セル種類
+  board_cell_void: 空白
+  board_cell_floor: 床
+  board_cell_obstacle: 障害物
+  board_cell_hole: 穴
+  board_cell_start_a: 開始 A
+  board_cell_start_b: 開始 B
+  board_loading: ボードエディターを読み込み中…
+  board_saving: 保存中…
+  board_unsaved: 未保存の変更
+  board_saved: 保存済み · 自動保存オン
+  board_read_only: 読み取り専用 · 編集にはローカル開発サーバーを使用
+  no_terrain: 地形レシピなし
+  time: 時刻
+  live: リアルタイム
+  remove_character: モデルを削除
+  control_character: モデルを操作
+  hat: 帽子
+  cloak: マント
+  pet: ペット
+  none: なし
+  ride_pet: ペットに乗る
+  dismount_pet: 降りる
+  mob_group: モブグループ
+  crowd_load: 群衆負荷テスト
+  crowd_benchmark: 計測
+  crowd_loading: キャラクターモデルを読み込み中…
+  crowd_result: フェーズ
+  mob: モブ
+  amount: 数量
+  spawn_group: グループを出現
+  clear: クリア
+  resources: リソース
+  resources_missing: リソース描画はまだ復元されていません。作成済みリストは seed データで確認できます。
+  control_hint: キャンバスをクリック · WASDで移動 · Spaceでジャンプ · マウスで視点操作
+  back: アプリに戻る
+marketplace_page:
+  title: マーケット
+  subtitle: Sui上のプレイヤー出品
+  disclaimer_kicker: 取引を始める前に
+  disclaimer_title: 利益ではなく、冒険の進行のために取引しましょう
+  disclaimer_body: アイテムはプレイヤー同士でSUIを使って直接取引されます。
+  disclaimer_supply: アイテムは長期的な投資ではありません。多くのプレイヤーが入手するほど供給が増え、価格が下がる可能性があります。
+  disclaimer_fun: 利益を期待するのではなく、ゲームの進行や楽しみのために売買してください。
+  disclaimer_wallet: AresRPGには使用予定のSUIだけを保管してください。大切な資産は、復元キーを自分で管理する別の自己管理型ウォレットで保管してください。
+  disclaimer_acknowledge: 理解しました
+  tab_buy: 購入
+  tab_sell: 出品
+  tab_history: 履歴
+  browse: 閲覧
+  group_equipment: 装備
+  group_pets: ペット
+  group_runes: ルーン
+  group_consumable: 消耗品
+  group_resources: 素材
+  group_characters: キャラクター
+  level: レベル
+  class: クラス
+  search: アイテム検索…
+  no_results: 出品はありません
+  select_item: アイテムを選択
+  listing_count: '{{count}}件'
+  rolled_stats: ランダム能力
+  characteristics: 特性
+  damages: ダメージ
+  range_to: ～
+  seller: 出品者
+  buy: 購入
+  pay: 支払う
+  yours: 自分の出品
+  insufficient: SUI不足
+  cancel: キャンセル
+  your_listings: 自分の出品
+  no_listings: 出品中の品はありません
+  withdraw: 取り下げ
+  list_for_sale: 出品する
+  select_to_list: インベントリから選択
+  price: 価格
+  lot_size: ロット数
+  paid_automatically: 売上は自動的にキオスクへ入ります。
+  lot_required: 'このスタックは×{{amount}}です。×1、×10、×100、×1000のみ出品できます。'
+  inventory: インベントリ
+  characters: キャラクター
+  items: アイテム
+  empty_inventory: 出品可能な品がありません
+  revenue_30d: 過去30日
+  sales_count: '{{count}}件の販売'
+  unclaimed: 未回収の売上
+  collect: 回収
+  no_history: 販売履歴はありません
+  item: アイテム
+  date: 日付
+  buyer: 購入者
+  load_more: さらに表示
+  list_pending: 出品中…
+  list_success: 出品しました
+  delist_pending: 出品を取り下げ中…
+  delist_success: 出品を取り下げました
+  buy_pending: 購入中…
+  buy_success: 購入完了
+  sold_toast: '{{name}} {{amount}} を {{price}} で売却'
+  character_roster_full: 7人目のキャラクターは追加できません — 上限は6人です
+  collect_pending: 売上を回収中…
+  collect_success: 売上を回収しました
+mastery_page:
+  subtitle: デイリーチャレンジ
+  title: マスタリー
+  lead: 毎日ダンジョンをクリアして、特別な報酬を手に入れよう。
+  balance: マスタリーポイント
+  daily_ready: デイリークエストに挑戦できます
+  daily_syncing: デイリークエストを更新中…
+  daily_title: 今日のダンジョンクエストを選択
+  daily_lead: ワールドを選ぶと、見つけてクリアするダンジョンが1つ割り当てられます。
+  unknown_dungeon: 不明なダンジョン
+  quest_reward: マスタリーポイントを{{points}}獲得
+  quest_objective_before: ダンジョン
+  quest_objective_after: を見つけてクリアし、マスタリーポイントを受け取ろう。
+  completed: 達成済み
+  in_progress: 進行中
+  required_level: 必要レベル {{level}}
+  dungeon_count: '{{count}} ダンジョン'
+  starting: ダンジョンを割り当て中…
+  start: デイリークエストを開始
+  locked: ロック中
+  world_reward: +{{points}}pts
+  shop_title: マスタリーショップ
+  shop_lead: マスタリーポイントを使って特別なルートボックスを購入しよう。
+  shop_empty: 販売中のマスタリーアイテムはまだありません
+  ready_to_buy: 購入可能
+  points_missing: あと{{points}}ポイント
+  buying: 購入中…
+  buy: 購入 · {{cost}} pts
+  quest_started: デイリークエストを割り当てました。
+  offer_purchased: マスタリー報酬を購入しました。
+
+airdrop_page:
+  title: 'エアドロップ'
+  subtitle: '対象ホルダー向けの限定アイテムを受け取る'
+  minted: '{{count}} 個ミント済み'
+  eligible_count: '{{count}} 件が対象'
+  eligible: '対象'
+  not_eligible: '対象外'
+  claimed: '受取済み'
+  claim: '受け取る'
+  holder_title: '保有者ウォレット'
+  holder_connect_hint: '対象NFTを保有するウォレットを接続してください'
+  holder_connect: 'ウォレットを接続'
+  holder_connecting: '接続中…'
+  holder_connected: '接続済み'
+  holder_select: '選択'
+  holder_close: 'ウォレット選択を閉じる'
+  holder_wallet_missing: '対応するSuiウォレットがありません'
+  giftcards_title: '未交換のギフトカード'
+  gift_login: 'Googleで続行して、このギフトをゲームウォレットで受け取ります'
+  gift_ready: '印刷されたギフトカードを受け取れます'
+  gift_claiming: '印刷されたギフトカードを受け取り中…'
+  gift_retry: 'ギフトカードを受け取る'
+  redeem: '交換'
+  empty: '有効なエアドロップはありません'
+  empty_hint: '提携コレクションのホルダー向けエアドロップは、開始時にここに表示されます。'
+  pending_claim: 'エアドロップを受取中…'
+  toast_claimed: 'エアドロップを受け取りました'
+  set:
+    title: 'セット'
+    subtitle: '予約アイテム — 展示のみ'
+    error: 'エアドロップセットを読み込めませんでした'
+    retry: '再試行'
+    empty: 'エアドロップセットはまだ公開されていません'
+    no_preview: 'プレビュー準備中'
+    aura: 'オーラ'
+    aura_pending: 'オーラ準備中'
+    awaiting_ruling: '判断待ち'
+    kind:
+      pet_glb: 'ペット'
+      title_relic: '称号レリック'
+      outfit: '衣装'
+settings_page:
+  title: '設定'
+  subtitle: 'AresRPGの設定'
+  master_volume_label: 全体音量
+  master_volume_hint: すべての音楽と効果音の音量を調整します。
+  music_label: '音楽'
+  music_hint: 'ワールドと戦闘の音楽を再生します。'
+  footsteps_label: 足音
+  footsteps_hint: 移動時の足音を再生します。
+  auto_switch_fighter_label: 操作キャラクター自動切替
+  auto_switch_fighter_hint: 所有キャラクターのターン開始時に自動で選択します。
+  always_craft_from_label: 常にこのキャラで製作
+  always_craft_from_hint: 職業タブとすべての製作を所有キャラクター1体に固定します。
+  always_craft_from_picker: 製作キャラクター
+  always_craft_from_none: 無効
+  render_distance_label: 描画距離
+  render_distance_hint: 周囲のワールドを読み込む範囲。広いほど負荷が上がります。
+tutorial:
+  progress: '{{current}} / {{total}}'
+  skip: チュートリアルをスキップ
+  back: 戻る
+  next: 次へ
+  finish: 完了
+  fight_enter: 戦闘に入る
+  reset_title: チュートリアル
+  reset_hint: 次に各ページを開いたとき、説明をもう一度表示します。
+  reset_action: リセット
+  world_compass_title: 世界と共有ゾーン
+  world_compass_body: AresRPGには、進行に応じて解放される複数の世界があります。各世界はモンスター、資源、ダンジョンが存在するゾーンに分かれています。誰でもゾーンを発見でき、その発見はすべてのプレイヤーに共有されます。
+  world_hud_title: 体力とクイックスロット
+  world_hud_body: このHUDには体力とクイック使用アイテムが表示されます。戦闘が始まると、同じ場所がスペルバーになります。
+  world_fps_title: 世界の表示設定
+  world_fps_body: 地形は公開データから決定論的に生成されます。Suiは世界と基準となるX/Z位置を保存し、高さは地形からローカルに導出されます。そのためフラットは同じ空間の表示だけを変えます。画質の変更や、世界の戦闘をパーティーメンバーだけに制限することもできます。
+  world_character_title: 世界のプレイヤー
+  world_character_body: これが現在操作しているキャラクターです。近くの別キャラクターを右クリックすると、利用できる交流メニューが開きます。
+  world_character_tabs_title: 複数のキャラクター
+  world_character_tabs_body: 最大6体のキャラクターを所有できます。ほかの所有キャラクターをパーティーに招待し、パーティー追従を有効にすると、一緒に移動して到着時に参加可能な世界戦闘へ自動参加します。
+  fight_title: 初めてのオンチェーン戦闘
+  fight_body: 戦闘はターン制です。移動とスペルを選ぶと、行動が1つのターンとしてまとめて準備されます。ターン終了で完全なターンが1つのSuiトランザクションとして送信され、次にプレイヤーが行動できるまでのモンスターターンも計算されます。戦闘の基準となる状態はすべてSui上で確定します。勝利後は最後のSuiトランザクションがオンチェーン乱数で共有戦利品を抽選し、各報酬を割り当てられたプレイヤーのインベントリに入れます。
+  equipment_gear_title: 装備
+  equipment_gear_body: 装備中のアイテムは選択中のキャラクターに属します。装備を人形へドラッグし、変化するボーナスを確認してからまとめて確定します。
+  equipment_inventory_title: 共有インベントリ
+  equipment_inventory_body: インベントリはこのアカウントの全キャラクターで共有されます。上で別のキャラクターを選ぶと、同じ利用可能なアイテムを装備できます。
+  stats_title: 特性
+  stats_body: 特性ポイントを使って強くなりましょう。生命力は体力、知恵はXPとAP/MP減少への耐性、運は水ダメージと戦利品率、素早さは風ダメージ、クリティカル、足止めと離脱を向上させます。
+  spells_title: スペル
+  spells_body: キャラクターの進行に応じて新しいスペルが解放されます。レベルアップで得たスペルポイントを使い、解放済みスペルを強化できます。
+  jobs_title: ジョブ
+  jobs_body: 採集と製作の進行、レシピ、製作可能なアイテムを確認できます。複数キャラクターがいる場合、設定でこのページを専任の職人1体に固定できます。
+  runeforge_title: ルーンフォージ
+  runeforge_body: ジョブレベル70になると、対応する製作職がルーンで装備を強化できます。アイテムを粉砕してルーンを入手し、ここで適用します。
+admin_page:
+  kicker: パブリッシャー
+  title: ゲームコンテンツを公開
+  body: 決定的なシードアドレスを確認し、シミュレーション済みバッチを一つずつ送信してから、コンテンツを永久に封印します。
+  objects: 公開済みオブジェクト
+  publisher: Publisher オブジェクト ID
+  inspect: シード計画を確認
+  inspecting: 確認中…
+  plan: シード計画
+  targets: 決定的ターゲット
+  not_inspected: 公開済みオブジェクト ID を追加してから計画を確認してください。
+  execute: 実行
+  executing: 実行中…
+  seal_title: 永久封印
+  seal_body: 封印すると今後のコンテンツ書き込み手段がすべて消えます。アップグレードや管理権限でも元に戻せません。
+  arm_seal: 永久封印を準備
+  seal_forever: コンテンツを永久に封印
+  sealed: コンテンツは封印済みです
+  admin_wallet: 管理者ウォレット
+  admin_wallet_body: 公開と収益引き出し専用の署名者です。
+  connect_admin_wallet: 接続
+  choose_admin_wallet: ウォレットを選択
+  choose_admin_address: アドレスを選択
+  cancel_wallet_selection: キャンセル
+  wallet_account: アカウント
+  select_wallet: 選択
+  connecting: 接続中…
+  loading_wallets: ウォレットを読み込み中…
+  no_admin_wallet: 対応するブラウザウォレットがありません。
+  royalties: ロイヤリティ
+  cap_owned: 権限あり
+  cap_missing: 権限なし
+  reading_royalties: ポリシーを読み込み中…
+  reading: 読み込み中…
+  refresh_revenue: 収益を更新
+  arm_claim: 引き出しを準備
+  claiming: 引き出し中…
+  confirm_claim: 引き出しを確定
+  disconnect_admin_wallet: 切断
+  claim_digest: 引き出しトランザクション
+  range_24h: 24時間
+  range_7d: 7日
+  range_30d: 30日
+  range_90d: 90日
+  range_1y: 1年
+  overview_title: 概要
+  overview_body: プレイヤー活動と収益を、余計な監視情報なしで確認できます。
+  overview_unavailable: 概要を利用できません
+  loading_overview: 概要を読み込み中…
+  all_systems_current: すべてのシステムは最新です
+  checkpoint: チェックポイント
+  refresh: 更新
+  retry: 再試行
+  active_players: アクティブプレイヤー
+  active_players_bucket: バケットごとのアクティブプレイヤー
+  daily_active: デイリーアクティブプレイヤー
+  active_interval: 区間ごとのアクティブ
+  active_30d: 30日間アクティブプレイヤー
+  active_last_30d: 過去30日間のアクティブ
+  player_activity: プレイヤー活動
+  population: プレイヤー人口
+  player_activity_body: 日次活動と移動30日リーチ
+  stickiness: DAU / 30日
+  online_players: オンラインプレイヤー
+  online_players_body: バケットごとの認証済み接続数のピーク
+  online_now: オンラインプレイヤー
+  peak: ピーク
+  revenue: 収益
+  revenue_over_time: 収益の推移
+  revenue_over_time_body: 収益源別の全プロトコル収益
+  item_royalties: アイテムロイヤリティ
+  character_royalties: キャラクターロイヤリティ
+  character_creation_revenue: キャラクター作成
+  kolizeum_revenue: コロシアム手数料
+  game_transactions: ゲームトランザクション
+  game_gas_fees: ゲームガス代
+  all_time: 累計
+  game_transactions_over_time: トランザクションの推移
+  game_transactions_body: 成功したAresRPGトランザクションをPTBごとに1回カウント
+  today: 今日
+  selected_period: 選択期間
+  lifetime: 累計
+  average_order: 平均注文額
+  chart_revenue: 収益
+  chart_players: プレイヤー
+  chart_online: オンライン
+  bucket_15m: 15分区間
+  bucket_hour: 時間別区間
+  bucket_day: 日次区間
+  bucket_week: 週次区間
+  bucket_month: 月次区間
+  unique_addresses: ユニークアドレス
+  unique_addresses_body: AresRPGモジュール呼び出しに成功したアドレス
+  unique_addresses_over_time: ユニークアドレスの推移
+  successful_game_calls: ゲームモジュール呼び出し元
+  total_characters: キャラクター総数
+  current_characters: 現在のオンチェーンキャラクター
+  total_characters_body: 現在のオンチェーンCharacterオブジェクト
+  characters_over_time: キャラクター数の推移
+  revenue_30d: 30日間の収益
+  revenue_mtd: 月初来収益
+  last_30_days: 過去30日
+  calendar_month_to_date: 今月の月初来
+  buyer: 購入者
+  item: アイテム
+  quantity: 数量
+  unit_price: 単価
+  total: 合計
+  when: 日時
+  transaction: トランザクション
+  treasury: トレジャリー
+  treasury_body: 獲得収益とは分けて現在残高を表示します
+  available_balance: 利用可能残高
+  claim: 引き出す
+  close: 閉じる
+  loading: 読み込み中…
+  load_more: さらに読み込む
+  transactions: トランザクション
+simulator_page:
+  title: 戦闘シミュレーター
+  local_only: ローカル決定論セットアップ
+  board_seed: シード {seed}
+  reroll: ボードを再生成
+  back_to_setup: セットアップに戻る
+  characters: キャラクター
+  create_character: 作成
+  no_characters: キャラクターを作成し、青いセルに配置してください
+  edit_character: キャラクターを編集
+  new_character: 新しいキャラクター
+  appearance: 外見
+  create: 作成
+  delete: 削除
+  level_label: レベル
+  stats: ステータス
+  spells: 呪文
+  points_left: '{left} / {total} PT'
+  equipment_short: 装備
+  spell_level: '{name} のレベル'
+  spell_level_option: 'Lv {level} · {cost} PT'
+  class_shugo_title: 守護者
+  class_tomoda_title: 獣使い
+  class_rojin_title: 採掘師
+  class_yajin_title: 暗殺者
+  class_tokei_title: 時術師
+  class_asobi_title: 賭博師
+  class_iyashi_title: ヒーラー
+  class_senshi_title: 戦士
+  class_yogan_title: 弓術士
+  class_mori_title: ドルイド
+  class_ikari_title: バーサーカー
+  class_shusen_title: 格闘家
+  delete_character: キャラクターを削除
+  assigned_cell: 配置済み · セル {cell}
+  pick_character: キャラクターを選択
+  pick_mob: モブを選択
+  character_editor: ローカルキャラクター
+  character_editor_hint: 属性、外見、レベル、ステータス、解放済みスペル
+  character_level: キャラクターレベル
+  character_stats: 割り当てステータス
+  character_spells: スペルレベル
+  stat_points: '残りステータスポイント {points}'
+  spell_points: '残りスペルポイント {points}'
+  spell_unlock: レベル{level}で解放
+  reset: リセット
+  delete_confirm: 削除を確認
+  class_change_hint: クラスを変更すると基礎特性と割り振ったスペルレベルがリセットされます
+  spells_unavailable: このレベルで解放されているスペルはありません
+  save_character: キャラクターを保存
+  equipment: 装備・レリック・コスメ
+  max_roll: 最大ロール
+  remove_mob: モブを外す
+  stat_vitality: 生命力
+  stat_wisdom: 知恵
+  stat_strength: 力
+  stat_intelligence: 知力
+  stat_chance: 運
+  stat_agility: 素早さ
+  stat_range: 射程
+  stat_movement: 移動
+  stat_action: アクション
+  stat_critical: クリティカル
+  stat_raw_damage: 固定ダメージ
+  stat_resistance: 耐性
+  stat_power: パワー
+  stat_earth_resistance: 地耐性
+  stat_fire_resistance: 火耐性
+  stat_water_resistance: 水耐性
+  stat_air_resistance: 風耐性
+  level: レベル {level}
+  level_range: レベル {min}～{max}
+  place: ファイターを配置
+  start_fight: 戦闘開始
+  fight_board: 戦闘ボード
+  board_hint: 開始セルを左クリック · 右ドラッグで移動 · ホイールでズーム
+  fight_active: 戦闘開始 · 正規イベント {events} 件
+  picker_search: '{title}を検索…'
+  picker_all: すべて
+  picker_no_results: 結果なし
+  picker_results: '{filtered} / {total} 件'
+  picker_selected: 選択中 · {label}
+  picker_new: 新規
+  blob_debug: ボード領域
+  blob_color: 色
+  blob_range: 範囲
+  blob_per_cell: セルごと
+  blob_single: 単一形状
+  blob_click: セルクリックで配置
+fight_hud:
+  board_label: 戦闘ボード
+  turn_order: ターン順
+  turn_order_collapse: ターン順を折りたたむ
+  turn_order_expand: ターン順を展開する
+  placement_title: 戦闘準備
+  placement_hint: ファイターを配置して準備完了にしてください
+  placement_gas_title: ファイターをもう一度移動しますか？
+  placement_gas_body: マスを変更するたびにトランザクションが実行され、ガス代がかかります。不要な再配置は避けてください。
+  placement_gas_hide: 今後表示しない
+  placement_gas_confirm: それでも移動
+  placement_ready: 準備完了
+  placement_ready_all: 全員準備完了
+  placement_ready_all_progress: 全員準備 · {completed}/{total}
+  placement_ready_all_complete: 全員準備完了 · {completed}/{total}
+  placement_ready_all_failed: 準備が中断されました · {completed}/{total}
+  placement_waiting: 他のプレイヤーを待っています…
+  placement_starting: 戦闘を開始しています…
+  placement_force_prompt: プレイヤーが不在です — 戦闘開始を強制しますか？
+  placement_force_button: 強制開始
+  placement_no_opponent: 誰も挑戦を受けなかった
+  crank_prompt: 現在のプレイヤーがターンを終了していません。
+  crank_button: ターン終了を強制する
+  end_turn: ターン終了
+  end_turn_queued: ターン終了を予約
+  reset_turn: リセット
+  weapon_attack: 武器攻撃
+  bare_hands: 素手
+  log_fight_started: 戦闘開始
+  log_cast: '{caster}が{spell}を使用'
+  log_critical_cast: 'クリティカル！ {caster}が{spell}を使用'
+  log_heal: '{source}が{target}を{amount}HP回復'
+  log_ap_change: '{target}：{delta} AP'
+  log_mp_change: '{target}：{delta} MP'
+  log_lost: '{target}が{amount}HPを失う'
+  log_lost_reduced: '{target}が{amount}HPを失う（{reduced}軽減）'
+  log_absorbed: '{target}が{reduced}ダメージを吸収'
+  log_returned: '{target}が呪文を跳ね返す'
+  log_stat_change: '{target}：{delta} {stat} ({turns} {turns_word})'
+  unit_ap: AP
+  unit_mp: MP
+  log_points_loss: '{target}が{amount}{unit}を失う'
+  log_points_steal: '{source}が{target}から{amount}{unit}を奪う'
+  log_points_partial: '{target}が{dodged}{unit}を回避し{amount}を失う'
+  log_points_dodge: '{target}が{attempted}{unit}の損失を回避'
+  log_trap_placed: '{owner}が罠を設置'
+  log_glyph_placed: '{owner}がグリフを設置'
+  log_death: '{target}が倒れた'
+  log_forfeit: '{target}が降参'
+  log_draw: 戦闘は引き分け
+  log_team_wins: チーム{team}の勝利
+  forfeit: 降参
+  forfeit_title: '{name}で降参しますか？'
+  forfeit_body: '{name}は残りHPをすべて失い、この戦闘から離脱します。'
+  confirm_forfeit: 降参を確定
+  unit_turns: ターン
+  chat_title: チャット
+  chat_tab_general: 一般
+  chat_tab_party: パーティー
+  chat_tab_private: 個人
+  chat_tab_combat: 戦闘
+  chat_placeholder: メッセージを入力…
+  chat_fetching_item: オンチェーンのステータスを取得中…
+  chat_item_unavailable: このアイテムはオンチェーンで取得できません。
+  chat_you: あなた
+  chat_line: '{name}：{message}'
+  chat_party_line: '(party) {name}：{message}'
+  chat_whisper_to: '({name} へ) {message}'
+  result_title: 戦闘結果
+  result_duration: 戦闘時間
+  result_gas_spent: ガス使用量
+  result_wager_won: 獲得SUI
+  result_wager_lost: 損失SUI
+  result_wager_even: 賭け結果
+  result_party: 味方
+  result_enemies: 敵
+  result_victory: 勝利
+  result_defeat: 敗北
+  result_you: あなた
+  result_fallen: 戦闘不能
+  result_survived: 生存
+  result_collecting: 戦利品を回収中…
+  result_collecting_progress: キャラクターの戦利品 · {completed}/{total}
+  result_collecting_complete: 全キャラクターの戦利品を回収済み · {completed}/{total}
+  result_collecting_failed: 戦利品の回収が中断されました · {completed}/{total}
+  result_continue: 続ける
+  result_close: 閉じる
+  fight_finalize_pending: 戦闘の後処理を完了できます。
+  fight_finalize_button: 完了する
+  result_retry: 再試行
+  result_version_changed: 戦闘報酬の回収中に一部のゲームオブジェクトが更新されました。失われたものはありません。再試行して最新状態を読み込み、報酬を回収してください。
+  level_up_title: レベルアップ
+  level_up_reached: レベル到達
+  level_up_stat_points: ステータスポイント
+  level_up_spell_points: スペルポイント
+  level_up_new_spell: 新しいスペルを習得
+  level_up_new_worlds: 新しいワールドを解放
+  level_up_worlds_note: 新しい行き先が利用可能になりました
+  level_up_allocate: ポイントを割り振る
+  level_up_later: あとで
+wallet_legacy:
+  sui: SUI
+  how_to_get: SUIの入手方法
+  your_address: ウォレットアドレス
+  send_sui: このアドレスにSUIを送金してください。クリックでコピー。
+  buy_directly: 直接購入
+  buy_with_card: クレジットカードでSUIを購入。ウォレットに直接届きます。
+  buy_on_exchange: 取引所で購入
+  withdraw_to_wallet: 取引所でSUIを購入し、上記のウォレットアドレスに出金してください。
+  faq: よくある質問
+  wallet_description: あなた専用のウォレットです。ネットワーク手数料とプレイヤー間取引に使うSUIを入金してください。
+  moonpay_desc: クレジットカード、Apple Pay、銀行振込
+  transak_desc: クレジットカード、銀行振込、100ヶ国以上対応
+  faq_what_is_sui: SUIとは？
+  faq_what_is_sui_answer: SUIはSuiブロックチェーン上のデジタル通貨です。AresRPGではネットワーク手数料とプレイヤー間取引に少額を使用します。
+  faq_why_sui: なぜAresRPGはSUIを使うの？
+  faq_why_sui_answer: SUIは私たちの推奨決済方法です。取引は即座（1秒以内）に完了し、手数料はほぼゼロ。仲介者手数料もかかりません。将来的には従来の通貨（USD、EURなど）にも対応する予定ですが、法的手続きが膨大で、高額な手数料や税金が発生するため、まだ準備が整っていません。
+  faq_legal: 合法ですか？
+  faq_legal_answer: SUIは世界中の主要な取引所で取引されるデジタル資産です。AresRPGではネットワーク手数料とプレイヤー間取引に使用します。
+  faq_eula: ゲームの利用規約で許可されていますか？
+  faq_eula_answer: はい。暗号通貨が純粋に支払い手段として使用され、NFTや投機的な暗号通貨スキームを含まない限り、完全に準拠しています。多くの大手ゲームストアでさえ暗号通貨決済に対応しています。
+  faq_access: 誰が私のウォレットにアクセスできますか？
+  faq_access_answer: あなただけです。ウォレットはSuiのzkLogin技術を使って作成されます。AresRPGの利用に必要な分だけ入金し、大量の資金を保管しないでください。
+  faq_balance: SUIを送ったのに残高が更新されない？
+  faq_balance_answer: ご安心ください。更新システムが一時的に遅れている場合があります。正しいアドレス（上記からコピー）にSUIを送金したことを確認し、それでも反映されない場合はトランザクションIDを添えてDiscordのチームまでお問い合わせください。
+  add_funds: 残高を追加
+  testnet_faucet_title: テストネットSUI
+  testnet_faucet_body: AresRPGはSuiテストネットで稼働しています。テストネットSUIは無料で、金銭的価値はありません。公式Suiフォーセットからトークンを取得してください。
+  testnet_faucet_action: Suiフォーセットを開く
+  how_to_pay: お支払い方法を選択してください
+  add_funds_desc: ご希望のお支払い方法をお選びください。SUIは直接ウォレットに届きます。
+  method_paypal: PayPal
+  method_paypal_desc: PayPalアカウントでお支払い
+  method_card: クレジット / デビットカード
+  method_card_desc: Visa、Mastercard
+  method_apple_pay: Apple Pay
+  method_apple_pay_desc: Face ID / Touch IDでお支払い
+  method_google_pay: Google Pay
+  method_google_pay_desc: Googleアカウントでお支払い
+  method_bank: 銀行振込
+  method_bank_desc: SEPA（EU）またはACH（米国）
+  method_have_sui: 既にSUIをお持ちの方
+  method_have_sui_desc: 別のウォレットまたは取引所から送金
+  paypal_note: MoonPay経由で米国、英国、ヨーロッパの大半で利用可能
+  card_note: 以下のプロバイダーをお選びください。どちらもVisaとMastercardに対応
+  bank_note: 最低手数料（約1%）。ヨーロッパはSEPA、米国はACH。
+  steps_paypal: 1. 下のリンクをクリック  2. PayPalを支払い方法として選択  3. 金額を入力。SUIがウォレットに届きます
+  steps_card: プロバイダーを選択し、カード情報を入力するとSUIがウォレットに届きます。
+  method_swap: Solana、ETH、その他から..
+  method_swap_desc: Portal Bridge で資産を Sui へブリッジ
+  swap_note: クロスチェーン転送には Portal Bridge を使用します。
+  steps_swap: Portal Bridge を開き、両方のウォレットを接続して Sui を選び、転送を完了してください。
+  steps_wallet: 下記のウォレットアドレスにSUIを送金してください。数秒で届きます。
+  advanced_exchange: 上級者向け：取引所で購入
+  age_notice: すべての決済プロバイダーは18歳以上であることが必要です。
+  send:
+    button: 送金
+    title: SUI を送金
+    building_title: 送金を準備中
+    building_body: トランザクションを構築しています...
+    confirm_title: 送金を確認
+    executing_title: 送金中
+    executing_body: 送金を Sui ネットワークに送信しています。
+    success_title: 送金完了
+    success_body: '{{recipient}} に {{amount}} を送金しました。'
+    failed_title: 送金失敗
+    recipient_label: 受取人
+    recipient_placeholder: プレイヤー名または 0x... アドレス
+    address_valid: 有効な Sui アドレスです
+    address_invalid: 無効な Sui アドレスです
+    hint: プレイヤー名（4文字以上）または 0x Sui アドレスを入力
+    player_resolved: プレイヤー見つかりました：{{name}}
+    player_resolved_address: '{{name}} → {{address}}'
+    player_not_found: その名前のプレイヤーはいません
+    player_lookup_failed: そのプレイヤー名を検索できませんでした。もう一度お試しください。
+    no_results: プレイヤーが見つかりません
+    amount_label: 金額
+    submit: 続行
+    sending_to: 送金先
+    sent: 送金済み
+    send_more: さらに送金
+    suins_resolving: 名前を解決中…
+    suins_resolved: 名前を解決しました：{{name}}
+    err:
+      recipient_not_found: '{{name}} という名前のプレイヤーは見つかりません。'
+      recipient_no_wallet: '{{name}}はまだWebアプリでウォレットを連携していません。aresrpg.worldで接続するよう伝えてください。'
+      self_send: 自分自身のウォレットには SUI を送金できません。
+      invalid_address: 入力されたアドレスは有効な Sui アドレスではありません。
+      insufficient_balance: この送金にはウォレットの SUI 残高が不足しています。
+      rate_limited: 送金回数が多すぎます。1分待ってから再試行してください。
+      tx_failed: オンチェーンでトランザクションが失敗しました。資金は移動していません。
+      user_rejected: ウォレットで署名が拒否されました。
+      recipient_required: 送信先が必要です
+      suins_not_found: SuiNS名「{{name}}」は見つかりませんでした。
+      amount_positive: 0 より大きい金額を入力してください。
+      amount_invalid: 有効な金額ではありません。
+    send_confirm: 送信
+    drain_hint: MAX はウォレットを空にします。ネットワーク手数料は送金額から差し引かれます。
+    drain_warning: これはウォレットを空にします。ネットワーク手数料は送金そのものから支払われるため、残高はちょうど 0 SUI になります。
+    drain_sending: 残高すべて
+    drain_fee_note: 送金額から差し引き
+    drain_remaining: ウォレットに残る額
+    success_drain_body: ウォレットは空になりました — すべて {{recipient}} に送金されました。
+
+wallet_send_shared:
+  cancel: キャンセル
+  close: 閉じる
+  retry: 再試行
+  copied: コピー済み
+  gas_estimated: ガス（推定）
+  signing: 署名中...
+  dont_close: このウィンドウを閉じないでください
+  add_funds: 入金する
+  total: 合計
+  transaction: トランザクション
+
+encyclopedia_page:
+  minimum: 最小
+  maximum: 最大
+  terrain_seed: 地形シード
+  sea_level: 海面高度
+  world_role:
+    trash: 通常
+    archi: アーキモブ
+    elite: エリート
+    boss: ボス
+    dungeon_boss: ダンジョンボス
+  gather_job:
+    farmer: 農家
+    herbalist: 薬草師
+    miner: 鉱夫
+  world_resource_tier: T{{tier}}
+  world_address_copied: コピーしました
+  search_items: アイテム検索...
+  search_mobs: モンスター検索...
+  all_families: すべてのファミリー
+  elements_filter: 属性
+  advanced_filters: 詳細フィルター
+  no_entries: エントリーが見つかりません
+  select_item: アイテムを選択して詳細を表示
+  select_mob: モンスターを選択して詳細を表示
+  select_class: クラスを選択して詳細を表示
+  loading_details: 詳細読み込み中...
+  loading_encyclopedia: 図鑑を読み込み中...
+  items: アイテム
+  mobs: モンスター
+  pets: ペット
+  classes: クラス
+  gameplay_tab: ゲームプレイ
+  jobs_tab: 職業
+  search_jobs: 職業を検索...
+  select_job: 職業を選択
+  crafts: 製作
+  gathering_tiers: 採集の進行
+  craftable_items: 製作可能なアイテム
+  tier: ティア
+  required_level: 必要Lv.
+  resource: 素材
+  rare_variant: レア変種
+  xp_per_harvest: XP / 採集
+  job_desc:
+    FARMER: 農夫は世界中の畑で穀物を収穫します。高いティアではより希少な作物が解放されます。
+    HERBALIST: 薬草師は錬金術に使用する植物や花を採集します。各ティアにはより高い職業レベルが必要です。
+    MINER: 鉱夫は岩石から鉱石や鉱物を採掘します。レベルが上がるにつれ希少な金属が利用可能になります。
+    FORGER: '鍛冶師は剣、短剣、斧を作ります。'
+    CARVER: '彫師は弓と槍を作ります。'
+    TAILOR: '仕立て屋は帽子とマントを作ります。'
+    JEWELER: '宝石職人は指輪とアミュレットを作ります。'
+    TANNER: '革職人はブーツとベルトを作ります。'
+    HANDYMAN: '職人は道具、鍵、中間素材を作ります。'
+    ALCHEMIST: '錬金術師はポーションと中間素材を作ります。'
+    BAKER: 'パン職人はパンと中間素材を作ります。'
+  dungeons_tab: ダンジョン
+  search_dungeons: ダンジョンを検索...
+  select_dungeon: ダンジョンを選択
+  showing_count: '{{total}}件中{{count}}件'
+  sort_name: 名前 A-Z
+  clear_filters: すべてクリア
+  no_results: フィルターに一致するアイテムがありません
+  filter_by_category: カテゴリ別
+  filter_by_resource: 素材タイプ別
+  filter_by_job: 製作職業別
+  filter_by_world: ワールド別
+  filter_by_mob_family: モンスター系統別
+  filter_biome: バイオーム
+  filter_city: 都市
+  group_armor: 防具
+  group_weapons: 武器
+  group_accessories: アクセサリー
+  group_pets: ペット
+  group_runes: ルーン
+  group_relics: 遺物
+  group_tools: 道具
+  group_consumables: 消耗品
+  group_raw_resources: 原材料
+  group_gatherable_resources: 採集資源
+  group_intermediary_resources: 中間素材
+  group_pet_food_resources: ペットフード
+  item_category_pet_food: ペットフード
+  stats_filter: ステータス
+  filter_life_steal: ライフスティール
+  gameplay:
+    game_mechanics: ゲームメカニクス
+    section_combat: 戦闘
+    section_leveling: レベリング
+    section_stats: ステータス
+    section_loot: ドロップ＆戦利品
+    section_groups: グループ
+    section_dungeons: ダンジョン
+    section_classes: クラス
+    section_economy: 経済
+    combat_desc: 戦闘はグリッド上のターン制です。自分のターンにはアクションポイント（AP）を消費して呪文を唱え、移動ポイント（MP）を消費して移動します。視線（ライン・オブ・サイト）は呪文ごとの設定です——ほとんどの呪文は必要としますが、不要な呪文もあります。ワールドではモブの集団と、コリゼウムでは他のプレイヤーと戦います。ダメージは対応する属性ステータスと生ダメージボーナスに応じてスケーリングします。
+    elements: 属性
+    element_earth: 地
+    element_fire: 火
+    element_water: 水
+    element_air: 風
+    stat_strength: 筋力
+    stat_intelligence: 知力
+    stat_chance: 幸運
+    stat_agility: 敏捷
+    critical_hits: クリティカルヒット
+    crit_desc: 各呪文や武器には、N分の1で表される固有の基本クリティカル率があります。クリティカルはNを減少させますが、最終的な確率が2分の1（50%）を超えることはありません。
+    crit_bonus_desc: クリティカルヒット時、呪文は通常の効果の代わりに専用のクリティカル効果（より強いダメージや追加効果）を適用します。
+    blocking: シールド
+    blocking_desc: 一部の呪文は、対応する属性の入ってくるダメージを使い切るまで吸収するシールドを付与します。スタミナやガード姿勢はなく、シールドが唯一のダメージ吸収手段です。
+    resistance: 耐性
+    resistance_desc: 属性耐性は最終ダメージに適用される割合減少で、属性ごとに上限50%です。負の耐性（弱点）は代わりにダメージを増幅します。
+    mob_level_bands: モブのレベル帯
+    mob_level_bands_desc: 設定されたレベル帯では、HP、XP、素早さ、賢さ、正の耐性、スケール対象の呪文値が60%から160%へ上昇します。APとMPは100%から130%です。負の耐性は逆の曲線を使い、弱点の大きさは最低レベルの160%から最高レベルの60%へ縮小します。
+    life_steal: ライフスティール
+    life_steal_desc: ドレイン呪文の効果はダメージを与え、対象が実際に失った体力の半分だけ詠唱者を回復します。回復するのはプレイヤーのドレインだけで、同じ呪文を唱えたモブはダメージを与えるだけで回復しません。
+    life_steal_note: ダメージはまず標準のダメージ計算式を通り、その後詠唱者は本来の対象が実際に失った体力の半分を回復します。他の戦闘員へ転嫁された攻撃や、対象が回復に変換した攻撃では何も奪えません。
+    chatiment: チャティマン
+    chatiment_desc: チャティマンは、致死に至らず実際に失ったHPを対応する能力値へ変換します。行動中の戦闘者のターンごとに上限があり、後のターンのボーナスは別々に5ターン持続します。モンスター由来のダメージは全量、プレイヤー由来のダメージと上限は半分です。Aresではエロージョンを使用しません。
+    healing: 回復
+    healing_desc: 回復は呪文の基礎値に、知力の割合分を上乗せし、さらに装備やバフからの固定回復ボーナスを加えて適用されます。回復は対象の最大HPが上限です。
+    healing_intel_value: 知力1につき回復+1%
+    heal_bonus: 回復ボーナス
+    heal_bonus_value: 装備・バフからの固定ボーナス、知力によるスケーリングの後に加算
+    mobs: モブ
+    healing_mobs_value: 知力のみでスケーリング、回復ボーナスなし
+    leveling_desc: 最大レベルは200。最適なXPのためにレベル範囲内のモブと戦いましょう。
+    points_per_level: レベルあたりのポイント
+    stat_points: ステータスポイント
+    stat_points_value: レベルあたり{{n}}
+    stat_costs_desc: コストはクラスと現在の基礎値で決まります。各クラスページで全段階を確認できます。
+    spell_points: スペルポイント
+    spell_points_value: レベルあたり{{n}}
+    xp_milestones: XPマイルストーン
+    level_10: レベル10
+    level_50: レベル50
+    level_100: レベル100
+    base_stats: 基本ステータス
+    stat_vitality: 体力
+    stat_vitality_desc: ポイントあたり最大HP+1
+    stat_wisdom: 知恵
+    stat_wisdom_desc: 獲得XPボーナス
+    stat_strength_desc: 地ダメージのスケーリング
+    stat_intelligence_desc: 火ダメージ、回復スケーリング
+    stat_chance_desc: 水ダメージ、戦利品増加
+    stat_agility_desc: 風ダメージのスケーリング
+    derived_formulas: 派生計算式
+    max_health: 最大HP
+    loot_desc: 倒された各モブは、戦利品テーブルの各項目を1回ずつ判定します。成功した項目の数量は設定範囲内でランダムに決まります。
+    stat_rolling: ステータスロール
+    stat_rolling_desc: 各ステータスはテンプレート範囲内で均一にロールされます。すべての値が等確率です。
+    archimobs: アーキモブ
+    archimobs_desc: 対象となる各モブは1%の確率で、固有名を持つ恒久的に強化されたアーキモブに置き換わります。各メンバーは個別に抽選されます。
+    max_members: 最大メンバー数
+    groups_desc: パーティーは最大{{max}}人で構成される共有名簿で、リーダーが選出されます。パーティーを組んでいるだけでは戦闘において何の効果もありません——パーティーの有無にかかわらず、全員が自分自身の参加トランザクションを送って戦闘に入る必要があり、自動参加や近接による参加はありません。
+    groups_xp: XPの分配
+    groups_xp_desc: 倒したモブの基礎XPを一つのプールに合算します。条件を満たす戦闘員の人数でRetro式のグループ係数を掛け、プレイヤー側とモブ側の合計レベル差で減額し、最後に各プレイヤーのレベルがパーティ合計レベルに占める割合で分配します。最高レベルの3分の1未満のプレイヤーは係数を増やしません。知恵は最後に適用され、個人の与ダメージは影響しません。
+    groups_loot: 戦利品の分配
+    groups_loot_desc: 倒された各モブは共有の戦利品判定を1回行います。成功したドロップは勝利したプレイヤーへ順番に割り当てられ、参加者が増えても判定回数は増えません。
+    dungeons_desc: 設定された都市のダンジョン入口へ行き、鍵を使い、順番にルームを攻略します。各ダンジョンには1つのライブロビーがあります。
+    dungeon_entry: 入場
+    dungeon_entry_value: 都市の入口で対応する鍵を使用
+    dungeon_instance: インスタンス
+    dungeon_instance_value: ダンジョンロビー、公開またはグループ戦闘
+    dungeon_completion: クリア
+    dungeon_completion_value: すべての部屋をクリア
+    dungeon_reward: 報酬
+    dungeon_reward_value: 標準の戦利品分配
+    classes_desc: 12クラス。武器は共通化されています——どのクラスもあらゆる武器タイプを装備・使用できます——ただし自分のクラス用に設計された武器を使うとダメージとクリティカルダメージが+10%になります。各クラスはレベルアップに伴い、決まったレベルで呪文を解放します。
+    table_class: クラス
+    table_weapon: 適性
+    table_hp: HP
+    role_warrior: ウォリアー
+    role_assassin: アサシン
+    role_berserker: バーサーカー
+    role_druid: ドルイド
+    role_chronomancer: クロノマンサー
+    role_guardian: ガーディアン
+    role_archer: アーチャー
+    role_prospector: プロスペクター
+    role_brawler: ブロウラー
+    role_tomoda: 獣使い
+    role_gambler: ギャンブラー
+    role_healer: ヒーラー
+    weapon_daggers: ダガー
+    weapon_spear: スピア
+    weapon_bow: ボウ
+    weapon_axe: アックス
+    weapon_sword: ソード
+    marketplace: マーケットプレイス
+    marketplace_desc: 装備とキャラクターは好きな価格でキオスクに出品でき、購入者は即座に支払います。資源はリスティングなしでスワッププールを通じてSUIと交換されます。すべての販売に10%のロイヤリティがかかります——マーケットプレイスが唯一の売却手段です。
+    section_forgemagie: フォルジュマジー
+    forgemagie_desc: フォルジュマジーはルーン製作システムです。装備を破壊してルーンに変え、そのルーンを他の装備に適用してステータスを変更します。装備を完璧にするためのハイリスク・ハイリターンのエンドゲームシステム。
+    crushing: 粉砕
+    crushing_desc: 粉砕されたアイテムの各ステータス行は独立して判定されます——高いステータス値と重いステータスほど多くのルーンを生成します。サーバーは存在しません。生成数の除数は、アイテムレベルごとの固定カーブと、アイテムテンプレート自身のtaux（粉砕そのものがそのテンプレートでは下げ、同じ帯の他のテンプレートでは上げる、共有のオンチェーン・インフレ係数、1%〜4000%）を組み合わせたものです。
+    crushing_tiers_desc: ルーンのティア（Ba/Pa/Ra）は確率的に選択されます。高いステータス値はRaルーンを優遍します。
+    rune_tiers: ルーンティア
+    rune_ba: ティア1：ルーンあたり最低ウェイト
+    rune_pa: ティア2：ルーンあたり中ウェイト
+    rune_ra: ティア3：ルーンあたり最高ウェイト、経験値2倍
+    rune_weight_desc: ウェイトは値×単位ウェイトから始まり、Retroでは整数へ切り上げます。自動計算されます。
+    rune_table_stat: ステータス
+    rune_table_note: 範囲、移動、行動のルーンはそれぞれ1回のみ適用可能。クリティカル率は最大10回まで。クリティカルとクリティカル結果にはルーンが一切存在しません。
+    rune_stat_range: 範囲
+    rune_stat_movement: 移動
+    rune_stat_action: 行動
+    rune_stat_raw_damage: 生ダメージ
+    rune_stat_critical_chance: クリティカル率
+    rune_stat_earth_resist: 地耐性
+    rune_stat_fire_resist: 火耐性
+    rune_stat_water_resist: 水耐性
+    rune_stat_air_resist: 風耐性
+    stat_unit_weights: ステータス単位ウェイト
+    stat_unit_weights_desc: 各ステータスには戦闘力を反映した単位ウェイトがあります。重いステータスラインを持つアイテムは粉砕時により多くのルーンを生成し、アイテム予算を多く消費し、オーバーメイジが困難です。
+    rune_application: ルーン適用
+    rune_application_desc: テスト用として、装備カテゴリに対応する製作ジョブのレベル1で一時的に解放されています。ルーンを一つずつ装備に適用してステータスを変更します。3つの結果があります：
+    outcome_critical_success: クリティカル成功
+    outcome_critical_success_desc: ルーン成功、ステータス損失なし
+    outcome_neutral: ニュートラル成功
+    outcome_neutral_desc: ルーン成功、他のステータスが下がる可能性
+    outcome_critical_failure: クリティカル失敗
+    outcome_critical_failure_desc: ルーン失敗、ルーンウェイト分のステータス損失
+    success_rate: 成功率
+    success_rate_desc: 成功はステータスが最大値にどれだけ近いかに依存します：0%付近では成功率~99%、最大付近では~50%、エキゾチックなステータスはレベルに関係なく~1%です。成功がクリティカル（損失なし）になるかニュートラル（ウェイトを支払う）になるかも同様に変動し、さらにジョブレベル1を超えるごとに小さな+0.2%が加わります。ジョブが扱えるアイテムレベルに上限はありません。
+    puits: シンク（ピュイ）
+    puits_desc: UIに表示されるウェイトカウンターで、ステータス損失がルーンウェイトを超えたときに蓄積されます。他のステータスが影響を受ける前に将来の損失を吸収します。アイテムに保持され、作業台や所有者が変わっても引き継がれます。
+    over_maging: オーバーメイジ
+    over_maging_desc: ステータスを自然な最大値以上に押し上げます。各ステータス行は101の追加ウェイトが上限です。オーバーメイジの最大値はステータスの単位ウェイトに依存します——体力（ウェイト0.25）のような軽いステータスは約404ポイント超過できますが、知恵（ウェイト3）のような重いステータスは約33ポイントしか超過できません。
+    forgemagie_tips: ヒント
+    forgemagie_tips_desc: エキゾチック/オーバーメイジの場合：まず安いステータスを外してシンクを貯め、バッファがある状態で難しいステータスを通し、その後失ったステータスを戻す（最大値から遠いので簡単）。オーバーメイジとエキゾチックのステータスは失敗時に最初に失われます。
+    forgemagie_xp: 経験値
+    forgemagie_xp_desc: 経験値は成功時のみ付与されます（クリティカルまたはニュートラル）。高レベルアイテムや重いルーンほど多くの経験値を獲得できます。Raルーンは BaやPaルーンの2倍の経験値を付与します。計算式：max(1, ルーンウェイト × (1 + アイテムレベル / 50) × ティア倍率)、Raの倍率は2、それ以外は1。
+    action_points: アクションポイント（AP）
+    movement_points: 移動ポイント（MP）
+    critical_stat: クリティカル
+    wisdom_xp: 知恵によるXPボーナス
+    wisdom_xp_desc: 有効中の効果を含む実効知恵1ポイントごとに獲得XPが1%増加します。実効知恵100で獲得XPは2倍になります。
+    chance_loot: 幸運＆戦利品
+    chance_loot_desc: 有効中の効果を含む勝利チームの平均幸運が、確定した各ドロップ率に乗算されます。平均幸運600で確率は2倍になります。ドロップ率は100%を超えません。
+    mob_loot_band: モブレベルとドロップ率
+    mob_loot_band_desc: 設定確率が中央値です。最低レベルのモブは80%、最高レベルは120%を使い、上限は100%です。固定レベルのモブは設定確率をそのまま使います。数量はモブレベルで変化しません。
+  dropped_by: ドロップ元
+  recipe: レシピ
+  price_history: 価格履歴
+  no_price_data: 価格データなし
+  no_recipe: レシピデータなし
+  ingredient_of: 素材として使用
+  no_ingredient_of: レシピに使用されていません
+  no_drops: 既知のドロップ元なし
+  pet_stats: ペットステータス
+  pet_diet: ペットの食事
+  food_sources: エサ元
+  stat_bonuses_max: ステータスボーナス（最大パワー時）
+  characteristics: 特性
+  damages: ダメージ
+  range_to: 〜
+  level_short: Lv. {{level}}
+  no_diet: 食事情報なし
+  newborn: 生まれたて
+  max_power: 最大パワー
+  back_to_list: リストに戻る
+  view_all: 全て
+  item_type: タイプ
+  view_by_zone: ゾーン別
+  view_by_level: レベル別
+  view_by_family: ファミリー別
+  unknown_family: 不明なファミリー
+  showing_mobs: '{{total}}体中{{count}}体表示'
+  no_mobs_match: フィルターに一致するモンスターがいません
+  boss_only: ボスのみ
+  clear_all: 全てクリア
+  all_jobs: 全職業
+  sort_level_asc: レベル ↑
+  sort_level_desc: レベル ↓
+  sort_name_asc: 名前 A-Z
+  sort_newest: 最新
+  level_bracket: レベル {{range}}
+  unknown_zone: 不明
+  unlocks_at_level: LV.{{level}} で解放
+  level: レベル
+  aoe_radius: AoE半径
+  effects: 効果
+  life_cost: HP消費
+  duration_short: '持続: {{duration}}秒'
+  coming_soon: 近日公開
+  health: HP
+  spells_count: スペル ({{count}})
+  mob_spells: スペル
+  pet_food: エサ
+  pet_full_fed_note: これらは最大パワー時のステータスです。ペットは1日1回、合計{{count}}回の給餌で0からこの上限まで成長します。
+  pet_diet_note: この{{count}}種類のエサのいずれか1つを1日1回食べます。
+  consumable_heal: HPを{{amount}}回復
+  consumable_reset_stats: ステータスポイントリセット
+  consumable_reset_spells: スペルポイントリセット
+  consumable_recall: ワールドポータルに戻る
+  consumable_city: '{{city}}の都市へ移動する'
+  consumable_loot_box: ランダム報酬を開く
+  consumable_reward_heading: 報酬
+  consumable_rewards: 入手可能な報酬
+  consumable_reward: '{{item}} · {{chance}}%'
+  rune_effect: アイテムに{{stat}}を{{amount}}追加
+  rune_obtained_by_crushing: アイテムの粉砕で入手
+  spell_n: スペル {{n}}
+  range: 射程
+  range_modifiability: 射程変更
+  no_spells_minted: オンチェーンで発行された呪文はありません
+  xp_suffix: +{{xp}} XP
+  boss_badge: ボス
+  archi_badge: アーキ
+  recommended_short: 推奨 {{level}}
+  level_range: Lv. {{min}}-{{max}}
+  up_to_plus: 最大 +{{val}}
+  element:
+    fire: 火
+    water: 水
+    earth: 地
+    air: 風
+    neutral: 無属性
+  job_category:
+    gathering: 採集
+    weapon_craft: 武器製作
+    equipment_craft: 防具製作
+    consumable_craft: 消耗品製作
+  ap_cost: APコスト
+  casts_per_turn: 使用回数/ターン
+  casts_per_target: 使用回数/対象
+  unlimited: 無制限
+  cooldown: クールダウン
+  cooldown_none: なし
+  characteristic_costs: 特性コスト
+  characteristic_costs_desc: 基礎ポイントはクラス固有の段階に従います。装備はコストに影響しません。
+  characteristic_cost_band: '{{cost}} pt → +{{gain}} · ≤{{cap}}'
+  characteristic_cost_unlimited: '{{cost}} pt → +{{gain}} · 上限なし'
+  turns_value: '{{n}}ターン'
+  targeting: 対象指定
+  effect_zone: 効果範囲
+  line_of_sight: 視線
+  los_required: 必要
+  los_not_required: 不要
+  target_cell: 対象マス
+  target_cell_empty: 空マスのみ
+  target_cell_any: 任意(空/占有問わず)
+  cast_line: 詠唱ライン
+  cast_line_straight: 直線のみ
+  cast_line_free: 自由照準
+  critical: クリティカル
+  crit_chance: クリティカル率
+  crit_chance_value: '{{n}}分の1'
+  on_crit: クリティカル時
+  proc_chance: '{{n}}%の確率'
+  aoe_shape:
+    point: 単体対象
+    circle: 円 {{size}}
+    cross: 十字 {{size}}
+    line: 直線 {{size}}
+    tbar: T字 {{size}}
+    ring: 輪 {{size}}
+    allmap: 盤面全体
+    cone: 扇状 {{size}}
+  no_items_onchain: オンチェーンのアイテムテンプレートはまだありません
+  no_mobs_onchain: オンチェーンのモンスターはまだいません
+  obtention_crafted: クラフト可能
+  obtention_dropped_by: '{{count}}体のモブがドロップ'
+  obtention_unknown: 入手方法不明
+  total_supply: 総供給量
+  marketcap: 時価総額
+  marketcap_unknown: 不明
+  worlds_tab: ワールド
+  search_worlds: ワールド名を検索…
+  no_worlds: オンチェーンのワールドがありません
+  select_world: ワールドを選択してください
+  world_level_unknown: レベル帯はまだ利用できません
+  world_biomes: バイオーム
+  world_no_mobs: 既知のモンスターなし
+  world_cities: 都市
+  world_no_resources: 既知の資源なし
+  world_gap_note: RPCではまだ提供されていません
+  world_dungeon: ダンジョン
+  world_dungeon_room: 部屋 {{n}}
+  world_stat_lean: 得意ステータス
+  world_appears_in: '出現先:'
+  found_in: 出現場所
+  item_descriptions:
+    abyssal_blood_wheat: ''
+    aloe_crystal_salve: ''
+    aloe_vera: ''
+    amber: ''
+    amber_powder: ''
+    arcane_reagent: ''
+    arcane_spore: ''
+    arcaneshroom: ''
+    arcanite: ''
+    arcanite_powder: ''
+    arcanize_flour: ''
+    barley_flour: ''
+    basic_pickaxe: ''
+    blood_wheat: ''
+    blood_wheat_flour: ''
+    bloodstone: ''
+    bloodstone_powder: ''
+    bloodveil_orchid: ''
+    burnt_wheat_flour: ''
+    crimson_truffle: ''
+    crimson_truffle_heart: ''
+    crystallized_tanjirize: ''
+    cursed_amalgam: ''
+    cursed_fungus: ''
+    cursed_gem: ''
+    cursed_gem_powder: ''
+    cursed_root: ''
+    cursed_wheat: ''
+    diamond: ''
+    diamond_powder: ''
+    draconite: ''
+    draconite_powder: ''
+    draconize_flour: ''
+    dragon_petal_extract: ''
+    dragon_pollen: ''
+    dragonlily: ''
+    duskite: ''
+    duskite_powder: ''
+    ethereal_ukranize: ''
+    genesis_suize: ''
+    ghost_cap: ''
+    golden_mushroom: ''
+    golden_nightcap: ''
+    golden_wheat: ''
+    green_mushroom: ''
+    green_mushroom_powder: ''
+    himalayan_flour: ''
+    infinity_amber: ''
+    infinity_arcanite: ''
+    infinity_bloodstone: ''
+    infinity_cursed_gem: ''
+    infinity_diamond: ''
+    infinity_draconite: ''
+    infinity_duskite: ''
+    infinity_jade: ''
+    infinity_moonstone: ''
+    infinity_obsidianite: ''
+    infinity_quartz: ''
+    ivory_orchid_paste: ''
+    ivory_shrooms: ''
+    jade: ''
+    jade_powder: ''
+    malt_flour: ''
+    moonstone: ''
+    moonstone_powder: ''
+    nightcap: ''
+    nightcap_elixir_base: ''
+    obsidianite: ''
+    obsidianite_powder: ''
+    old_hoe: ''
+    orchid_spore_blend: ''
+    phantom_distillate: ''
+    phantom_essence: ''
+    phantom_spore: ''
+    primordial_draconize: ''
+    pristine_malt: ''
+    quartz: ''
+    quartz_powder: ''
+    red_orchid: ''
+    rune_action_ba: ''
+    rune_agility_ba: ''
+    rune_agility_pa: ''
+    rune_agility_ra: ''
+    rune_air_resistance_ba: ''
+    rune_air_resistance_pa: ''
+    rune_air_resistance_ra: ''
+    rune_chance_ba: ''
+    rune_chance_pa: ''
+    rune_chance_ra: ''
+    rune_critical_ba: ''
+    rune_earth_resistance_ba: ''
+    rune_earth_resistance_pa: ''
+    rune_earth_resistance_ra: ''
+    rune_fire_resistance_ba: ''
+    rune_fire_resistance_pa: ''
+    rune_fire_resistance_ra: ''
+    rune_intelligence_ba: ''
+    rune_intelligence_pa: ''
+    rune_intelligence_ra: ''
+    rune_movement_ba: ''
+    rune_range_ba: ''
+    rune_raw_damage_ba: ''
+    rune_strength_ba: ''
+    rune_strength_pa: ''
+    rune_strength_ra: ''
+    rune_vitality_ba: ''
+    rune_vitality_pa: ''
+    rune_vitality_ra: ''
+    rune_water_resistance_ba: ''
+    rune_water_resistance_pa: ''
+    rune_water_resistance_ra: ''
+    rune_wisdom_ba: ''
+    rune_wisdom_pa: ''
+    rune_wisdom_ra: ''
+    scroll_of_oblivion: 使用したすべてのスペルポイントを返還し、強化したスペルをレベル1に戻します。
+    scroll_of_rebirth: 使用したすべてのステータスポイントを返還し、振り直せるようにします。
+    shiny_barley: ''
+    smoldering_wheat: ''
+    spectral_arcanize: ''
+    suize_flour: ''
+    tanjirize_flour: ''
+    title_veteran: ''
+    tool_herbalist: ''
+    truffle_essence_compound: ''
+    ukranize_flour: ''
+    verdant_aloe: ''
+    water: ''
+    wheat: ''
+    wheat_barley: ''
+    wheat_burnt: ''
+    wheat_draconize: ''
+    wheat_flour: ''
+    wheat_malt: ''
+    wheat_purple: ''
+    wheat_suize: ''
+    wheat_tanjirize: ''
+    wheat_ukraine: ''
+    wheat_white: ''
+    wither_concentrate: ''
+    wither_petal: ''
+    witherbloom: ''
+out_of_sui_body: トランザクション手数料を支払うSUIがなくなりました。プレイを続けるにはウォレットにチャージしてください。
+characters_page:
+  tab_equipment: 装備
+  tab_stats: ステータス
+  tab_spells: 呪文
+  tab_jobs: 職業
+  tab_runeforge: ルーン鍛冶
+  no_character: キャラクターが未選択です — 上のタブバーで選んでください
+  level: 'Lv {{level}}'
+  experience: 経験値
+  equipment_head: 装備
+  equipped_totals: 装備合計
+  no_gear_equipped: 装備なし
+  bag_equipment: 装備
+  bag_consumables: 消耗品
+  bag_resources: 素材
+  accept: 確定
+  cancel: キャンセル
+  equip_pending: 装備を更新中…
+  equip_success: 装備を更新しました
+  consume_pending: アイテムを使用中…
+  consume_success: アイテムを使用しました
+  already_full_hp: HPはすでに満タンです
+  refusal_wrong_slot: このアイテムはそのスロットに装備できません
+  refusal_level_too_low: レベルが足りません
+  refusal_relic_duplicate: 同じ種類のレリックをすでに装備しています
+  refusal_item_listed: このアイテムは出品中です
+  points_to_assign: 割り振りポイント
+  spend_hint: 6つの特性にポイントを割り振り、確定してください
+  reset: リセット
+  confirm: 確定
+  tx_pending: 確認中…
+  stats_pending: ポイントを割り振り中…
+  stats_success: ポイントを割り振りました
+  health: HP
+  action: AP
+  movement: MP
+  characteristics: 特性
+  resistances: 耐性
+  secondary: 二次ステータス
+  element_fire: 火
+  element_water: 水
+  element_earth: 土
+  element_air: 風
+  add_point: '{{stat}}にポイントを追加'
+  remove_point: '{{stat}}からポイントを戻す'
+  grimoire: 魔導書
+  spell_points: 呪文ポイント
+  unlocked: '{{unlocked}} / {{total}} 習得済み'
+  unlocks_at: 'Lv {{level}}で解放'
+  unlock_line: 'Lv {{level}}'
+  lv_of: '{{current}} / {{max}}'
+  locked: 未解放
+  mastered: 極めました
+  no_points: 呪文ポイントが足りません
+  upgrading: レベルアップ中…
+  upgrade_success: '{{spell}}がレベルアップしました'
+  level_up: 'レベルアップ · {{cost}}pt'
+  lv: 'Lv {{level}}'
+  xp_progress: '{{current}} / {{needed}} XP'
+  max: 最大
+  resources: 素材
+  back: 戻る
+  gate_note: 対応するクラフト職業のレベル{{level}}から利用可能
+  detail_title: アイテム
+  forge_title: 鍛冶台
+  inventory_title: インベントリ
+  tab_gear: 装備
+  tab_runes: ルーン
+  place_gear: 装備を置く
+  place_rune: ルーンを置く
+  random_notice: 結果はチェーン上で抽選されます。ルーンは成功・不発・別ステータスの喪失のいずれかで、保証はありません。
+  one_rune_note: 1回の試行につきルーンを1つ消費します
+  apply: ルーンを刻む
+  scribing: 刻印中…
+  outcome_critical_success: クリティカル成功
+  outcome_neutral_success: ニュートラル成功
+  outcome_critical_failure: クリティカル失敗
+  runeforge_history: 履歴
+  runeforge_history_empty: ルーンを適用すると、このアイテムの履歴が始まります
+  runeforge_puits: プイ
+  runeforge_no_stat_change: ステータス変化なし
+  requires_job: '{{job}}レベル{{level}}が必要です'
+  clear: 外す
+  inspect_empty: 調べる装備を選んでください
+  no_forge_gear: 鍛冶できる装備がバッグにありません
+  no_runes: ルーンがバッグにありません
+  menu_feed: 餌をあげる
+  menu_consume: 使用する
+  menu_crush: 粉砕する
+  menu_destroy: 破棄する
+  menu_view_recipes: レシピを見る
+  menu_explorer: エクスプローラーで見る
+  menu_link_chat: チャットにリンク
+  feed_title: ペットに餌をあげる
+  feed_power_label: パワー
+  feed_power: '{{count}} / {{max}}'
+  feed_pick_food: 餌を選んでください
+  feed_no_food: バッグに適した餌がありません
+  feed_already_today: 今日はもう餌をあげました — また明日
+  feed_full: 満腹です
+  feed_pending: 給餌中…
+  feed_success: 餌をあげました
+  claim_success: 報酬を受け取りました
+  crush_title: 装備を粉砕
+  crush_confirm_body: '{{name}}を粉砕しますか？アイテムは永久に失われ、ルーンになります。'
+  crush_cta: 粉砕
+  crush_pending: 粉砕中…
+  crush_success: 装備を粉砕しました
+  crush_result_title: 粉砕結果
+  crush_result_empty: 次回に期待しましょう。
+  destroy_title: アイテムを破棄
+  destroy_confirm_body: '{{name}} ×{{amount}}を破棄しますか？取り消せません。'
+  destroy_cta: 破棄
+  destroy_pending: 破棄中…
+  destroy_success: アイテムを破棄しました
+  unsealing: 開封中…
+  skip_hint: クリックでスキップ
+  reveal_eyebrow: 獲得しました
+  revealing: 公開中…
+  collecting: 受け取り中…
+  continue_cta: 続ける
+  stat_maxed: このアイテムではこのステータスのルーン上限に達しています
+  stat:
+    movement: 'MP'
+    action: 'AP'
+    range: '射程'
+    critical_chance: 'クリティカル率'
+    critical_outcomes: 'クリティカル率'
+    vitality: '体力'
+    wisdom: '知恵'
+    strength: '筋力'
+    intelligence: '知力'
+    chance: '幸運'
+    agility: '敏捷'
+    heal: '回復'
+    critical_hit: 'クリティカルヒット'
+    percent_damage: 'ダメージ'
+    raw_damage: '生ダメージ'
+    fire_resistance: '火耐性'
+    water_resistance: '水耐性'
+    earth_resistance: '土耐性'
+    air_resistance: '風耐性'
+  stats:
+    no_character: 'キャラクターが選択されていません'
+    unavailable: 'ステータスを取得できません'
+    level: 'Lv. {{level}}'
+    adventurer: '冒険者'
+    points_to_assign: '割り振り可能ポイント'
+    spend_hint: '特性に割り振ってください'
+    reset: 'リセット'
+    health: 'HP'
+    action: '行動'
+    move: '移動'
+    characteristics: '特性'
+    resistances: '耐性'
+    secondary: '副次ステータス'
+    element:
+      fire: '火'
+      water: '水'
+      earth: '土'
+      air: '風'
+    description:
+      vitality: '最大HPが増加する'
+      wisdom: '獲得経験値とAP/MP減少への耐性が増加する'
+      strength: '土属性ダメージが増加する'
+      intelligence: '火属性ダメージと回復量が増加する'
+      chance: '水属性ダメージとアイテムのドロップ率が増加する'
+      agility: '風属性ダメージ、クリティカル、足止め、離脱が増加する'
+      critical_hit: 'クリティカルヒットの確率が上昇する'
+      raw_damage: 'ダメージ効果とライフスティール効果に固定値を追加する'
+    add_point: '{{stat}}に1ポイント追加'
+    remove_point: '{{stat}}から1ポイント減らす'
+    tx_pending: '割り振り中…'
+    point_cost: '{{cost}} pt → +{{gain}}'
+    tx_success: 'ステータスポイントを割り振りました'
+  spells:
+    range_modifiable: '射程変更可'
+    no_character: 'キャラクターが選択されていません'
+    select_prompt: '呪文を選択'
+    level: 'レベル {{level}}'
+    spell_points: '呪文ポイント'
+    available: '利用可能'
+    grimoire: '魔道書'
+    unlocked: '{{unlocked}} / {{total}} 解放済み'
+    locked: 'ロック中'
+    lv: 'Lv {{level}}'
+    lv_of: 'Lv {{cur}}/{{max}}'
+    unlocks_at: 'Lv {{level}} で解放'
+    current_level: '現在のレベル'
+    ap_cost: 'APコスト'
+    range: '射程'
+    cooldown: 'クールダウン'
+    crit_chance: 'クリティカル率'
+    casts_per_turn: '使用回数 / ターン'
+    unlimited: '無制限'
+    description: '説明'
+    effects: '効果'
+    levels_head: 'レベル'
+    mastered: '習得済み'
+    upgrade_success: '{{spell}}がレベルアップ！'
+    upgrading: 'レベルアップ中…'
+    level_up_spell: '呪文をレベルアップ'
+    pts: '{{count}} pt'
+    pts_one: '{{count}} pt'
+    pts_other: '{{count}} pt'
+    requires_lv: 'Lv {{level}} が必要'
+    no_points: 'ポイント不足'
+    tag_self: '自身'
+    tag_melee: '近接'
+    tag_ranged: '遠隔'
+    tag_zone: '範囲'
+    tag_line_of_sight: '視線'
+    el_fire: '火'
+    el_water: '水'
+    el_earth: '地'
+    el_air: '風'
+    buff: '強化'
+    utility: 'ユーティリティ'
+    heal: '回復'
+    neutral: '無属性'
+    element: '属性'
+    damage: 'ダメージ'
+    turns: 'ターン'
+    crit_val: 'クリ {{value}}'
+    range_fixed: '固定 — 射程ステータスは無効'
+  jobs:
+    level_up_title: 職業レベルアップ
+    level_up_reached: 到達レベル
+    level_up_character: '{{name}}が成長しました'
+    level_up_progress: 'レベル {{before}} → {{after}}'
+    level_up_continue: 続ける
+    category:
+      gathering: '採集'
+      weapon: '武器製作'
+      equipment: '防具製作'
+      consumable: '消耗品製作'
+    recipes_fallback: 'レシピ'
+    equipped: '装備中'
+    better_character: '{{name}}：{{job}} Lv {{level}}'
+    switch: '切替'
+    switch_to_character: '{{name}}に切り替える'
+    table:
+      tier: 'ティア'
+      req_lvl: '必要Lv'
+      resource: '素材'
+      yield: '採取量'
+      xp: 'XP'
+      unlocks_at: '{{name}}（レベル{{level}}で解放）'
+      gather_detail: '{{name}} · 採集{{gather}}秒 · 再出現{{respawn}}秒'
+      locked: 'ロック中'
+    lv_badge: 'Lv {{level}}'
+    tier_badge: 'T{{tier}}'
+    craft:
+      recipe_head: 'レシピ'
+      recipe_not_seeded: 'このレシピはまだコンテンツに含まれていません。'
+      ingredients_head: '材料'
+      requires_level: '{{job}} Lv {{required}}が必要（現在Lv {{level}}）'
+      not_enough: '材料が不足しています'
+      starting_chance: '開始時の成功率'
+      amount: '試行回数'
+      prepare_tooltip: '{{name}}を{{count}}回分準備'
+      craft_tooltip: '{{name}}を{{count}}回製作'
+      craft_button: '{{count}}回製作'
+      crafting: '製作中…'
+      craft_result: '{{attempts}}回中{{successes}}個の{{name}}を製作しました'
+      locked_level: 'ロック中 · Lv {{level}}'
+    detail:
+      close_aria: 'アイテム詳細を閉じる'
+      item_not_seeded: 'このアイテムはコンテンツに含まれていません。'
+      tool_label: '道具'
+      crafts_label: '{{covers}}を製作'
+      xp_progress: '{{current}} / {{needed}} XP'
+    recipes:
+      empty_seed: 'この職業のレシピはクラフトコンテンツと共に追加されます。'
+      unlocked: '解放済み'
+      locked: 'ロック中'
+      ingredients: '材料{{count}}個'
+      required_level: '必要職業レベル {{level}}'
+      best_progress: '最適'
+    gather:
+      in_progress: '{{name}}を採集中…'
+      button: '{{name}}を採集'
+      hint: 'ワールド内の{{job}}ノードをクリックして採集します。'
+    tabs:
+      resources: '素材'
+      recipes: 'レシピ'
+    no_character: 'キャラクターが選択されていません'
+  common:
+    experience: '経験値'
+    confirm: '確認'
+    max: 'MAX'
+spell_names:
+  'Absorption': '吸収'
+  'Absorptive Arrow': '吸収の矢'
+  'Acceleration': '加速'
+  'Aggressive Brambles': '攻撃的な茨'
+  'Aggressive Glyph': '攻撃のグリフ'
+  'Alcoholic Breath': '酒気の息'
+  'All or Nothing': '全か無か'
+  'Chimeric Venom': 'キメラの毒'
+  'Animal Healing': '動物治療'
+  'Aqueous Armour': '水の鎧'
+  'Aqueous Vulnerability': '水の脆弱性'
+  'Art of Staff': '杖術'
+  "Asobi's Fate": 'アソビの運命'
+  "Asobi's Luck": 'アソビの幸運'
+  'Assault': '強襲'
+  'Atonement Arrow': '贖罪の矢'
+  'Attraction': '引き寄せ'
+  'Backlash': '反撃'
+  'Bamboo Milk': '竹乳'
+  "Bat's Eye": 'コウモリの目'
+  'Bear Cry': '熊の叫び'
+  'Blazing Fist': '燃える拳'
+  'Blazing Vulnerability': '火の脆弱性'
+  'Blinding Protection': '眩惑の守り'
+  'Blindness': '失明'
+  'Bloodthirsty Madness': '血に飢えた狂気'
+  'Blow': '吹き飛ばし'
+  'Bluff': 'ブラフ'
+  'Bold Punishment': '大胆の罰'
+  'Boozer': '酔態'
+  'Bow Skill': '弓術'
+  'Bramble': '茨'
+  'Bravery Guide': '勇気の導き'
+  'Bribery': '買収'
+  'Bubble': 'バブル'
+  'Burning Arrow': '燃焼の矢'
+  'Burning Glyph': '燃焼のグリフ'
+  'Bush Fire': '藪火'
+  'Celestial Sword': '天空の剣'
+  'Chakra Concentration': 'チャクラ集中'
+  'Chakra Impulse': 'チャクラ衝動'
+  'Hurl': 'Hurl'
+  'Claw of Ceangal': 'セアンガルの爪'
+  'Clock': '時計'
+  'Cloudy Attack': '雲の攻撃'
+  'Clover': 'クローバー'
+  'Clumsiness': '不器用'
+  'Coins Throwing': 'コイン投げ'
+  'Compulsion': '強制'
+  'Con': '詐欺'
+  'Concentration': '集中'
+  'Cooperation': '協力'
+  'Counter': '反撃'
+  'Critical Shooting': '会心射撃'
+  'Crow': 'カラス'
+  'Curative Word': '治癒の言葉'
+  'Cut': '切断'
+  'Dark Ray': '暗黒光線'
+  'Destructive Arrow': '破壊の矢'
+  'Destructive Sword': '破壊の剣'
+  'Deviousness': '狡猾'
+  'Devotion': '献身'
+  'Dissolution': '溶解'
+  'Distant Shooting': '遠距離射撃'
+  'Divine Sword': '神聖の剣'
+  'Dolly Sacrifice': '人形の生贄'
+  'Shadowstep': 'Shadowstep'
+  'Draining Word': '吸収の言葉'
+  'Earth Armour': '大地の鎧'
+  'Earth Vulnerability': '大地の脆弱性'
+  'Earthquake': '地震'
+  'Bloodstep': 'Bloodstep'
+  'Explosive Arrow': '爆発の矢'
+  'Explosive Flask': '爆発フラスコ'
+  'Fangs of Boowolf': 'ブウォルフの牙'
+  'Fear': '恐怖'
+  'Feline Leap': '猫の跳躍'
+  'Feline Movement': '猫の移動'
+  'Feline Spirit': '猫の魂'
+  'Flight': '飛翔'
+  'Blood Blade': 'Blood Blade'
+  'Forbidden Word': '禁断の言葉'
+  'Forced Punishment': '強制の罰'
+  'Fortune': '幸運'
+  'Bonding Word': 'Bonding Word'
+  'Frightening Word': '恐怖の言葉'
+  'Frostbite': '凍傷'
+  'Frozen Arrow': '氷結の矢'
+  'Fury': '憤怒'
+  'Ghostly Claw': '幽霊の爪'
+  'Ghostly Shovel': '幽霊シャベル'
+  'Glowing Armour': '灼熱の鎧'
+  'Glyph of Blindness': '失明のグリフ'
+  'Glyph of Silence': '沈黙のグリフ'
+  'Greed': '強欲'
+  'Hand': '針'
+  'Hangover': '二日酔い'
+  'Haziness': '霞'
+  'Heads or Tails': '表か裏か'
+  'Healing Word': '回復の言葉'
+  'High-Energy Shot': '高エネルギー射撃'
+  'Clockwork Pursuit': 'Clockwork Pursuit'
+  "Ikari's Foot": 'イカリの足'
+  'Immunity': '免疫'
+  'Increase': '増幅'
+  'Insidious Poison': '陰険な毒'
+  'Insolent Bramble': '不遜な茨'
+  'Intimidation': '威圧'
+  'Invisibility': '透明化'
+  'Invisibility of Others': '他者の透明化'
+  'Jump': '跳躍'
+  'Undertow': 'Undertow'
+  'Toxic Knowledge': 'Toxic Knowledge'
+  'Lashing Arrow': '足止めの矢'
+  'Lashing Claw': '足止めの爪'
+  'Lethal Attack': '致死攻撃'
+  'Lethal Trap': '致死の罠'
+  'Life Transfer': '生命転送'
+  'Lifting Word': '飛翔の言葉'
+  'Dead Weight': 'Dead Weight'
+  'Golden Fever': 'Golden Fever'
+  'Shovel Uprising': 'Shovel Uprising'
+  'Silent Mark': 'Silent Mark'
+  'Loss of Motivation': '意欲喪失'
+  'Magic Arrow': '魔法の矢'
+  'Manifold Bramble': '多重の茨'
+  'Mass Clumsiness': '集団不器用'
+  'Mass Trap': '集団の罠'
+  'Melancholy': '憂鬱'
+  'Mistake': '過失'
+  'Mound': '盛土'
+  'Mummification': 'ミイラ化'
+  'Mutilation': '切傷'
+  'Natural Attack': '自然攻撃'
+  'Blood Scent': 'Blood Scent'
+  'Nimble Punishment': '敏捷の罰'
+  'Pandatak': 'パンダタック'
+  'Pandiniuras': 'パンディニュラス'
+  "Pandora's Box": 'パンドラの箱'
+  'Paralyzing Arrow': '麻痺の矢'
+  'Paralyzing Glyph': '麻痺のグリフ'
+  'Paralyzing Poison': '麻痺毒'
+  'Paralyzing Trap': '麻痺の罠'
+  'Paralyzing Word': '麻痺の言葉'
+  'Read the Table': 'Read the Table'
+  'Plaguing Arrow': '疫病の矢'
+  'Playful Claw': '遊戯の爪'
+  'Poisoned Arrow': '毒の矢'
+  'Poisoned Trap': '毒の罠'
+  'Poisoned Wind': '毒の風'
+  'Power': '力'
+  'Powerful Shooting': '強力射撃'
+  'Pressure': '圧力'
+  'Preventing Word': '予防の言葉'
+  'Prime of Life': '生命の盛り'
+  'Mountain Punch': '山岳拳'
+  'Punishment': '処罰'
+  'Punitive Arrow': '懲罰の矢'
+  'Reducing Key': '縮小の鍵'
+  'Reflex': '反射神経'
+  'Regenerating Word': '再生の言葉'
+  'Rekop': 'レコップ'
+  'Repelling Trap': '反発の罠'
+  'Repercussion': '反動'
+  'Retreat Arrow': '後退の矢'
+  'Revitalising Word': '活性の言葉'
+  'Rough Tongue': 'ざらつく舌'
+  'Roulette': 'ルーレット'
+  'Sacrifice': '犠牲'
+  "Senshi's Sword": 'センシの剣'
+  "Senshi's Wrath": 'センシの怒り'
+  'Shovel Kiss': 'シャベルの口づけ'
+  'Shovel of Judgement': '裁きのシャベル'
+  'Shovel Throwing': 'シャベル投げ'
+  'Shriveling': '萎縮'
+  "Shugo's Shield": 'シュゴの盾'
+  "Shugo's Teleportation": 'シュゴのテレポーテーション'
+  'Slaughtering Shovel': '虐殺のシャベル'
+  'Slow Down': '減速'
+  'Slow Down Arrow': '減速の矢'
+  'Smell': '嗅覚'
+  'Soothing Bramble': '鎮静の茨'
+  'Spell Rebound': '呪文反射'
+  'Spirit Rift': 'Spirit Rift'
+  'Spiritual Punishment': '精神の罰'
+  'Rooted Guard': 'Rooted Guard'
+  'Stain': '汚染'
+  'Stimulating Word': '鼓舞の言葉'
+  'Strengthstorm': '力の嵐'
+  'Lucky Pounce': 'Lucky Pounce'
+  'Stampede': 'Stampede'
+  'Suppressing Roar': 'Suppressing Roar'
+  'Seismic Command': 'Seismic Command'
+  'Rending Pounce': 'Rending Pounce'
+  'Binding Howl': 'Binding Howl'
+  'Primal Cataclysm': 'Primal Cataclysm'
+  'Pack Totem': '群れのトーテム'
+  'Swap': '交換'
+  'Sword of Fate': '運命の剣'
+  'Sword of Judgement': '裁きの剣'
+  'Sylvan Power': '森の力'
+  'Tear': '涙'
+  'Temporal Dust': '時の塵'
+  'Terror': '恐怖'
+  'Root Snare': 'Root Snare'
+  'Reviving Spores': 'Reviving Spores'
+  'Maddening Spores': 'Maddening Spores'
+  'Sacrificial Bloom': 'Sacrificial Bloom'
+  'Overgrowth': 'Overgrowth'
+  'Time Theft': '時間泥棒'
+  'Toad': 'ヒキガエル'
+  'Temporal Dial': 'Temporal Dial'
+  "Tokei's Punch": 'トケイの拳'
+  "Tokei's Sandglass": 'トケイの砂時計'
+  "Tokei's Teleportation": 'トケイのテレポーテーション'
+  'Topkaj': 'トプカジ'
+  'Tormenting Arrow': '苦悶の矢'
+  'Transposition': '転位'
+  'Trap of Silence': '沈黙の罠'
+  'Tree': '樹木'
+  'Tricky Blow': '狡猾な一撃'
+  'Tricky Trap': '狡猾な罠'
+  'Truce': '休戦'
+  'Unsummoning': '召喚解除'
+  'Vampiric Word': '吸血の言葉'
+  'Vital Exchange': 'Vital Exchange'
+  'Second Wind': 'Second Wind'
+  'Wheel of Fortune': '幸運の輪'
+  'Whip': '鞭'
+  'Wild Grass': '野草'
+  'Wind Armour': '風の鎧'
+  'Wind Vulnerability': '風の脆弱性'
+  'Word of Altruism': '利他の言葉'
+  'Word of Recovery': '全快の言葉'
+  'Word of Sacrifice': '犠牲の言葉'
+  'Word of Silence': '沈黙の言葉'
+  'Word of Thorn': '棘の言葉'
+  'Word of Youth': '若さの言葉'
+  'Wounding Word': '負傷の言葉'
+  'Zatoishwan Stance': 'Zatoishwan Stance'

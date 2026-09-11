@@ -1,0 +1,240 @@
+// SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
+// © 2026 Sceat — All rights reserved. See LICENSE.
+/// Dynamic authored worlds + everything about a character's place in them. Position lives as
+/// dynamic fields ON the character (one checkpoint per visited world — automatic memory), so
+/// joining and moving touch zero shared objects. The shared `World` owns identity and the derived
+/// address namespace for first zone discovery; living content owns authored settings.
+module aresrpg::world;
+
+use aresrpg::{character::Character, equipment, progression};
+use aresrpg_control::admin::AdminCap;
+use aresrpg_seed::{registry::{Self, Registry}, world_content::{Self, WorldContent}};
+use aresrpg_math::{city_map, world_map};
+use std::string::String;
+use sui::{clock::Clock, derived_object, dynamic_field as dfield, event};
+
+// ╔════════════════ [ Constants ] ════════════════════════════════════════════ ]
+
+const ELevelTooLow: u64 = 302;
+const ENotInWorld: u64 = 303;
+const EOutOfBounds: u64 = 304;
+const ETravelTooFar: u64 = 305;
+const EWrongStartWorld: u64 = 306;
+const EWrongWorldContent: u64 = 307;
+const EUnknownCity: u64 = 308;
+const EAlreadyInWorld: u64 = 309;
+const START_WORLD: vector<u8> = b"nauvis";
+
+// ╔════════════════ [ Types ] ════════════════════════════════════════════════ ]
+
+/// One shared object per world — SLIM by law (the ÷10 plan, Lever 2: a mutable object pays
+/// storage at its full size on every touch, so the 39KB of authored content lives in the
+/// seed package's own `WorldContent` object, passed read-only beside this one). This object
+/// carries identity and claims each deterministic Zone address once, nothing else.
+public struct World has key {
+  id: UID,
+  name: String,
+}
+
+/// Derived under the living Registry root, so every client can resolve a world from its JSON name.
+public struct WorldKey(String) has copy, drop, store;
+
+/// DF key on the character → the world it is in NOW (a `String` world name).
+public struct CurrentWorldKey has copy, drop, store {}
+
+/// DF key on the character → its `Checkpoint` in that world. One per visited world.
+public struct CheckpointKey(String) has copy, drop, store;
+
+/// The last proven position — everything the speed check needs rides here.
+public struct Checkpoint has copy, drop, store {
+  x: u32,
+  z: u32,
+  at_ms: u64,
+  pet: bool, // ×1.5 speed; written by the equipment layer later
+}
+
+public struct WorldJoined has copy, drop { character: ID, world: String, x: u32, z: u32, first_join: bool }
+public struct CharacterTeleported has copy, drop { character: ID, world: String, x: u32, z: u32 }
+public struct WorldCreated has copy, drop { world: ID, name: String }
+
+// ╔════════════════ [ Living creation ] ══════════════════════════════════════ ]
+
+/// Create the gameplay state beside a newly authored WorldContent. Existing worlds remain
+/// mutable through that content object; adding another JSON row needs no package upgrade.
+public fun create(cap: &AdminCap, root: &mut Registry, content: &WorldContent, ctx: &TxContext) {
+  let name = world_content::name(content);
+  let world = World {
+    id: derived_object::claim(registry::uid_mut(cap, root, ctx), WorldKey(name)),
+    name,
+  };
+  event::emit(WorldCreated { world: object::id(&world), name });
+  transfer::share_object(world);
+}
+
+/// First discovery claims an independent shared Zone under this UID. No hot action touches World.
+public(package) fun uid_mut(world: &mut World): &mut UID { &mut world.id }
+
+// ╔════════════════ [ Content reads ] ═════════════════════════════════════════ ]
+
+public fun name(world: &World): String { world.name }
+
+public(package) fun current_world(character: &Character): String {
+  let uid = character.uid();
+  assert!(dfield::exists(uid, CurrentWorldKey {}), ENotInWorld);
+  *dfield::borrow(uid, CurrentWorldKey {})
+}
+
+/// Character creation is the one deliberate hardcode: every new character starts on Nauvis.
+/// Travel remains fully content-driven after birth.
+public(package) fun assert_start_world(content: &WorldContent) {
+  assert!(world_content::name(content) == START_WORLD.to_string(), EWrongStartWorld);
+}
+
+// ╔════════════════ [ Travel ] ═══════════════════════════════════════════════ ]
+
+/// The STAR GATE (ruling 2026-08-09): every world's portal stands at its center (client 0;0).
+/// Switching requires WALKING to the portal — the character proves travel to the center of its
+/// CURRENT world, then materializes at the DESTINATION portal. A fresh character (no world
+/// yet) joins free: there is no origin gate to walk to. The level requirement checks every
+/// time. Package-private: the public door is `api::join_world` (kiosk-borrowing).
+public(package) fun join_world(character: &mut Character, content: &WorldContent, clock: &Clock) {
+  assert!(character.level() >= world_content::entry_level(content), ELevelTooLow);
+  let world = world_content::name(content);
+  progression::touch(character, clock);
+
+  let character_id = character.id();
+  let now = clock.timestamp_ms();
+  let center = world_map::world_center();
+  let in_a_world = dfield::exists(character.uid_mut(), CurrentWorldKey {});
+  // Reaching the gate coord IS the whole proof — the speed check to the portal.
+  if (in_a_world) {
+    assert!(*dfield::borrow(character.uid(), CurrentWorldKey {}) != world, EAlreadyInWorld);
+    prove_move(character, center, center, clock);
+  };
+
+  let uid = character.uid_mut();
+  if (in_a_world) {
+    *dfield::borrow_mut(uid, CurrentWorldKey {}) = world;
+  } else {
+    dfield::add(uid, CurrentWorldKey {}, world);
+  };
+
+  // Arrival = the destination portal. The pet flag RE-DERIVES from the live equipment —
+  // a stale flag from a past visit would be free speed (or stolen speed) forever.
+  let pet = equipment::pet_equipped(character);
+  let uid = character.uid_mut();
+  let first_join = !dfield::exists(uid, CheckpointKey(world));
+  if (first_join) {
+    dfield::add(uid, CheckpointKey(world), Checkpoint { x: center, z: center, at_ms: now, pet });
+  } else {
+    let cp: &mut Checkpoint = dfield::borrow_mut(uid, CheckpointKey(world));
+    cp.x = center;
+    cp.z = center;
+    cp.at_ms = now;
+    cp.pet = pet;
+  };
+  event::emit(WorldJoined { character: character_id, world, x: center, z: center, first_join });
+}
+
+/// Every future world interaction (fight, gather, …) calls this: proves the character could
+/// have walked from its last checkpoint to (x, z) at the speed budget, then saves the new
+/// position. Returns the current world name for the caller's own logic.
+public(package) fun prove_move(character: &mut Character, x: u32, z: u32, clock: &Clock): String {
+  assert!(x < world_map::world_size() && z < world_map::world_size(), EOutOfBounds);
+  progression::touch(character, clock);
+  // The ×1.5 pet speed is a BOTH-END rule (audit 2026-08-10): a pet on the slot NOW earns
+  // the boost only over a leg that also STARTED with a pet — never retroactively over time
+  // banked before it was equipped. `cp.pet` is the start-point snapshot; this saves the
+  // live state as the next leg's start.
+  let pet_now = equipment::pet_equipped(character);
+  let (world, cp) = current_checkpoint_mut(character);
+  let now = clock.timestamp_ms();
+  assert!(world_map::travel_ok(cp.x, cp.z, cp.at_ms, cp.pet, x, z, now, pet_now), ETravelTooFar);
+  cp.x = x;
+  cp.z = z;
+  cp.at_ms = now;
+  cp.pet = pet_now;
+  world
+}
+
+/// ROOT the character in place until `extra_ms` from now (the hytale gather-time law,
+/// owner 2026-08-10): a FUTURE-dated checkpoint makes `travel_ok` refuse every proof —
+/// no move, no next gather, no fight join — until the clock catches up. The gather duration
+/// rides the machinery that already exists instead of a new timer field.
+public(package) fun delay_checkpoint(character: &mut Character, extra_ms: u64, clock: &Clock) {
+  let (_, cp) = current_checkpoint_mut(character);
+  cp.at_ms = clock.timestamp_ms() + extra_ms;
+}
+
+/// Is the character ROOTED right now? A future-dated checkpoint (`at_ms > now`) means a
+/// gather-time root or a fired protector verdict is holding them — no action may fire until
+/// the clock catches up. Every out-of-fight action door that isn't itself a `prove_move`
+/// (consumables) must gate on this, or a recall potion would wipe the root.
+public(package) fun is_rooted(character: &Character, clock: &Clock): bool {
+  let uid = character.uid();
+  assert!(dfield::exists(uid, CurrentWorldKey {}), ENotInWorld);
+  let world: String = *dfield::borrow(uid, CurrentWorldKey {});
+  let cp: &Checkpoint = dfield::borrow(uid, CheckpointKey(world));
+  cp.at_ms > clock.timestamp_ms()
+}
+
+/// TELEPORT TO CENTER (the recall consumable): the checkpoint jumps to the world portal
+/// (client 0;0), exactly like a fresh arrival — the pet flag re-derives, the clock resets.
+public(package) fun teleport_center(character: &mut Character, clock: &Clock) {
+  let character_id = character.id();
+  let pet = equipment::pet_equipped(character);
+  let now = clock.timestamp_ms();
+  let center = world_map::world_center();
+  let (world, cp) = current_checkpoint_mut(character);
+  cp.x = center;
+  cp.z = center;
+  cp.at_ms = now;
+  cp.pet = pet;
+  event::emit(CharacterTeleported { character: character_id, world, x: center, z: center });
+}
+
+/// Same-world city potion destination. The effect fixes the city slug; the caller supplies only
+/// the current world's content object, never coordinates or a mutable anchor.
+public(package) fun teleport_city(
+  character: &mut Character,
+  content: &WorldContent,
+  city_name: &String,
+  clock: &Clock,
+) {
+  let character_id = character.id();
+  let pet = equipment::pet_equipped(character);
+  let now = clock.timestamp_ms();
+  let (world, checkpoint) = current_checkpoint_mut(character);
+  assert!(world == world_content::name(content), EWrongWorldContent);
+  let city = city_map::city_by_name(&world_map::cities(world_content::data(content)), city_name);
+  assert!(city.is_some(), EUnknownCity);
+  let city = city.destroy_some();
+  checkpoint.x = city_map::x(&city);
+  checkpoint.z = city_map::z(&city);
+  checkpoint.at_ms = now;
+  checkpoint.pet = pet;
+  event::emit(CharacterTeleported {
+    character: character_id,
+    world,
+    x: city_map::x(&city),
+    z: city_map::z(&city),
+  });
+}
+
+// current_checkpoint_mut
+/// The ONE door to the current world's checkpoint — every writer (`prove_move`,
+/// `delay_checkpoint`) reads and mutates through here; nobody re-derives the DF pair.
+fun current_checkpoint_mut(character: &mut Character): (String, &mut Checkpoint) {
+  let uid = character.uid_mut();
+  assert!(dfield::exists(uid, CurrentWorldKey {}), ENotInWorld);
+  let world: String = *dfield::borrow(uid, CurrentWorldKey {});
+  (world, dfield::borrow_mut(uid, CheckpointKey(world)))
+}
+
+#[test_only]
+public(package) fun current_checkpoint_for_testing(character: &Character): (String, u32, u32) {
+  let uid = character.uid();
+  let world: String = *dfield::borrow(uid, CurrentWorldKey {});
+  let checkpoint: &Checkpoint = dfield::borrow(uid, CheckpointKey(world));
+  (world, checkpoint.x, checkpoint.z)
+}

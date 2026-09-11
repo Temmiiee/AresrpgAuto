@@ -1,0 +1,249 @@
+// SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
+// © 2026 Sceat — All rights reserved. See LICENSE.
+
+import {
+  acquisition_average_seconds,
+  acquisition_target_range,
+  acquisition_target_status,
+  craft_job_of,
+  craft_max_ingredients,
+  craft_required_level,
+  craft_xp_from_ingredient_count,
+  job_slugs,
+  type AcquisitionEstimate,
+  type AcquisitionIngredient,
+  type AcquisitionRange,
+} from '@aresrpg/immutable'
+import { X } from 'lucide-react'
+
+import { as_record, button_class, SheetSection, string_value, titleize_field } from './ContentFields.tsx'
+import { ItemReferencePicker } from './ItemReferencePicker.tsx'
+import type { ItemFilterRow } from './content_list.ts'
+import type { JsonPath, JsonValue } from './seed_editor.ts'
+
+export type ItemRecipeBinding = Readonly<{
+  acquisition?: AcquisitionEstimate
+  value: JsonValue | null
+  change: (path: JsonPath, value: JsonValue) => void
+  category_changed: (category: string) => void
+  create: () => void
+  remove: () => void
+}>
+
+const duration = (seconds: number): string => {
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  if (seconds < 3_600) return `${Math.round(seconds / 60)}m`
+  const hours = seconds / 3_600
+  return `${hours < 10 ? hours.toFixed(1) : Math.round(hours)}h`
+}
+const average_duration = (value: AcquisitionRange): string => duration(acquisition_average_seconds(value))
+const range_duration = (value: AcquisitionRange): string =>
+  `${duration(value.minimum_seconds)}–${duration(value.maximum_seconds)}`
+const acquisition_class = (status: ReturnType<typeof acquisition_target_status>): string => {
+  if (status === 'within') return 'text-[#65c993]'
+  if (status === 'unavailable') return 'text-[#ff8caa]'
+  return 'text-[#ffca57]'
+}
+const AcquisitionSummary = ({
+  acquisition,
+  category,
+  level,
+}: Readonly<{ acquisition?: AcquisitionEstimate; category: string; level: number }>) => {
+  const target = acquisition_target_range({ item_type: '', category, level })
+  const status = acquisition_target_status(acquisition?.craft ?? null, target)
+  const label = acquisition?.craft
+    ? `~${average_duration(acquisition.craft)} (${range_duration(acquisition.craft)})`
+    : 'unavailable'
+  return (
+    <span
+      className={acquisition_class(status)}
+      data-recipe-acquisition={status}
+      title={`Target ${range_duration(target)}`}
+    >
+      Acquisition <strong className="font-normal">{label}</strong>
+    </span>
+  )
+}
+const IngredientAcquisition = ({ row }: Readonly<{ row?: AcquisitionIngredient }>) => (
+  <span
+    className="w-24 shrink-0 text-right text-[7px] tabular-nums text-[#8c82a5]"
+    title={row?.unit ? `${average_duration(row.unit)} each` : 'No obtainable source'}
+  >
+    {row?.total ? `~${average_duration(row.total)}` : 'unavailable'}
+  </span>
+)
+
+export const ItemRecipeEditor = ({
+  category,
+  level,
+  recipe,
+  filter_rows,
+}: Readonly<{
+  category: string
+  level: number
+  recipe: ItemRecipeBinding
+  filter_rows?: readonly ItemFilterRow[]
+}>) => {
+  const value = as_record(recipe.value ?? undefined)
+  if (!value)
+    return (
+      <SheetSection accent="#65c993" note="Recipes remain authored in recipes.json." title="Recipe">
+        <button className={button_class} onClick={recipe.create} type="button">
+          + Add recipe
+        </button>
+      </SheetSection>
+    )
+
+  const inputs = as_record(value.inputs) ?? Object.freeze({})
+  const ingredients = Object.entries(inputs)
+  const derived_job = craft_job_of(category)
+  const job = derived_job ?? string_value(value.job)
+  const required_level = craft_required_level(ingredients.length)
+  const { acquisition } = recipe
+  const excluded_types = (except = ''): ReadonlySet<string> =>
+    new Set(ingredients.map(([item_type]) => item_type).filter((item_type) => item_type !== except))
+  const replace_ingredient = (current_type: string, next_type: string, amount: number): void =>
+    recipe.change(
+      ['inputs'],
+      Object.freeze(
+        Object.fromEntries(
+          ingredients.flatMap(([item_type, quantity]) =>
+            item_type === current_type ? [[next_type, amount]] : [[item_type, quantity]]
+          )
+        )
+      ) as Readonly<Record<string, JsonValue>>
+    )
+  const remove_ingredient = (removed_type: string): void =>
+    recipe.change(
+      ['inputs'],
+      Object.freeze(Object.fromEntries(ingredients.filter(([item_type]) => item_type !== removed_type))) as Readonly<
+        Record<string, JsonValue>
+      >
+    )
+
+  return (
+    <SheetSection accent="#65c993" note="This separate recipes.json row produces the current item." title="Recipe">
+      <div className="space-y-2" data-item-recipe="">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-white/9 pb-3 text-[8px]">
+          {derived_job ? (
+            <span className="tracking-[0.12em] text-[#65c993] uppercase">{titleize_field(derived_job)}</span>
+          ) : (
+            <label className="flex items-center gap-2">
+              <span className="tracking-[0.12em] text-[#737883] uppercase">Profession</span>
+              <select
+                aria-label="Profession"
+                className="border-b border-white/15 bg-transparent py-1 text-[9px] text-[#d8d3ca] outline-none focus:border-[#65c993]/60"
+                onChange={(event) => recipe.change(['job'], event.target.value)}
+                value={job}
+              >
+                {!job_slugs.includes(job as (typeof job_slugs)[number]) && <option value={job}>{job || 'None'}</option>}
+                {job_slugs.map((option) => (
+                  <option className="bg-bg" key={option} value={option}>
+                    {titleize_field(option)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <span className="text-[#8a909b]">
+            Requires{' '}
+            <strong className="font-normal text-[#d8c17d]">
+              {titleize_field(job)} Lv. {required_level}
+            </strong>
+          </span>
+          <span className="text-[#737985]">
+            Craft XP{' '}
+            <strong className="font-normal text-[#67adff]">
+              {craft_xp_from_ingredient_count(ingredients.length).toLocaleString()}
+            </strong>
+          </span>
+          <span className="text-[#737985]">
+            {ingredients.length} / {craft_max_ingredients} ingredients
+          </span>
+          <AcquisitionSummary acquisition={acquisition} category={category} level={level} />
+          <button
+            aria-label="Remove recipe"
+            className="ml-auto grid size-7 cursor-pointer place-items-center text-[#9a5367] transition hover:text-[#ff6f98]"
+            onClick={recipe.remove}
+            title="Remove recipe"
+            type="button"
+          >
+            <X size={14} strokeWidth={1.7} />
+          </button>
+        </div>
+
+        <div>
+          {ingredients.map(([item_type, quantity], index) => {
+            const amount = typeof quantity === 'number' ? quantity : 1
+            return (
+              <div
+                className="group flex min-w-0 items-center border-b border-white/7 transition-colors hover:bg-white/[0.015]"
+                data-recipe-ingredient-row=""
+                key={item_type}
+              >
+                <span className="w-7 shrink-0 text-center text-[7px] tabular-nums text-[#4f5560]">{index + 1}</span>
+                <ItemReferencePicker
+                  class_name="flex-1 !h-12 !border-0 !bg-transparent !px-1 hover:!border-0"
+                  excluded={excluded_types(item_type)}
+                  filter_rows={filter_rows}
+                  label="ingredient"
+                  select={(next_type) => replace_ingredient(item_type, next_type, amount)}
+                  value={item_type}
+                />
+                <span className="w-20 shrink-0 text-right text-[7px] tracking-[0.08em] text-[#666d78] uppercase">
+                  Job Lv. {craft_required_level(index + 1)}
+                </span>
+                <IngredientAcquisition row={acquisition?.ingredients[index]} />
+                <label className="ml-3 flex shrink-0 items-center gap-1 text-[10px] text-[#737985]">
+                  <span aria-hidden="true">×</span>
+                  <input
+                    aria-label={`${item_type} quantity`}
+                    className="h-7 w-16 border border-white/10 bg-bg px-2 text-right text-[10px] tabular-nums text-[#d8d3ca] outline-none focus:border-[#65c993]/60"
+                    min={1}
+                    onChange={(event) => {
+                      const next = Number(event.target.value)
+                      if (Number.isSafeInteger(next) && next >= 1) replace_ingredient(item_type, item_type, next)
+                    }}
+                    step={1}
+                    type="number"
+                    value={amount}
+                  />
+                </label>
+                <button
+                  aria-label="Remove ingredient"
+                  className="ml-2 grid size-8 shrink-0 cursor-pointer place-items-center text-[#873f55] transition hover:text-[#ff5a8b]"
+                  onClick={() => remove_ingredient(item_type)}
+                  title="Remove ingredient"
+                  type="button"
+                >
+                  <X size={13} strokeWidth={1.7} />
+                </button>
+              </div>
+            )
+          })}
+
+          {ingredients.length < craft_max_ingredients && (
+            <div
+              className="flex min-w-0 items-center border-b border-dashed border-white/7 text-[#68707b] transition-colors hover:bg-white/[0.015]"
+              data-recipe-ingredient-placeholder=""
+            >
+              <span className="w-7 shrink-0 text-center text-[7px] tabular-nums text-[#414751]">
+                {ingredients.length + 1}
+              </span>
+              <ItemReferencePicker
+                class_name="flex-1 !h-12 !border-0 !bg-transparent !px-1 hover:!border-0"
+                empty_sublabel={`Next slot · job Lv. ${craft_required_level(ingredients.length + 1)}`}
+                excluded={excluded_types()}
+                filter_rows={filter_rows}
+                label="ingredient"
+                placeholder="Add ingredient"
+                select={(item_type) => recipe.change(['inputs'], Object.freeze({ ...inputs, [item_type]: 1 }))}
+                value=""
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </SheetSection>
+  )
+}
