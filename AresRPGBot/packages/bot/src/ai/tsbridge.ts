@@ -208,7 +208,7 @@ export class TSBridge {
 }
 
 // Helper function to convert live fight state to bridge state format
-import { live_state_to_checkpoint } from './live_checkpoint.ts';
+import { live_state_to_checkpoint } from '../fight/live_checkpoint.ts';
 import type { HydratedFightCheckpoint } from '@aresrpg/fight';
 import { all_spell_sources } from './sim_content.ts';
 import type { SimPartyMember } from './simulate.ts';
