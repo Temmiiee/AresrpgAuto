@@ -39,10 +39,20 @@ export type { FighterStatsJson, FighterJson, FightJson, Position, MobInfo, Fight
 
 // ── Phase 3: join every not-yet-seated character and ready up. ──────────────────────────────
 
-const join_and_ready = async (bot: BotSdk, fight_id: string, log: (msg: string) => void): Promise<void> => {
+/** Resolves to `'ready'` when the fight is playable and the party is readied, or `'abandoned'`
+ *  when the fight was already force-started at placement's 60s deadline with only a PARTIAL
+ *  party seated — in which case this function forfeits the party's open seats on-chain to free
+ *  everyone (a half-seated fight can never seat the missing character again: join aborts 1706
+ *  forever, so it is structurally unsealable and playing turns only burns SUI on seal_end 1730).
+ *  A FULL protectors' fight is never abandoned here — see the branch below. */
+const join_and_ready = async (
+  bot: BotSdk,
+  fight_id: string,
+  log: (msg: string) => void
+): Promise<'ready' | 'abandoned'> => {
   const { sdk, fight, kiosk_cap } = bot
   let state_json = await read_fight(sdk, fight_id)
-  if (state_json.ended) return
+  if (state_json.ended) return 'ready'
 
   const leader_idx = fighter_indices(state_json).get(LEADER.id)
   if (leader_idx === undefined) throw new Error('Leader is not seated in this fight — cannot recover automatically')
@@ -52,12 +62,44 @@ const join_and_ready = async (bot: BotSdk, fight_id: string, log: (msg: string) 
   // (PLACEMENT_FORCE_MS) even with only the leader seated, once anyone readies -- after that,
   // join_gate's `in_placement` check is permanently false and any join attempt aborts with
   // ENotPlacement (1706), no matter how many retries. `queue.length > 0` is this file's existing
-  // signal for "already started" (checked below, before readying) -- checking it here too, before
-  // spending a transaction on a join that's guaranteed to abort, turns a hard crash into a
-  // graceful "fight fewer than the full party" instead (2026-09-05, live: a leftover solo fight
-  // from earlier in this session crossed the 60s window before the other three could join).
+  // signal for "already started" (checked below, before readying). Two very different situations
+  // share that signal, and they need opposite treatment:
+  //
+  //   * FULL party seated (all CHARACTERS have a fighter seat) -> a normal, winnable fight
+  //     (resource protector etc.). Keep playing it to the end -- NEVER forfeit it.
+  //   * PARTIAL party seated (placement's 60s window elapsed before someone could join) -> the
+  //     missing character can never seat now (join aborts 1706 forever), so the fight is
+  //     structurally unsealable (seal_end aborts 1730) and playing turns only burns SUI on doomed
+  //     1706 tries. Forfeit the OPEN seats to free the party, then drop the fight_id -- this is the
+  //     ONLY recoverable outcome for a half-seated fight, but it only ever targets the doomed half-
+  //     party case, never a full protectors' fight. (2026-09-05, live: a seatless memorien on a
+  //     resumed fight turned every turn into a 1706 and the final seal_end into a 1730 that killed
+  //     the whole process with exit code 1.)
+  const forfeit_open_seats = async (): Promise<void> => {
+    const cap = await kiosk_cap()
+    if (!cap) throw new Error('No personal kiosk found for this account')
+    for (const c of CHARACTERS) {
+      const idx = fighter_indices(state_json).get(c.id)
+      if (idx === undefined) continue
+      log(`${c.name} forfeiting (fighter ${idx})…`)
+      await submit_with_retry(
+        () =>
+          fight.forfeit({
+            fight: fight_id,
+            fighter_idx: BigInt(idx),
+            custody: { kiosk: cap.kioskId, kiosk_cap: cap.objectId },
+          }),
+        log
+      )
+    }
+  }
   if (state_json.queue.length > 0) {
-    log(`fight already started without the full party seated (placement's 60s window elapsed) — continuing with whoever joined`)
+    if (fighter_indices(state_json).size < CHARACTERS.length) {
+      log(`fight already started WITHOUT the full party seated (placement's 60s window elapsed) — forfeiting the party's open seats to free everyone (this half-seated fight is unsealable on-chain)…`)
+      await forfeit_open_seats()
+      return 'abandoned'
+    }
+    log(`fight already started with the full party seated — continuing to fight it out (protectors are played to the end, never forfeited)`)
   } else {
     const missing = CHARACTERS.filter((c) => !c.leader && !fighter_indices(state_json).has(c.id))
     if (missing.length > 0) {
@@ -80,25 +122,35 @@ const join_and_ready = async (bot: BotSdk, fight_id: string, log: (msg: string) 
   }
 
   state_json = await read_fight(sdk, fight_id)
-  if (state_json.queue.length > 0) return
-  const indices = fighter_indices(state_json)
-  for (const c of CHARACTERS) {
-    state_json = await read_fight(sdk, fight_id)
-    if (state_json.queue.length > 0) break
-    const idx = indices.get(c.id)
-    if (idx === undefined || state_json.fighters[idx]!.ready) continue
-    log(`${c.name} readying…`)
-    await submit_with_retry(() => fight.ready({ fight: fight_id, fighter_idx: BigInt(idx) }), log)
-    await sleep(1_500)
+  if (state_json.queue.length > 0) {
+    // The fight force-started while the join was in flight. A full party means a normal
+    // protectors' fight — play it. A partial one is the unsealable half-seated case; forfeit.
+    if (fighter_indices(state_json).size >= CHARACTERS.length) return 'ready'
+    log(`fight started with a partial party during join (placement's 60s window elapsed) — forfeiting the party's open seats…`)
+    await forfeit_open_seats()
+    return 'abandoned'
   }
+  const indices = fighter_indices(state_json)
+  const unready = CHARACTERS.flatMap((c) => {
+    const idx = indices.get(c.id)
+    if (idx === undefined || state_json.fighters[idx]!.ready) return []
+    return [BigInt(idx)]
+  })
+  if (unready.length === 0) return 'ready'
+  log(`${unready.length} fighter(s) readying (one transaction)…`)
+  await submit_with_retry(() => fight.ready_many({ fight: fight_id, fighter_indices: unready }), log)
+  return 'ready'
 }
 
 /** Runs exactly one group fight starting from `position`. Throws on unrecoverable errors (the
- *  caller — the session loop — is expected to log and continue rather than crash the process). */
+ *  caller — the session loop — is expected to log and continue rather than crash the process).
+ *  Pass `opts.can_spend: false` when resuming a leftover fight: the party is already seated
+ *  inside it, so prepare_party's kiosk-based stat/spell spends must be skipped. */
 export const run_one_group_fight = async (
   bot: BotSdk,
   position: Position,
-  log: (msg: string) => void = console.log
+  log: (msg: string) => void = console.log,
+  opts: { can_spend?: boolean } = {}
 ): Promise<FightOutcome> => {
   const { sdk } = bot
   log(`combat policy: ${DECISION_POLICY_SOURCE}`)
@@ -112,7 +164,7 @@ export const run_one_group_fight = async (
   const world = derive_world_id(content_root, game_original, WORLD)
   await sdk.hydrate_unknown([world, world_content])
 
-  const prep = await prepare_party(bot, log)
+  const prep = await prepare_party(bot, log, opts.can_spend !== false)
 
   const found = await find_or_create_fight(bot, position, zx, zz, world, world_content, prep, log)
   if (found.kind === 'retried') return found.outcome
@@ -124,7 +176,30 @@ export const run_one_group_fight = async (
   let final_state: FightJson
   let turns: number
   try {
-    await join_and_ready(bot, fight_id, log)
+    // `join_and_ready` only returns `'abandoned'` when the placement window's 60s deadline force-
+    // started the fight WITH ONLY A PARTIAL PARTY seated, and it has ALREADY forfeited the open
+    // seats on-chain to free everyone. Drop local fight state and return an abandoned outcome
+    // here -- a NO-OP, never a defeat -- instead of stepping into the turn loop: the seated
+    // seats are gone, so turns would only re-abort 1706 and the final seal_end would seal the
+    // on-chain object (seal_end aborts 1730 on an empty fight), killing the whole process with
+    // exit code 1 (live: 2026-09-05 resumed half-party fight). Protectores are NEVER abandoned
+    // here -- they were abandoned by nobody; run_turn_loop is only reached for a full protectors'
+    // fight (which is played to the end, never forfeited).
+    const status = await join_and_ready(bot, fight_id, log)
+    if (status === 'abandoned') {
+      log(`fight abandoned (placement's deadline started it half-seated, seats already forfeited on-chain) — dropping local state, will search fresh`)
+      write_group_state({})
+      return {
+        won: false,
+        fight_id,
+        new_position: position,
+        gas_mist: 0n,
+        xp_gained: {},
+        turns: 0,
+        mobs: [],
+        drops: {},
+      }
+    }
     ;({ final_state, turns } = await run_turn_loop(bot, fight_id, prep, log))
   } catch (error) {
     if (error instanceof FightNotFoundError) {

@@ -154,6 +154,34 @@ export const character_actions = (sdk: GameSdk, { kiosk_cap }: CharacterActionsC
       return { digest: receipt_digest(receipt) }
     },
 
+    /** Raise one spell N consecutive levels in ONE transaction (each level still costs its own
+     *  points and re-asserts every rule on-chain). Callers that can't predict the exact
+     *  affordable count should halve on a 1602/1603 abort — a dry-run abort costs no gas. */
+    raise_spell_many: async ({
+      character_id,
+      spell,
+      levels,
+      custody,
+    }: {
+      character_id: string
+      spell: string
+      levels: number
+      custody?: KioskCustody
+    }): Promise<CharacterReceipt> => {
+      if (!Number.isSafeInteger(levels) || levels < 1) throw new Error('Spell raises must be a positive integer')
+      const { content_root, seed_package_original } = living_content(sdk, 'Spell transaction')
+      const template = spell_template_id(content_root, seed_package_original, spell)
+      await sdk.hydrate_unknown([template])
+      const receipt = await with_kiosk(
+        (tx, kiosk, cap) => {
+          for (let i = 0; i < levels; i += 1)
+            sdk.doors.raise_spell(tx, { kiosk, cap, character_id, spell: template })
+        },
+        { custody }
+      )
+      return { digest: receipt_digest(receipt) }
+    },
+
     /** Drink/use one consumable unit through its template's current live effect. */
     use_consumable: async ({
       character_id,

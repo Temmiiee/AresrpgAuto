@@ -28,6 +28,9 @@ import {
   gather_time_ms,
   job_slugs,
   job_level_from_xp,
+  job_max_level,
+  max_tier_for_level,
+  tier_unlock_level,
   is_weapon_category,
   item_budget_envelope,
   item_budget_standing,
@@ -86,6 +89,18 @@ test('gather time mirrors the 12s to 2s chain root', () => {
   expect(gather_time_ms(1)).toBe(12_000)
   expect(gather_time_ms(100)).toBe(2_000)
   expect(gather_time_ms(200)).toBe(2_000)
+})
+
+test('max tier inverts the tier_to_level unlock law at every unlock boundary', () => {
+  // job_xp.move:15,141: tier 1 → level 1, else (tier−1)×10 capped at job_max_level.
+  expect([1, 9, 10, 19, 20, 29, 30, 90, 99, 100, 1_000].map(max_tier_for_level)).toEqual([
+    1, 1, 2, 2, 3, 3, 4, 10, 10, 11, 11,
+  ])
+  for (let level = 1; level <= job_max_level; level++) {
+    const tier = max_tier_for_level(level)
+    expect(tier_unlock_level(tier)).toBeLessThanOrEqual(level)
+    if (tier < 11) expect(tier_unlock_level(tier + 1)).toBeGreaterThan(level)
+  }
 })
 
 describe('immutable vocabularies', () => {

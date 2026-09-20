@@ -19,7 +19,6 @@ import type {
   MobSnapshot,
   SpellLevel,
   SpellEffect,
-  SpellSource,
 } from '@aresrpg/fight'
 
 import { all_spell_sources } from '../ai/sim_content.ts'
@@ -125,20 +124,80 @@ const to_board = (raw: unknown): FightBoard => {
   }
 }
 
-/** Builds a full checkpoint from the live Fight object's raw JSON (the SAME shape read_fight
- *  already fetches — pass the parsed object straight through) plus what we already know about
- *  our own party's build (sim_party_stats, already maintained in fight_session.ts for the
- *  pre-engage simulated screening). Throws on any unexpected shape instead of guessing further
- *  — the caller is expected to catch and fall back. */
-export const live_state_to_checkpoint = (
-  raw_fight_json: unknown,
-  sim_party_stats: ReadonlyMap<string, SimPartyMember>
-): HydratedFightCheckpoint => {
-  const raw = record(raw_fight_json)
-  const raw_fighters = Array.isArray(raw.fighters) ? raw.fighters : []
-  const sources: Record<string, ReturnType<typeof create_character_source>> = {}
+/** The contract's identity/access fields — split from the phase/turn fields below purely so
+ *  neither literal drags live_state_to_checkpoint's cyclomatic over the repo ratchet. */
+const to_contract_identity = (
+  raw: Record<string, unknown>
+): Pick<
+  FightContract,
+  'id' | 'world' | 'x' | 'z' | 'board' | 'closed' | 'access_a' | 'access_b' | 'opener_a' | 'opener_b'
+> => ({
+  id: String(raw.id ?? 'live'),
+  world: String(raw.world ?? ''),
+  x: as_bigint(raw.x ?? 0),
+  z: as_bigint(raw.z ?? 0),
+  board: to_board(raw.board),
+  closed: as_bigint_array(raw.closed),
+  access_a: as_bigint(raw.access_a ?? 0),
+  access_b: as_bigint(raw.access_b ?? 255),
+  opener_a: raw.opener_a ? String(raw.opener_a) : null,
+  opener_b: raw.opener_b ? String(raw.opener_b) : null,
+})
 
-  const fighters: Fighter[] = raw_fighters.map((rf, idx) => {
+const to_contract_phase = (
+  raw: Record<string, unknown>,
+  fighters: Fighter[]
+): Pick<
+  FightContract,
+  | 'fighters'
+  | 'zones'
+  | 'queue'
+  | 'turn_ptr'
+  | 'round'
+  | 'ended'
+  | 'winner'
+  | 'dungeon'
+  | 'dungeon_room'
+  | 'managed'
+  | 'wagered'
+  | 'drops_rolled'
+  | 'turn_seed'
+  | 'turn_slot'
+  | 'turn_casts'
+  | 'placement_ms'
+  | 'started_ms'
+  | 'ended_ms'
+  | 'turn_started_ms'
+> => ({
+  fighters,
+  zones: [],
+  queue: as_bigint_array(raw.queue),
+  turn_ptr: as_bigint(raw.turn_ptr ?? 0),
+  round: as_bigint(raw.round ?? 1),
+  ended: Boolean(raw.ended),
+  winner: raw.winner === null || raw.winner === undefined ? null : as_bigint(raw.winner),
+  dungeon: null,
+  dungeon_room: null,
+  managed: Boolean(raw.managed),
+  wagered: Boolean(raw.wagered),
+  drops_rolled: Boolean(raw.drops_rolled),
+  turn_seed: as_bigint(raw.turn_seed ?? 0),
+  turn_slot: as_bigint(raw.turn_slot ?? 0),
+  turn_casts: [],
+  placement_ms: as_bigint(raw.placement_ms ?? 0),
+  started_ms: null,
+  ended_ms: null,
+  turn_started_ms: as_bigint(raw.turn_started_ms ?? 0),
+})
+
+const to_fighters = (
+  raw_fighters: unknown,
+  sim_party_stats: ReadonlyMap<string, SimPartyMember>,
+  sources: Record<string, ReturnType<typeof create_character_source>>
+): Fighter[] => {
+  const rows = Array.isArray(raw_fighters) ? raw_fighters : []
+  const by_character = sources
+  return rows.map((rf, idx) => {
     const f = record(rf)
     const kind_raw = record(f.kind)
     const variant = String(kind_raw['@variant'])
@@ -147,8 +206,8 @@ export const live_state_to_checkpoint = (
       const character = String(kind_raw.character)
       const member = sim_party_stats.get(character)
       if (!member) throw new Error(`live_checkpoint: no known stats for character ${character}`)
-      if (!sources[character])
-        sources[character] = create_character_source({
+      if (!by_character[character])
+        by_character[character] = create_character_source({
           classe: member.classe,
           level: BigInt(member.level),
           vitality: BigInt(member.vitality),
@@ -157,7 +216,11 @@ export const live_state_to_checkpoint = (
           intelligence: BigInt(member.intelligence),
           chance: BigInt(member.chance),
           agility: BigInt(member.agility),
-          // weapon/folded_stats omitted on purpose — see file header.
+          weapon: member.weapon ?? null,
+          spell_levels: Object.fromEntries(
+            Object.entries(member.spell_levels ?? {}).map(([name, lvl]) => [name, BigInt(lvl)])
+          ),
+          // folded_stats omitted on purpose — see file header.
         })
       return {
         team: as_bigint(f.team, `fighters[${idx}].team`),
@@ -192,41 +255,22 @@ export const live_state_to_checkpoint = (
       cooldowns: [],
     }
   })
+}
 
-  const contract: FightContract = {
-    id: String(raw.id ?? 'live'),
-    world: String(raw.world ?? ''),
-    x: as_bigint(raw.x ?? 0),
-    z: as_bigint(raw.z ?? 0),
-    board: to_board(raw.board),
-    closed: as_bigint_array(raw.closed),
-    access_a: as_bigint(raw.access_a ?? 0),
-    access_b: as_bigint(raw.access_b ?? 255),
-    opener_a: raw.opener_a ? String(raw.opener_a) : null,
-    opener_b: raw.opener_b ? String(raw.opener_b) : null,
-    fighters,
-    zones: [],
-    queue: as_bigint_array(raw.queue),
-    turn_ptr: as_bigint(raw.turn_ptr ?? 0),
-    round: as_bigint(raw.round ?? 1),
-    ended: Boolean(raw.ended),
-    winner: raw.winner === null || raw.winner === undefined ? null : as_bigint(raw.winner),
-    dungeon: null,
-    dungeon_room: null,
-    managed: Boolean(raw.managed),
-    wagered: Boolean(raw.wagered),
-    drops_rolled: Boolean(raw.drops_rolled),
-    turn_seed: as_bigint(raw.turn_seed ?? 0),
-    turn_slot: as_bigint(raw.turn_slot ?? 0),
-    turn_casts: [],
-    placement_ms: as_bigint(raw.placement_ms ?? 0),
-    started_ms: null,
-    ended_ms: null,
-    turn_started_ms: as_bigint(raw.turn_started_ms ?? 0),
-  }
-
-  const spells: Record<string, SpellSource> = SPELLS
-  return { contract, sources: { players: sources, spells } }
+/** Builds a full checkpoint from the live Fight object's raw JSON (the SAME shape read_fight
+ *  already fetches — pass the parsed object straight through) plus what we already know about
+ *  our own party's build (sim_party_stats, already maintained in fight_session.ts for the
+ *  pre-engage simulated screening). Throws on any unexpected shape instead of guessing further
+ *  — the caller is expected to catch and fall back. */
+export const live_state_to_checkpoint = (
+  raw_fight_json: unknown,
+  sim_party_stats: ReadonlyMap<string, SimPartyMember>
+): HydratedFightCheckpoint => {
+  const raw = record(raw_fight_json)
+  const sources: Record<string, ReturnType<typeof create_character_source>> = {}
+  const fighters = to_fighters(raw.fighters, sim_party_stats, sources)
+  const contract: FightContract = { ...to_contract_identity(raw), ...to_contract_phase(raw, fighters) }
+  return { contract, sources: { players: sources, spells: SPELLS } }
 }
 
 export const live_max_hp_by_character = (sim_party_stats: ReadonlyMap<string, SimPartyMember>): Map<string, bigint> => {
@@ -241,6 +285,7 @@ export const live_max_hp_by_character = (sim_party_stats: ReadonlyMap<string, Si
       intelligence: BigInt(member.intelligence),
       chance: BigInt(member.chance),
       agility: BigInt(member.agility),
+      weapon: member.weapon ?? null,
     })
     result.set(id, player_max_hp(source))
   }

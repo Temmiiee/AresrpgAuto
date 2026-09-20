@@ -16,7 +16,7 @@ type DynamicFieldClient = Readonly<{
   }>
 }>
 
-export type CharacterCheckpoint = Readonly<{ x: number; z: number }>
+export type CharacterCheckpoint = Readonly<{ x: number; z: number; pet: boolean }>
 
 const CHECKPOINT_BCS = bcs.struct('Checkpoint', {
   x: bcs.u32(),
@@ -54,5 +54,5 @@ export const read_character_checkpoint = async (
   if (bcs.String.parse(current.value.dynamicField.value.bcs) !== expected_world) return null
   if (checkpoint.status === 'rejected') throw checkpoint.reason
   const value = CHECKPOINT_BCS.parse(checkpoint.value.dynamicField.value.bcs)
-  return Object.freeze({ x: value.x, z: value.z })
+  return Object.freeze({ x: value.x, z: value.z, pet: value.pet })
 }

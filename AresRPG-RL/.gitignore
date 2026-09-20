@@ -5,3 +5,4 @@ models/
 *.pyc
 .env
 .ipynb_checkpoints/
+!models/policy.json

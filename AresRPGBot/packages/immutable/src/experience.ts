@@ -90,6 +90,10 @@ export function job_level_from_xp(xp: number): number {
 /// Resource tier (T1–T11) → the job level that unlocks it (job_xp.move tier_to_level).
 export const tier_unlock_level = (tier: number): number => (tier <= 1 ? 1 : Math.min((tier - 1) * 10, job_max_level))
 
+/// Inverse of tier_unlock_level: the biggest resource tier a job level can farm.
+/// 1–9→1, 10–19→2, 20–29→3, …, 90–99→10, 100→11.
+export const max_tier_for_level = (level: number): number => 1 + Math.min(Math.max(0, Math.floor(level / 10)), 10)
+
 /// Dofus Retro crafting-slot unlocks: 2 slots at birth, then 3/4/5/6/7/8 at
 /// profession levels 10/20/40/60/80/100. Mirrors move-math/job_xp.move.
 const craft_required_level_by_ingredient_count = Object.freeze([0, 0, 1, 10, 20, 40, 60, 80, 100])

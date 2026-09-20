@@ -6,7 +6,7 @@ import { marketplace_lot_sizes } from '@aresrpg/immutable'
 import type { Transaction, TransactionArgument, TransactionObjectArgument } from '@mysten/sui/transactions'
 
 import type { Sdk } from './client.ts'
-import { created_object_id, receipt_digest } from './cache.ts'
+import { created_object_id, receipt_digest, type Receipt } from './cache.ts'
 import { create_kiosk_runner, resolve_kiosk_cap, retry_stale_kiosk_ref, type KioskCapLoader } from './kiosk_runner.ts'
 import { merge_stacks_ptb, split_stack_ptb } from './stacks.ts'
 
@@ -26,6 +26,14 @@ export type MarketplaceAsset = Readonly<{
 
 export type MarketplaceActions = Readonly<{
   list: (asset: MarketplaceAsset) => Promise<Readonly<{ digest: string; listed_id: string }>>
+  /** Lists many assets from the SAME kiosk in ONE transaction (each `kiosk::list` is a command
+   *  in the same PTB — auto-sell's 200+ spare listings go from ~200 signed txs to ~10). The
+   *  batch is all-or-nothing like any PTB, so callers should chunk by kiosk and fall back to the
+   *  per-item `list` path on rejection (one already-listed item would otherwise take down the
+   *  whole batch, see auto_sell.ts's execute_auto_sell). */
+  list_many: (
+    assets: readonly MarketplaceAsset[]
+  ) => Promise<readonly Readonly<{ digest: string; listed_id: string }>[]>
   delist: (asset: Omit<MarketplaceAsset, 'price_mist'>) => Promise<Readonly<{ digest: string }>>
   buy: (asset: MarketplaceAsset) => Promise<Readonly<{ digest: string }>>
   collect: (kiosks: readonly string[]) => Promise<Readonly<{ digest: string }>>
@@ -133,49 +141,104 @@ export const resolve_marketplace_transfer = (
 
 export const marketplace_actions = (sdk: Sdk, { address, kiosk_cap }: MarketplaceContext): MarketplaceActions => {
   const runner = create_kiosk_runner(sdk, kiosk_cap)
+
+  // The shared per-asset validation `list`/`list_many` both gate listings through (price law,
+  // stackable-lot law, merge-source sanity). Throws BEFORE anything is built, so a bad asset
+  // never reaches a PTB.
+  const validate_list_asset = (asset: MarketplaceAsset): void => {
+    const { price_mist: price, kind, amount, source_amount, merge_sources = [] } = asset
+    if (price <= 0n) throw new Error('A marketplace price must be positive.')
+    if (amount !== undefined && (!Number.isSafeInteger(amount) || amount < 1))
+      throw new Error('A marketplace lot amount must be a positive safe integer.')
+    if (source_amount !== undefined && amount !== undefined && amount > source_amount)
+      throw new Error('A marketplace lot cannot exceed its source stack.')
+    if (source_amount !== undefined && (!Number.isSafeInteger(source_amount) || source_amount < 1))
+      throw new Error('A marketplace source amount must be a positive safe integer.')
+    if (amount !== undefined && !marketplace_lot_sizes.includes(amount as (typeof marketplace_lot_sizes)[number]))
+      throw new Error('Stackable marketplace lots must be 1, 10, 100, or 1000.')
+    if (kind !== 'item' && merge_sources.length > 0) throw new Error('Only item stacks can merge before listing.')
+    if (new Set(merge_sources).size !== merge_sources.length)
+      throw new Error('A marketplace merge source may appear only once.')
+  }
+
+  // Appends one asset's listing commands to a shared PTB. Reused by both `list` (single asset)
+  // and `list_many` (batched) so the two paths build byte-identical listing commands.
+  const append_list_commands = (
+    tx: ReturnType<Sdk['tx']>,
+    owned_kiosk: Parameters<Parameters<Sdk['with_owner_kiosk']>[2]>[0],
+    owner_cap: Parameters<Parameters<Sdk['with_owner_kiosk']>[2]>[1],
+    asset: MarketplaceAsset
+  ): void => {
+    const { kind, id, amount, source_amount, merge_sources = [] } = asset
+    for (const source_id of merge_sources) {
+      if (source_id === id) throw new Error('A stack cannot merge into itself.')
+      merge_stacks_ptb(sdk, tx, { kiosk: owned_kiosk, cap: owner_cap }, { target_id: id, source_id })
+    }
+    if (kind === 'item' && amount !== undefined && source_amount !== undefined && amount < source_amount) {
+      const lot_id = split_stack_ptb(sdk, tx, { kiosk: owned_kiosk, cap: owner_cap }, { item_id: id, amount })
+      tx.moveCall({
+        target: '0x2::kiosk::list',
+        typeArguments: [asset_type(sdk, 'item')],
+        arguments: [owned_kiosk, owner_cap, lot_id, tx.pure.u64(asset.price_mist)],
+      })
+      return
+    }
+    tx.moveCall({
+      target: '0x2::kiosk::list',
+      typeArguments: [asset_type(sdk, kind)],
+      arguments: [owned_kiosk, owner_cap, tx.pure.id(id), tx.pure.u64(asset.price_mist)],
+    })
+  }
+
+  const listed_id_of = (asset: MarketplaceAsset, receipt: Receipt): string | null => {
+    const { kind, id, amount, source_amount } = asset
+    if (kind !== 'item' || amount === undefined || source_amount === undefined || amount >= source_amount) return id
+    return created_object_id(receipt, '::item::Item')
+  }
+
   return Object.freeze({
     list: async ({ kind, id, kiosk, price_mist, amount, source_amount, merge_sources = [] }) => {
-      if (price_mist <= 0n) throw new Error('A marketplace price must be positive.')
-      if (amount !== undefined && (!Number.isSafeInteger(amount) || amount < 1))
-        throw new Error('A marketplace lot amount must be a positive safe integer.')
-      if (source_amount !== undefined && amount !== undefined && amount > source_amount)
-        throw new Error('A marketplace lot cannot exceed its source stack.')
-      if (source_amount !== undefined && (!Number.isSafeInteger(source_amount) || source_amount < 1))
-        throw new Error('A marketplace source amount must be a positive safe integer.')
-      if (amount !== undefined && !marketplace_lot_sizes.includes(amount as (typeof marketplace_lot_sizes)[number]))
-        throw new Error('Stackable marketplace lots must be 1, 10, 100, or 1000.')
-      if (kind !== 'item' && merge_sources.length > 0) throw new Error('Only item stacks can merge before listing.')
-      if (new Set(merge_sources).size !== merge_sources.length)
-        throw new Error('A marketplace merge source may appear only once.')
+      const asset: MarketplaceAsset = { kind, id, kiosk, price_mist, amount, source_amount, merge_sources }
+      validate_list_asset(asset)
+      const receipt = await runner.with_kiosk(
+        (tx, owned_kiosk, owner_cap) => append_list_commands(tx, owned_kiosk, owner_cap, asset),
+        { custody: { kiosk }, include: { objectTypes: true } }
+      )
+      const listed_id = listed_id_of(asset, receipt)
+      if (!listed_id) throw new Error('The split listing receipt carried no created item id.')
+      return Object.freeze({ digest: receipt_digest(receipt), listed_id })
+    },
+    list_many: async (assets) => {
+      if (assets.length === 0) throw new Error('No marketplace assets were provided.')
+      for (const asset of assets) validate_list_asset(asset)
+      // One PTB bracket = ONE kiosk. Enforcing a single kiosk keeps `with_kiosk` honest and makes
+      // the caller (auto_sell) chunk explicitly when listings span kiosks.
+      const kiosk = assets[0]!.kiosk
+      if (!assets.every((asset) => asset.kiosk === kiosk))
+        throw new Error('Batch listings must all target the same kiosk.')
+      // Merge sources are global to the transaction: reject a source touched more than once across
+      // the batch (a batch must not merge the same stack into two targets).
+      const seen = new Set<string>()
+      for (const { id, merge_sources = [] } of assets) {
+        for (const source_id of [id, ...merge_sources]) {
+          if (seen.has(source_id)) throw new Error('A marketplace batch may touch each stack once.')
+          seen.add(source_id)
+        }
+      }
       const receipt = await runner.with_kiosk(
         (tx, owned_kiosk, owner_cap) => {
-          for (const source_id of merge_sources) {
-            if (source_id === id) throw new Error('A stack cannot merge into itself.')
-            merge_stacks_ptb(sdk, tx, { kiosk: owned_kiosk, cap: owner_cap }, { target_id: id, source_id })
-          }
-          if (kind === 'item' && amount !== undefined && source_amount !== undefined && amount < source_amount) {
-            const lot_id = split_stack_ptb(sdk, tx, { kiosk: owned_kiosk, cap: owner_cap }, { item_id: id, amount })
-            tx.moveCall({
-              target: '0x2::kiosk::list',
-              typeArguments: [asset_type(sdk, 'item')],
-              arguments: [owned_kiosk, owner_cap, lot_id, tx.pure.u64(price_mist)],
-            })
-            return
-          }
-          tx.moveCall({
-            target: '0x2::kiosk::list',
-            typeArguments: [asset_type(sdk, kind)],
-            arguments: [owned_kiosk, owner_cap, tx.pure.id(id), tx.pure.u64(price_mist)],
-          })
+          for (const asset of assets) append_list_commands(tx, owned_kiosk, owner_cap, asset)
         },
         { custody: { kiosk }, include: { objectTypes: true } }
       )
-      const listed_id =
-        kind === 'item' && amount !== undefined && source_amount !== undefined && amount < source_amount
-          ? created_object_id(receipt, '::item::Item')
-          : id
-      if (!listed_id) throw new Error('The split listing receipt carried no created item id.')
-      return Object.freeze({ digest: receipt_digest(receipt), listed_id })
+      const digest = receipt_digest(receipt)
+      const entries: Readonly<{ digest: string; listed_id: string }>[] = []
+      for (const asset of assets) {
+        const listed_id = listed_id_of(asset, receipt)
+        if (!listed_id) throw new Error('The split listing receipt carried no created item id.')
+        entries.push(Object.freeze({ digest, listed_id }))
+      }
+      return entries
     },
     delist: async ({ kind, id, kiosk, existing }) => {
       const receipt = await runner.with_kiosk(

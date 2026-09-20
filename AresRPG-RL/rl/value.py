@@ -120,7 +120,7 @@ def collect_value_dataset(
     inclure tous les steps donne plus de données — le réseau apprend à estimer la
     probabilité de victoire depuis des états intermédiaires variés.
 
-    Important : seed != rl.train default (12345) ni rl.evaluate default (999_999)
+    Important : seed != rl.evolve --seed (20260901) ni --holdout-seed (999_999)
     pour garder les ensembles train/val/eval distincts.
     """
     if policy is None:
@@ -292,7 +292,7 @@ def main() -> None:
     p.add_argument("--episodes", type=int, default=5000,
                    help="nombre d'épisodes à collecter (--collect)")
     p.add_argument("--seed", type=int, default=555_555,
-                   help="seed scénario — distinct de rl.train (12345) et rl.evaluate (999_999)")
+                   help="seed scénario — distinct de rl.evolve --seed (20260901) et --holdout-seed (999_999)")
     p.add_argument("--difficulty", type=float, default=1.0)
     p.add_argument("--policy", default="models/policy.json",
                    help="politique évolutive pour jouer les épisodes de collecte")

@@ -29,7 +29,11 @@ export const read_dungeon_run = async (sdk: GameSdk, character_id: string): Prom
   if (!run_field?.fieldId) return null
 
   const { objects } = await sdk.sui_client.core.getObjects({ objectIds: [run_field.fieldId], include: { json: true } })
-  const json = objects[0]?.json as { dungeon?: string; room?: string | number; seed?: string | number } | undefined
+  // The node's JSON decode of a dynamic-field object is `{ name, value }` — the run struct lives
+  // under `value` (same widened-core shape dungeon/equipment reads document). Root field reads
+  // (`json.dungeon`) silently miss the value and this returns null while the run is live.
+  type RunJson = { value?: { dungeon?: string; room?: string | number; seed?: string | number } }
+  const json = (objects[0]?.json as RunJson | undefined)?.value
   if (!json?.dungeon) return null
   return Object.freeze({ dungeon: json.dungeon, room: Number(json.room ?? 1), seed: String(json.seed ?? '0') })
 }

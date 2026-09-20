@@ -3,19 +3,16 @@ win most, measured against every enemy archetype in the real mob catalog, with
 statistically meaningful rankings and a generalist/specialist breakdown.
 
 This measures a *trained* decision-maker's performance per composition -- it doesn't train
-one. Defaults to rl/scored_decide.py's weighted policy (rl/policy.py) since every
-MaskablePPO checkpoint produced by rl/train.py so far is a documented dead end (entropy
-collapse, no better than random -- see docs/ROADMAP.md); --model still accepts a PPO
-checkpoint if that path ever produces something worth measuring again.
+one. Uses rl/scored_decide.py's weighted policy (rl/policy.py) -- either the latest valid
+rl.evolve result (models/policy.json) or the default weights.
 
 Compositions are multisets of 4 classes drawn from the 12 available (duplicates allowed,
 matching ScenarioGenerator.DUPLICATE_CLASS_PROB's intent) -- C(15,4)=1365 total, not
 C(12,4)=495 distinct-only.
 
 python -m tools.compositions --policy models/policy.json --compositions 30 --episodes 15
-python -m tools.compositions --model models/ppo_ares.zip --compositions 30 --episodes 15
 """
-import argparse, itertools, json, random, statistics, sys
+import argparse, itertools, json, math, random, statistics, sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # run directly with `python tools/compositions.py`
@@ -23,12 +20,23 @@ from rl.env import AresFightEnv
 from rl.policy import DEFAULT_POLICY
 from rl.policy_store import load_trained_policy
 from rl.scored_decide import choose_action_index as scored_choose
-from tools.evaluate import wilson_interval
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-# Distinct from rl.train's default (12345) and tools.evaluate's (999_999) so composition
-# research never accidentally reuses either's exact scenario stream.
+# Distinct from rl.evolve's --seed (20260901), --holdout-seed (999_999) and rl.value's
+# (555_555) so composition research never accidentally reuses another tool's scenario stream.
 COMPOSITIONS_SEED = 777_777
+
+
+def wilson_interval(wins, n, z=1.96):
+    """Wilson 95% score interval for a win rate (kept local here since the PPO benchmark
+    tool it was originally shared with is gone)."""
+    if n == 0:
+        return (0.0, 0.0)
+    p = wins / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    margin = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return (max(0.0, center - margin), min(1.0, center + margin))
 
 
 def run_cell(env, decide, class_ids, mob_template, episodes):
@@ -49,28 +57,21 @@ def run_cell(env, decide, class_ids, mob_template, episodes):
             "avg_hp_frac": hp_frac_total / episodes if episodes else 0.0}
 
 
-def _make_decider(model_path, policy_path):
-    # A `decide(env, obs) -> action_index` closure, built once per worker process. PPO
-    # needs `obs` (its net's input); the scored policy reads straight from env.state/
-    # env.actions instead and ignores obs entirely -- same env either way, so run_cell
-    # doesn't need to know which it got.
-    if model_path:
-        from sb3_contrib import MaskablePPO  # heavy import, lazy: only paid on the (dead-end) PPO path
-        model = MaskablePPO.load(model_path)
-        return lambda env, obs: int(model.predict(obs, action_masks=env.action_masks(), deterministic=True)[0])
+def _make_decider(policy_path):
+    # A `decide(env, obs) -> action_index` closure, built once per worker process. The
+    # scored policy reads straight from env.state/env.actions and ignores obs entirely.
     policy = load_trained_policy(policy_path) if policy_path and Path(policy_path).exists() else DEFAULT_POLICY
     return lambda env, obs: scored_choose(env, policy)
 
 
-def _run_chunk(model_path, policy_path, combos, mob_templates, episodes, seed, difficulty, chunk_id):
+def _run_chunk(policy_path, combos, mob_templates, episodes, seed, difficulty, chunk_id):
     # Runs in its own OS process (one Bun subprocess + one loaded decider per process) --
-    # same reason rl/train.py's workers are separate processes, not threads: the
-    # simulator is a subprocess talking JSON over a pipe, there's no in-process
+    # the simulator is a subprocess talking JSON over a pipe, so there's no in-process
     # parallelism to exploit. Must be a module-level function (not a closure) so
     # ProcessPoolExecutor can pickle it for Windows' spawn start method.
     env = AresFightEnv(seed=seed)
     env.set_difficulty(difficulty)
-    decide = _make_decider(model_path, policy_path)
+    decide = _make_decider(policy_path)
     matrix = {}
     try:
         for i, combo in enumerate(combos, 1):
@@ -130,10 +131,6 @@ def main():
     p.add_argument("--policy", default="models/policy.json",
                     help="path to an rl.evolve-trained policy.json (see rl/policy_store.py); "
                          "the default weights are used if the file doesn't exist yet")
-    p.add_argument("--model", default=None,
-                    help="path to a MaskablePPO .zip checkpoint -- overrides --policy if given; every "
-                         "checkpoint rl/train.py has produced so far is a documented dead end (see "
-                         "docs/ROADMAP.md), kept only in case that path is revisited")
     p.add_argument("--episodes", type=int, default=15, help="episodes per (composition, enemy archetype) cell")
     p.add_argument("--compositions", default="30",
                     help="'all' for every 4-of-12-class multiset (C(15,4)=1365 with duplicates), "
@@ -159,12 +156,12 @@ def main():
     combos = all_combos if a.compositions == "all" else rng.sample(all_combos, min(int(a.compositions), len(all_combos)))
 
     if a.workers <= 1:
-        matrix = _run_chunk(a.model, a.policy, combos, mob_templates, a.episodes, a.seed, a.difficulty, 0)
+        matrix = _run_chunk(a.policy, combos, mob_templates, a.episodes, a.seed, a.difficulty, 0)
     else:
         chunks = [combos[i::a.workers] for i in range(a.workers)]
         matrix = {}
         with ProcessPoolExecutor(max_workers=a.workers) as pool:
-            futures = [pool.submit(_run_chunk, a.model, a.policy, chunk, mob_templates, a.episodes, a.seed,
+            futures = [pool.submit(_run_chunk, a.policy, chunk, mob_templates, a.episodes, a.seed,
                                     a.difficulty, i)
                        for i, chunk in enumerate(chunks) if chunk]
             for future in as_completed(futures):

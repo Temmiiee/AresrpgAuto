@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 const DUNGEONS_PATH = fileURLToPath(new URL('../../../../seed/content/dungeons.json', import.meta.url))
 const WORLDS_PATH = fileURLToPath(new URL('../../../../seed/content/worlds.json', import.meta.url))
 const RECIPES_PATH = fileURLToPath(new URL('../../../../seed/content/recipes.json', import.meta.url))
+const MOBS_PATH = fileURLToPath(new URL('../../../../seed/content/mobs.json', import.meta.url))
 
 type RawDungeon = { dungeon: string; key: string; rooms: { mob_type: string }[][] }
 type RawWorldCity = { city: string; x: number; z: number; dungeon?: string }
@@ -73,11 +74,33 @@ export const room_mobs = (info: DungeonInfo, room: number): readonly string[] =>
 // were authored from, so the order should already line up; if it's ever wrong, craft() aborts
 // cleanly on a template mismatch rather than silently misspending anything.
 type RawRecipe = { output_type: string; inputs: Record<string, number> }
-const KEY_RECIPES: ReadonlyMap<string, Readonly<Record<string, number>>> = new Map(
-  (JSON.parse(readFileSync(RECIPES_PATH, 'utf8')) as RawRecipe[])
-    .filter((r) => r.output_type.startsWith('key_of_'))
-    .map((r) => [r.output_type, Object.freeze({ ...r.inputs })])
+const ALL_RECIPES: ReadonlyMap<string, Readonly<Record<string, number>>> = new Map(
+  (JSON.parse(readFileSync(RECIPES_PATH, 'utf8')) as RawRecipe[]).map((r) => [
+    r.output_type,
+    Object.freeze({ ...r.inputs }),
+  ])
 )
+const KEY_RECIPES: ReadonlyMap<string, Readonly<Record<string, number>>> = new Map(
+  [...ALL_RECIPES.entries()].filter(([output_type]) => output_type.startsWith('key_of_'))
+)
+
+// mob_type -> level_max, read once from the seed. Used to decide whether a dungeon is low enough
+// to clear solo (the "clear gilded_lorito" daily quest is level ~8 while the party is 16 — taking
+// all four characters in wastes three keys) vs. needing the whole party's power.
+type RawMob = { mob_type: string; level_min: number; level_max: number }
+const MOB_LEVEL_MAX = new Map<string, number>(
+  (JSON.parse(readFileSync(MOBS_PATH, 'utf8')) as RawMob[]).map((m) => [m.mob_type, m.level_max])
+)
+
+/** The highest level_max any mob in this dungeon's rooms can roll — the "is this soloable" signal:
+ *  if it sits comfortably under the party's level, one character is plenty (see dungeon_session.ts). */
+export const dungeon_max_mob_level = (info: DungeonInfo): number =>
+  Math.max(...info.rooms.flat().map((mob_type) => MOB_LEVEL_MAX.get(mob_type) ?? 0))
+
+/** The ordered ingredient->per-attempt-quantity map for any seeded recipe (tools, keys,
+ *  consumables…), or undefined if this output has no known crafting recipe (drops-only). */
+export const recipe_of = (output_type: string): Readonly<Record<string, number>> | undefined =>
+  ALL_RECIPES.get(output_type)
 
 /** The ordered ingredient->per-attempt-quantity map for a dungeon key, or undefined if this key
  *  has no known crafting recipe (drops-only). */

@@ -57,51 +57,52 @@ you don't need to repeat it per cell.
 ```
 
 Expect `{'ok': True}`. If this fails, re-run step 3 and double check step 4 ran in the
-*same* notebook (variables don't survive a Colab disconnect — see step 8).
+*same* notebook (variables don't survive a Colab disconnect — see step 7).
 
-## 6. Train
+## 6. Train (evolutionary trainer)
 
-Start small to confirm everything works before committing real compute:
+The canonical trainer is `rl.evolve` — a **(mu+lambda) evolution strategy** over the
+6-weight decision policy (`base_weight`, `priority_decay`, `finish_weight`, `heal_weight`,
+`strike_bias`, `element_weight`). Everything is CPU-only, so the free runtime is exactly
+the right size for this.
 
-```bash
-!python -m rl.train --steps 5000
-```
-
-This should take well under a minute and print PPO's rollout stats (`ep_rew_mean`,
-`ep_len_mean`) a few times. Once that looks sane, scale up:
+Start small to confirm the whole chain works before committing real compute:
 
 ```bash
-!python -m rl.train --steps 200000 --workers 2 --out models/ppo_ares --log runs/monitor
+!python -m rl.evolve --generations 4 --population 6 --scenarios 4
 ```
 
-`--workers N` runs N simulator processes in parallel (each its own Bun subprocess) —
-real throughput gain, though not linear in N. Colab's free CPU runtime typically has 2
-vCPUs, so start at `--workers 2`; check `nproc` in a `!` cell if you want to know exactly
-how many you have, and don't go far past that number (more workers than cores just adds
-contention, not speed). `--out` is where the model checkpoint (`.zip`) is saved. `--log`
-is a directory of per-episode stats CSVs (win/loss, damage dealt/taken, episode
-length... one file per worker) that the dashboard below reads — keep it if you want to
-see training progress.
-
-## 7. View the training dashboard
+That prints per-generation best/hold-out lines and finishes in a few minutes. Then scale
+up — a realistic run on a free 2-vCPU runtime is a couple of hours:
 
 ```bash
-!python -m tools.dashboard --log runs/monitor --out runs/dashboard.html
+!python -m rl.evolve --generations 50 --population 10 --scenarios 8 \
+  --checkpoint /content/drive/MyDrive/aresrpg-ai/evolve.json
 ```
 
-Then, in a Python cell, open it right inside the notebook:
+Useful flags (full list: `python -m rl.evolve -h`):
 
-```python
-from IPython.display import IFrame
-IFrame("runs/dashboard.html", width=900, height=700)
+- `--scenarios N` training scenarios evaluated each generation (default 40).
+- `--holdout-scenarios N` scenarios drawn from a *different* seed and never touched during
+  the run (default 50) — improvement is measured on these, not the training set, so it's a
+  real generalization check rather than training-set memorization.
+- `--holdout-runs N` sims per hold-out scenario (default 10).
+- `--runs-per-eval N` sims per training scenario each generation (default 2).
+- `--min-holdout-improvement X` `models/policy.json` is only written if the best evolved
+  policy beats the default by at least X percentage points on the held-out set
+  (default 1.0).
+- `--seed 20260901` fixed by default so a run is reproducible (`--holdout-seed 999_999`
+  is separate and must never equal `--seed`).
+- `--checkpoint FILE` / `--resume FILE` for crash-safe runs — a checkpoint is written
+  after every generation and `--resume` fast-forwards past everything already done.
+
+For several independent runs (cheap insurance against single-run luck):
+
+```bash
+!python -m tools.multi_evolve --runs 4 --generations 50 --population 10 --scenarios 8
 ```
 
-Or download it to view in a normal browser tab: click the folder icon in Colab's left
-sidebar, navigate to `runs/dashboard.html`, and use its ⋮ menu → **Download**. Re-run the
-`tools.dashboard` command any time during or after training to refresh it — it's cheap
-(pure Python, no plotting library, regenerates in well under a second).
-
-## 8. Persist checkpoints and logs across sessions
+## 7. Persist results across sessions
 
 Colab's free tier disconnects — a 12-hour hard cap, and idle timeouts well before that.
 Anything under `/content/` (the default working directory) disappears on disconnect.
@@ -112,38 +113,43 @@ from google.colab import drive
 drive.mount('/content/drive')
 ```
 
-```bash
-!python -m rl.train --steps 200000 --workers 2 \
-  --out /content/drive/MyDrive/aresrpg-ai/ppo_ares \
-  --log /content/drive/MyDrive/aresrpg-ai/monitor
-```
-
 **Next session** (after a disconnect — repeat steps 1-5 first, since that state is gone
 too), continue instead of restarting from scratch:
 
 ```bash
-!python -m rl.train --steps 200000 --workers 2 \
-  --resume auto \
-  --out /content/drive/MyDrive/aresrpg-ai/ppo_ares \
-  --log /content/drive/MyDrive/aresrpg-ai/monitor
+!python -m rl.evolve --resume /content/drive/MyDrive/aresrpg-ai/evolve.json \
+  --generations 50 --population 10 --scenarios 8
 ```
 
-`--resume auto` finds the highest-step checkpoint under
-`/content/drive/MyDrive/aresrpg-ai/ppo_ares_checkpoints/` (written automatically every
-`--checkpoint-freq` steps, default 20000) and continues from it — no need to track the
-exact filename across sessions; if none exists yet it just starts fresh. (You can still
-pass an explicit `--resume /path/to/checkpoint.zip` instead.) `--out` and `--log` point
-at the same paths across sessions so both keep accumulating. Each `--steps` adds that many
-*more* timesteps on top of what's already trained. Repeat across sessions — that's how
-you accumulate real training time for free. Regenerate the dashboard from the Drive log
-path any time to see the full history across all sessions, not just the current one.
+`--resume` fast-forwards through every generation already in the checkpoint, so re-running
+with the same budget doesn't duplicate work.
+
+The validated policy itself is written to `models/policy.json` — also under `/content`, so
+it's ephemeral. Keep it:
+
+```python
+import shutil
+shutil.copy("models/policy.json", "/content/drive/MyDrive/aresrpg-ai/policy.json")
+```
+
+## 8. Ship the policy to the bot
+
+```bash
+!python -m tools.export_policy_to_bot --bot-root <path to the AresRPGBot checkout>
+```
+
+This translates `models/policy.json` into the bot's format and writes
+`packages/bot/learned_policy.local.json` in the AresRPGBot repo. That file is small (a few
+hundred bytes: the 6 weights + metadata) and is **committed to git** — earlier the repo
+ignored it, which is exactly how a trained policy got lost when switching machines. Do the
+training anywhere, then `git add`/commit/`push` the resulting file so both machines can
+pull it; the bot picks it up on its next fight.
 
 ## Rough expectations
 
-At the throughput measured for this project (~90 env steps/sec on one CPU process,
-~200/sec with `--workers 4` on one machine — expect less on Colab's 2 vCPUs), 200k
-steps is well under an hour, but PPO on an action space this rich realistically needs
-low millions of steps before it looks competent — that's several sessions strung
-together via `--resume`. Watch the dashboard's win-rate
-chart trend upward over time; if it stays flat near 0% for a long stretch, something
-about the reward/observation setup likely needs attention before burning more compute.
+The simulator runs at roughly 90 env steps/sec on one CPU process (measured at full
+difficulty on a 2023 desktop CPU), so the limit is wall-clock, not memory or GPU. The
+two validated runs in `docs/ROADMAP.md` used modest budgets and ended with the evolved
+policy beating the default by **+43.50** on the held-out set (training-set +20.46). The
+signal to watch for at the end of a run is whether `models/policy.json` got written — i.e.
+whether the held-out gate cleared — not the raw training-set numbers.

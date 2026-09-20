@@ -7,23 +7,28 @@
 import { get_enoki_signer } from '../auth/enoki_auth.ts'
 import { create_bot_sdk } from '../auth/sdk_client.ts'
 import { run_one_group_fight } from '../fight/fight_session.ts'
-import { message_of, is_insufficient_balance } from '../shared/chain_retry.ts'
+import { craft_starter_tools_if_missing } from '../forge/tool_craft.ts'
+import { message_of, is_insufficient_balance, PAID_RPC, rpc_backoff_ms } from '../shared/chain_retry.ts'
 import { send_discord_alert, notify_session_expired, notify_session_start } from '../shared/discord_notify.ts'
+import { notify_rare_loot, notify_fight_summary } from '../shared/discord_reports.ts'
 import { read_position, write_position } from '../state/position_state.ts'
 import { append_log, clear_log, type FightLogEntry } from '../state/session_log.ts'
 import { GAS_WARN_MIST, mist_to_sui } from '../state/session_stats.ts'
 import { write_status } from '../state/status_state.ts'
+import { acquire_session_lock, release_session_lock } from '../state/session_lock.ts'
 import { CHARACTERS } from '../config/party_config.ts'
 import { value_drops, calculate_farming_profit } from '../market/item_valuation.ts'
 import { ensure_min_balance, mist_to_sui_string, faucet_cooldown_remaining_ms } from '../market/faucet.ts'
 import { auto_sell_spare_loot } from '../market/auto_sell.ts'
+import { auto_equip_available_gear } from '../market/auto_equip.ts'
 import { run_daily_dungeon_quest } from '../dungeon/dungeon_session.ts'
 
-const DELAY_BETWEEN_FIGHTS_MS = 5_000
+const DELAY_BETWEEN_FIGHTS_MS = () => rpc_backoff_ms(1_500, 5_000)
 const RETRY_DELAY_MS = 30_000
 const NO_TARGET_RETRY_DELAY_MS = 10 * 60_000 // zones only reroll every 2h — no point hammering
-const PAID_RPC = process.env.PAID_RPC?.toLowerCase() === 'true'
 const POST_QUEST_DELAY_MS = PAID_RPC ? 0 : 10_000 // Wait 10s after quest check to avoid rate limit
+// How many completed fights accumulate before a recap embed is sent to Discord.
+const SUMMARY_EVERY = Number(process.env.DISCORD_SUMMARY_EVERY ?? 10) || 10
 
 // Real spend circuit breakers — GAS_WARN_MIST (session_stats.ts) only ever logged a warning and
 // let the loop keep going regardless; neither an unattended run stuck losing repeatedly (bad
@@ -78,7 +83,15 @@ const retry_delay_ms = (error: unknown, message: string): number => {
 
 const main = async () => {
   clear_log()
-  
+  acquire_session_lock()
+  const release = () => {
+    release_session_lock()
+    process.exit(0)
+  }
+  process.on('SIGINT', release)
+  process.on('SIGTERM', release)
+  process.on('exit', release_session_lock)
+
   // Pass callback to send login URL to Discord if re-auth is needed
   let signer = await get_enoki_signer(async (login_url) => {
     console.log('[Discord] Sending re-authentication link...')
@@ -89,10 +102,30 @@ const main = async () => {
   console.log(`session start — address ${address}, up to ${max_fights === Infinity ? 'unlimited' : max_fights} fights`)
   await notify_session_start(address, max_fights === Infinity ? 'unlimited' : max_fights)
 
+  const boot_bot = create_bot_sdk(signer)
+  // The boot sequence (equip -> tools -> quest) fires several RPC-heavy kiosk scans back to back;
+  // on the public RPC that burst lands as "Too Many Requests". Pause once up front, before the
+  // first of them, instead of after the quest check where it never covered the equip/tools burst.
+  if (POST_QUEST_DELAY_MS > 0) {
+    console.log(`  ⏱️  waiting ${(POST_QUEST_DELAY_MS / 1000).toFixed(0)}s before session-start RPC burst to avoid rate limit...`)
+    await sleep(POST_QUEST_DELAY_MS)
+  }
+  try {
+    await auto_equip_available_gear(boot_bot, (msg) => console.log(`  [equip] ${msg}`))
+  } catch (error) {
+    console.log(`  [equip] skipped this session start (${message_of(error)})`)
+  }
+  try {
+    await craft_starter_tools_if_missing(boot_bot, (msg) => console.log(`  [tools] ${msg}`))
+  } catch (error) {
+    console.log(`  [tools] cancelled this session start (${message_of(error)})`)
+  }
+
   let position = read_position()
   let count = 0
   let consecutive_losses = 0
   let session_gas_mist = 0n
+  const recent_fights: FightLogEntry[] = []
 
   while (count < max_fights) {
     count += 1
@@ -110,12 +143,13 @@ const main = async () => {
     write_status(`fight ${count}: starting…`, count)
     try {
       await maybe_run_daily_quest(bot, (msg) => console.log(`  [quest] ${msg}`))
-
-      // Wait after quest check to avoid rate limiting from multiple requests
-      if (POST_QUEST_DELAY_MS > 0 && count === 1) {
-        console.log(`  ⏱️  waiting ${(POST_QUEST_DELAY_MS / 1000).toFixed(0)}s after quest check to avoid rate limit...`)
-        await sleep(POST_QUEST_DELAY_MS)
-      }
+      // The daily quest enter() proves movement TO the dungeon portal (world.move::prove_move
+      // sets the on-chain overworld checkpoint there) and end_run() leaves that checkpoint in
+      // place. The position read at session start is therefore stale the moment a quest runs —
+      // searching/engaging from it aborts world::prove_move ETravelTooFar (305). Re-read so the
+      // battle anchors at the portal where the party actually is (live: first quest of a session
+      // aborted the very next engage with exactly this).
+      position = read_position()
 
       const { balance_mist, claim } = await ensure_min_balance(bot.sdk.read_sui_balance, bot.address)
       if (claim?.claimed) {
@@ -155,6 +189,15 @@ const main = async () => {
         net_profit_sui: profit.net_profit_sui,
       }
       append_log(entry)
+
+      await notify_rare_loot(outcome.drops ?? {}, outcome.fight_id)
+      if (entry.error === null && outcome.won !== null) {
+        recent_fights.push(entry)
+        if (recent_fights.length >= SUMMARY_EVERY) {
+          await notify_fight_summary(recent_fights, `${count} fights — recap`)
+          recent_fights.length = 0
+        }
+      }
 
       const drop_summary =
         Object.entries(outcome.drops ?? {})
@@ -207,7 +250,7 @@ const main = async () => {
         console.log(`  auto-sell skipped this round (${message_of(error)})`)
       }
 
-      await sleep(DELAY_BETWEEN_FIGHTS_MS)
+      await sleep(DELAY_BETWEEN_FIGHTS_MS())
     } catch (error) {
       const message = message_of(error)
       console.log(`[${timestamp()}] fight ${count} errored: ${message}`)
@@ -248,6 +291,7 @@ const main = async () => {
       await sleep(delay)
     }
   }
+  if (recent_fights.length > 0) await notify_fight_summary(recent_fights, `session end — ${count} fights`)
   write_status(`session done — ${count} fights attempted`, count)
   console.log(`\nsession done — ${count} fights attempted. Run "bun run session-stats" for a summary.`)
 }

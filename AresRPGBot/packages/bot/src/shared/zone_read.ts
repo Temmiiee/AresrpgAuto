@@ -100,6 +100,23 @@ export const read_mob_groups = async (
   return bcs.vector(MobGroup).parse(bytes)
 }
 
+/** The Zone object's on-chain search timestamp (null when the zone was never searched). Used to
+ *  gate a reroll on zone.move's RESEARCH_TTL_MS: only an aged searched_at is reseeded by refresh. */
+export const read_zone_searched_at = async (
+  sdk: GameSdk,
+  world_id: string,
+  zx: number,
+  zz: number
+): Promise<number | null> => {
+  const zone_object = zone_object_id(sdk, world_id, zx, zz)
+  const { objects } = await sdk.sui_client.core.getObjects({
+    objectIds: [zone_object],
+    include: { json: true },
+  })
+  const fields = (objects[0] as { json?: { fields?: { searched_at_ms?: string | number } } } | undefined)?.json?.fields
+  return fields?.searched_at_ms != null ? Number(fields.searched_at_ms) : null
+}
+
 /** One resource pack by index (aborts ENothingThere past the last live pack — probe index 0..
  *  until it throws to enumerate every pack in the zone). */
 export const read_resource_pack = async (

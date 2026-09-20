@@ -85,14 +85,9 @@ rl/
   spell_catalog.py     per-spell damage/support-per-AP scoring
   movement.py          shared move-toward-nearest-enemy helper
   policy_store.py      JSON persistence for trained policies
-  train.py             MaskablePPO trainer (documented dead end — kept for reference)
-  curriculum.py        difficulty ramp-up callback for PPO
-  safety.py            CollapseGuardCallback (entropy-collapse early-stop for PPO)
-  bc.py                behavior-cloning warm-start for PPO
 tools/
   build_content.py     pulls real classes/spells/mobs from an AresRPG checkout into data/
-  dashboard.py         renders a training-stats HTML report from Monitor CSVs
-  evaluate.py          held-out benchmark: win rate + CI, deaths, HP left (PPO path)
+  benchmark.py         quick episode throughput and win-rate check (heuristic)
   compositions.py      Phase 3: composition × archetype win-rate matrix, Wilson ranking
   benchmark.py         quick episode throughput and win-rate check (heuristic)
   record_replay.py     records fights as JSON frames for the HTML viewer
@@ -156,11 +151,10 @@ python -m tools.record_replay --count 10 --out runs/replays
 Load any `runs/replays/replay_*.json` into the
 [AresRPGBot HTML viewer](https://claude.ai/code/artifact/76ebe6c6-025f-4d18-a987-39459d388e61).
 
-### See how it's doing (PPO path)
+### Quick baseline check
 
 ```bash
-python -m tools.dashboard --log runs/monitor --out runs/dashboard.html
-python -m tools.evaluate --model models/ppo_ares.zip --episodes 200
+python -m tools.benchmark --episodes 100
 ```
 
 ### Composition research

@@ -31,8 +31,33 @@ describe('is_transient', () => {
   test('an object-lock-race message is transient', () => {
     expect(is_transient(new Error('object is already locked by a different transaction'))).toBe(true)
     expect(is_transient(new Error('provided version doesn\'t match'))).toBe(true)
-    expect(is_transient(new Error('kiosk::place_and_list aborted'))).toBe(true)
-    expect(is_transient(new Error('abort code: 11'))).toBe(true)
+    expect(is_transient(new Error('abort code: 11'))).toBe(false)
+    expect(
+      is_transient(
+        new Error(
+          "Transaction resolution failed: MoveAbort in 2nd command, abort code: 9, in '0x2::kiosk::borrow_mut'"
+        )
+      )
+    ).toBe(false)
+    expect(
+      is_transient(
+        new Error(
+          "Transaction resolution failed: MoveAbort in 3rd command, abort code: 0, in '0x2::dynamic_field::add'"
+        )
+      )
+    ).toBe(false)
+  })
+
+  test('rate-limit and RPC resource exhausted errors are transient', () => {
+    expect(is_transient(new Error('Too Many Requests'))).toBe(true)
+    expect(is_transient(new Error('HTTP 429'))).toBe(true)
+    expect(is_transient(new Error('Code: RESOURCE_EXHAUSTED Method: sui.rpc.v2.LedgerService/BatchGetObjects'))).toBe(true)
+  })
+
+  test('transient RPC endpoint outage (503 / gRPC UNAVAILABLE / connection drop) is transient', () => {
+    expect(is_transient(new Error('[sdk] transaction resolution failed — NOT submitted: Service Unavailable'))).toBe(true)
+    expect(is_transient(new Error('RpcError: Service Unavailable'))).toBe(true)
+    expect(is_transient(new Error('connection reset by peer'))).toBe(true)
   })
 
   test('an unrelated error is not transient', () => {
@@ -66,6 +91,16 @@ describe('submit_with_retry', () => {
         throw new Error('MoveAbort ... abort code: 1716')
       }, (msg) => logs.push(msg))
     ).rejects.toThrow('abort code: 1716')
+    expect(logs).toEqual([])
+  })
+
+  test('throws immediately (no retry, no log) on EObjectAlreadyExists / already claimed', async () => {
+    const logs: string[] = []
+    await expect(
+      submit_with_retry(async () => {
+        throw new Error('EObjectAlreadyExists: Derived object is already claimed.')
+      }, (msg) => logs.push(msg))
+    ).rejects.toThrow('EObjectAlreadyExists')
     expect(logs).toEqual([])
   })
 

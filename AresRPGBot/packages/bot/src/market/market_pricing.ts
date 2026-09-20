@@ -37,20 +37,55 @@ const FIRST_LISTING_PREMIUM: Readonly<Partial<Record<RarityTier, number>>> = {
 export const FAST_SELL_RAISE = 0.1 // sold quickly last time — the market will likely bear more
 export const STALE_CUT = 0.12 // sat unsold past the timeout — priced above what the market will bear
 export const MIN_PRICE_FLOOR = 0.4 // never chase the price down past this fraction of the base estimate
+export const LOOT_BAG_MIN_LISTING_SUI = 0.3 // a bag represents a bulk resource reward, never list below this
 export const FAST_SELL_MS = 6 * 60 * 60 * 1000 // sold within 6h of listing counts as "fast"
 
 // A clean, human price sells better than an odd fraction, and rounding UP (never down) means the
 // bot never quotes itself below its own floor/estimate to get there (2026-09-06, project owner:
 // "l'item qui vaut 0.0169 on le vend a 0.02 a l'HDV" -- 0.01 SUI is the chosen step).
 const CENT_MIST = 10_000_000n // 0.01 SUI, in MIST (1 SUI = 1e9 MIST)
-const round_up_to_cent = (mist: bigint): bigint => ((mist + CENT_MIST - 1n) / CENT_MIST) * CENT_MIST
+export const round_up_to_cent = (mist: bigint): bigint => ((mist + CENT_MIST - 1n) / CENT_MIST) * CENT_MIST
+
+// Live-HDV reference pricing (market_probe.ts): when OTHER kiosks currently ask far more for a
+// type than this bot's estimate-based price, the estimate (item_valuation's level-scaled fallback)
+// was measuring nothing real — quote the market instead: the cheapest competing per-unit ask,
+// undercut slightly so our listing sells first, scaled back up to this stack's amount. Only adopts
+// the market when it's meaningfully ABOVE the incumbent (MARKET_ADOPT_TERMS: >1.5x) — a stack
+// already at or above the market isn't re-priced at all (no sense undercutting ourselves into the
+// dirt, and jumping above the market's cheapest ask only stalls a sale). There is no real listing-
+// fee burn on delist/relist, so correcting an underpriced listing costs only gas (confirmed in
+// marketplace.move).
+export const MARKET_UNDERCUT = 0.95
+// Adopt the market's ask level when the incumbent quote is MORE than 50% below the market's
+// cheapest per-unit ask (market_min * 2 > incumbent * 3); any smaller gap keeps the incumbent.
+// A 2x-underpriced listing (e.g. 0.02 listed when the market asks 0.04) IS caught — the level-
+// scaled fallback had already priced those, so an exactly-2x gap is still a pricing bug, not a
+// deliberate discount.
+const MARKET_ADOPT_TERMS = { incumbent: 2n, market: 3n }
+
+export const suggest_market_lot_price_mist = (
+  current_price_mist: bigint,
+  market_min_unit_mist: bigint,
+  amount: number
+): bigint => {
+  const units = BigInt(Math.max(1, Math.floor(amount)))
+  const incumbent_unit = current_price_mist / units
+  if (market_min_unit_mist * MARKET_ADOPT_TERMS.incumbent <= incumbent_unit * MARKET_ADOPT_TERMS.market)
+    return current_price_mist
+  const undercut = (market_min_unit_mist * BigInt(Math.round(MARKET_UNDERCUT * 1000))) / 1000n
+  return round_up_to_cent(undercut * units)
+}
 
 const raw_suggest_listing_price_mist = (
   item_type: string,
   base_price_mist: bigint,
   history: readonly ListingRecord[]
 ): bigint => {
-  const floor = pct(base_price_mist, MIN_PRICE_FLOOR)
+  const estimate_floor = pct(base_price_mist, MIN_PRICE_FLOOR)
+  const bag_floor = item_type.startsWith('bag_')
+    ? BigInt(Math.ceil(LOOT_BAG_MIN_LISTING_SUI * Number(1_000_000_000n)))
+    : 0n
+  const floor = estimate_floor > bag_floor ? estimate_floor : bag_floor
   const clamped = (candidate: bigint): bigint => (candidate > floor ? candidate : floor)
 
   const resolved_for_type = history.filter((record) => record.item_type === item_type && record.outcome !== null)

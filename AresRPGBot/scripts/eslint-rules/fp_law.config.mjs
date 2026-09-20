@@ -27,7 +27,7 @@ import sonarjs from 'eslint-plugin-sonarjs'
 import { create_complexity_gate } from './complexity_gate.mjs'
 import fp_law from './fp_law.mjs'
 
-const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]$/, '')
 const complexity_baseline = JSON.parse(fs.readFileSync(new URL('./complexity.baseline.json', import.meta.url), 'utf8'))
 const complexity_gate = create_complexity_gate({ sonarjs, baseline: complexity_baseline, repo_root: REPO_ROOT })
 

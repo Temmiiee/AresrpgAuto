@@ -112,4 +112,15 @@ describe('suggest_listing_price_mist — walking from a resolved listing', () =>
     const floor = round_up_to_cent((BASE_MIST * BigInt(Math.round(MIN_PRICE_FLOOR * 1000))) / 1000n)
     expect(price).toBeGreaterThanOrEqual(floor)
   })
+
+  test('never cuts a loot bag below the absolute 0.3 SUI floor', () => {
+    const bag = 'bag_quartz'
+    let history: ListingRecord[] = []
+    let price = 1_000_000_000n
+    for (let i = 0; i < 50; i += 1) {
+      price = suggest_listing_price_mist(bag, 1_000_000_000n, history)
+      history = [record({ item_type: bag, outcome: 'unsold', price_mist: price.toString() })]
+    }
+    expect(price).toBeGreaterThanOrEqual(300_000_000n)
+  })
 })

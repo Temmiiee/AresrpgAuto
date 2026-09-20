@@ -5068,6 +5068,12 @@
         "chance_bp": 113,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "key_of_tangled_aftermath",
+        "chance_bp": 200,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 591
@@ -5213,6 +5219,18 @@
         "chance_bp": 4630,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "water",
+        "chance_bp": 6500,
+        "min_qty": 10,
+        "max_qty": 30
+      },
+      {
+        "item_type": "key_of_tangled_aftermath",
+        "chance_bp": 200,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 2200
@@ -5352,6 +5370,12 @@
         "chance_bp": 67,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "key_of_tangled_aftermath",
+        "chance_bp": 200,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 1075
@@ -5485,6 +5509,12 @@
         "chance_bp": 7010,
         "min_qty": 1,
         "max_qty": 2
+      },
+      {
+        "item_type": "key_of_tangled_aftermath",
+        "chance_bp": 200,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 975
@@ -5667,6 +5697,12 @@
       {
         "item_type": "silkblade_spinneret",
         "chance_bp": 10000,
+        "min_qty": 1,
+        "max_qty": 1
+      },
+      {
+        "item_type": "key_of_tangled_aftermath",
+        "chance_bp": 3000,
         "min_qty": 1,
         "max_qty": 1
       }
@@ -5997,6 +6033,12 @@
         "chance_bp": 50,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "key_of_tangled_aftermath",
+        "chance_bp": 500,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 16548
@@ -6181,6 +6223,12 @@
         "chance_bp": 29,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "water",
+        "chance_bp": 7000,
+        "min_qty": 7,
+        "max_qty": 18
       }
     ],
     "xp": 700
@@ -6589,7 +6637,7 @@
         "item_type": "fuwa_wool",
         "chance_bp": 6350,
         "min_qty": 1,
-        "max_qty": 1
+        "max_qty": 2
       },
       {
         "item_type": "fuwa_hide",
@@ -6624,6 +6672,12 @@
       {
         "item_type": "fleecebound_band",
         "chance_bp": 107,
+        "min_qty": 1,
+        "max_qty": 1
+      },
+      {
+        "item_type": "key_of_ivory_rampart",
+        "chance_bp": 100,
         "min_qty": 1,
         "max_qty": 1
       }
@@ -6784,6 +6838,12 @@
         "chance_bp": 37,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "key_of_ivory_rampart",
+        "chance_bp": 100,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 1600
@@ -6937,6 +6997,18 @@
         "chance_bp": 10000,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "key_of_ivory_rampart",
+        "chance_bp": 2000,
+        "min_qty": 1,
+        "max_qty": 1
+      },
+      {
+        "item_type": "water",
+        "chance_bp": 8000,
+        "min_qty": 30,
+        "max_qty": 60
       }
     ],
     "xp": 9000
@@ -7046,6 +7118,12 @@
         "chance_bp": 6500,
         "min_qty": 1,
         "max_qty": 2
+      },
+      {
+        "item_type": "key_of_ivory_rampart",
+        "chance_bp": 300,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 2600
@@ -7167,6 +7245,12 @@
         "chance_bp": 6500,
         "min_qty": 1,
         "max_qty": 2
+      },
+      {
+        "item_type": "key_of_ivory_rampart",
+        "chance_bp": 300,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 5200
@@ -7288,6 +7372,12 @@
         "chance_bp": 6500,
         "min_qty": 1,
         "max_qty": 2
+      },
+      {
+        "item_type": "key_of_ivory_rampart",
+        "chance_bp": 200,
+        "min_qty": 1,
+        "max_qty": 1
       }
     ],
     "xp": 9500
@@ -7527,6 +7617,12 @@
       {
         "item_type": "cloudstep_greaves",
         "chance_bp": 40,
+        "min_qty": 1,
+        "max_qty": 1
+      },
+      {
+        "item_type": "key_of_ivory_rampart",
+        "chance_bp": 1000,
         "min_qty": 1,
         "max_qty": 1
       }
@@ -7913,7 +8009,7 @@
       {
         "item_type": "water",
         "chance_bp": 7635,
-        "min_qty": 1,
+        "min_qty": 10,
         "max_qty": 20
       },
       {
@@ -8129,7 +8225,7 @@
       {
         "item_type": "water",
         "chance_bp": 4970,
-        "min_qty": 1,
+        "min_qty": 10,
         "max_qty": 20
       },
       {
@@ -8333,6 +8429,12 @@
         "chance_bp": 10000,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "water",
+        "chance_bp": 7000,
+        "min_qty": 40,
+        "max_qty": 60
       }
     ],
     "xp": 10033
@@ -8622,14 +8724,14 @@
       {
         "item_type": "salvaged_scrap",
         "chance_bp": 6735,
-        "min_qty": 1,
-        "max_qty": 1
+        "min_qty": 3,
+        "max_qty": 5
       },
       {
         "item_type": "shiny_trinket",
-        "chance_bp": 2840,
-        "min_qty": 1,
-        "max_qty": 1
+        "chance_bp": 6000,
+        "min_qty": 2,
+        "max_qty": 3
       },
       {
         "item_type": "trashamulet",
@@ -8936,6 +9038,12 @@
         "chance_bp": 300,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "water",
+        "chance_bp": 7000,
+        "min_qty": 10,
+        "max_qty": 20
       }
     ],
     "xp": 600
@@ -9092,8 +9200,8 @@
       {
         "item_type": "rabbit_pelt",
         "chance_bp": 7485,
-        "min_qty": 1,
-        "max_qty": 1
+        "min_qty": 2,
+        "max_qty": 3
       },
       {
         "item_type": "rabbit_sinew",
@@ -9220,13 +9328,13 @@
         "item_type": "gnawed_branch",
         "chance_bp": 5820,
         "min_qty": 1,
-        "max_qty": 1
+        "max_qty": 2
       },
       {
         "item_type": "tree_resin",
         "chance_bp": 4615,
         "min_qty": 1,
-        "max_qty": 1
+        "max_qty": 2
       },
       {
         "item_type": "refuse_recurve",
@@ -9517,6 +9625,18 @@
         "chance_bp": 31,
         "min_qty": 1,
         "max_qty": 1
+      },
+      {
+        "item_type": "gnawed_branch",
+        "chance_bp": 7000,
+        "min_qty": 2,
+        "max_qty": 4
+      },
+      {
+        "item_type": "tree_resin",
+        "chance_bp": 7000,
+        "min_qty": 2,
+        "max_qty": 3
       }
     ],
     "xp": 5500

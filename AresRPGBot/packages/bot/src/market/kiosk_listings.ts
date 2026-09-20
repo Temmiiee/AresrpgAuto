@@ -3,12 +3,15 @@
 // this bot relied on until 2026-09-06. Confirmed live that call is unreliable on this kiosk: it
 // reported 31 "listed" items with prices up to ~19 digits (nonsense, since 1 SUI = 1e9 MIST) when
 // only 6 items actually carry a Listing dynamic field, each with a normal, correct price
-// (matching exactly what market_history.local.json recorded at listing time). Every caller that
+// (matching exactly what market_history.local.json recorded at listing time). Pages the kiosk's
+// dynamic fields to completion: a truncated first page used to miss Listing DFs, so listed stacks
+// looked unlisted and merge/craft aborted (df::add 0 / kiosk::borrow_mut 9). Every caller that
 // needs to know "is this item listed, and at what price" should go through this file instead of
 // touching KioskItem.listing directly.
 import type { SuiClientTypes } from '@mysten/sui/client'
 
 import type { BotSdk } from '../auth/sdk_client.ts'
+import { is_transient } from '../shared/chain_retry.ts'
 
 export type KioskListings = ReadonlyMap<string, bigint> // item objectId -> price, in MIST
 
@@ -27,18 +30,32 @@ type CoreWithDynamicFields = {
 
 export const read_kiosk_listings = async (sdk: BotSdk['sdk'], kiosk_id: string): Promise<KioskListings> => {
   const core = sdk.sui_client.core as unknown as CoreWithDynamicFields
-  const { dynamicFields } = await core.listDynamicFields({ parentId: kiosk_id })
+  const dynamicFields: SuiClientTypes.ListDynamicFieldsResponse['dynamicFields'] = []
+  let cursor: string | null | undefined
+  do {
+    const page = await core.listDynamicFields({ parentId: kiosk_id, cursor: cursor ?? undefined })
+    dynamicFields.push(...page.dynamicFields)
+    cursor = page.hasNextPage ? page.cursor : null
+  } while (cursor)
   const listing_fields = dynamicFields.filter((f) => f.name?.type?.endsWith('::kiosk::Listing'))
+  if (listing_fields.length === 0) return new Map()
 
-  const entries = await Promise.all(
-    listing_fields.map(async (field): Promise<readonly [string, bigint] | null> => {
-      if (!field.fieldId) return null
-      const { objects } = await sdk.sui_client.core.getObjects({ objectIds: [field.fieldId], include: { json: true } })
-      const json = objects[0]?.json as ListingFieldValue | undefined
-      if (!json?.name?.id || json.value === undefined) return null
-      return [json.name.id, BigInt(json.value)]
-    })
-  )
+  const ids = listing_fields.map((f) => f.fieldId).filter((id): id is string => Boolean(id))
+  if (ids.length === 0) return new Map()
+
+  const { objects } = await sdk.sui_client.core.getObjects({ objectIds: ids, include: { json: true } })
+  const entries: (readonly [string, bigint] | null)[] = []
+  ids.forEach((_, i) => {
+    const obj = objects[i]
+    if (obj instanceof Error) {
+      if (is_transient(obj)) throw obj
+      return
+    }
+    const json = obj?.json as ListingFieldValue | undefined
+    if (json?.name?.id && json.value !== undefined) {
+      entries.push([json.name.id, BigInt(json.value)])
+    }
+  })
 
   return new Map(entries.filter((e): e is readonly [string, bigint] => e !== null))
 }

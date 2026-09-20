@@ -1,0 +1,19 @@
+{
+  "objectives": [
+    { "output_type": "quartzbound_pickaxe", "quantity": 1 }
+  ],
+  "min_craft_value_sui": 0.15,
+  "job_priority": [
+    "FARMER",
+    "HERBALIST",
+    "MINER",
+    "TAILOR",
+    "JEWELER",
+    "TANNER",
+    "FORGER",
+    "CARVER",
+    "HANDYMAN",
+    "ALCHEMIST",
+    "BAKER"
+  ]
+}

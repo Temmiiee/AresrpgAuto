@@ -31,7 +31,7 @@ class AresFightEnv(gym.Env):
     # that fragile zone for no real benefit: sampled 5741 real decision points at full
     # difficulty (2026-09-01) and the observed max legal-action count was 564, 99th
     # percentile 288 -- every RL run through that point had hit the exact-float32-zero
-    # entropy collapse (see rl/train.py, rl/safety.py) regardless of every hyperparameter/
+    # entropy collapse (see docs/ROADMAP.md for the MaskablePPO writeup) regardless of every hyperparameter/
     # architecture change tried, which fits this class of bug far better than anything
     # about this project's own reward/observation/network setup. 1024 keeps a healthy
     # margin above the observed max while moving well clear of the reported threshold.

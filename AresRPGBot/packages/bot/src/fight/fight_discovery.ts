@@ -12,7 +12,9 @@ import { read_hp_state, ms_until_fraction } from '../state/hp_state.ts'
 import { read_mob_groups } from '../shared/zone_read.ts'
 import { message_of, sleep, submit_with_retry } from '../shared/chain_retry.ts'
 import { CHARACTERS, LEADER, WORLD } from '../config/party_config.ts'
-import { simulate_many, reward_score, type SimBatchResult, type SimMobGroupMember } from '../ai/simulate.ts'
+import { reward_score, type SimBatchResult, type SimMobGroupMember } from '../ai/simulate.ts'
+import { simulate_many_parallel } from '../ai/sim_pool.ts'
+import { load_trained_policy } from '../ai/policy_store.ts'
 import type { PartyPrep } from './fight_progression.ts'
 import type { Position, MobInfo, FightOutcome } from './fight_state.ts'
 import { run_one_group_fight } from './fight_session.ts'
@@ -46,6 +48,21 @@ const SIM_SCREEN_RUNS = 5
 const MIN_SIM_WIN_RATE = 0.6
 // Don't walk into another fight under-healed — the lesson from going in at 1 HP after a loss.
 const MIN_HP_FRACTION = 0.8
+
+// Screening memo: a group's simulated win rate is a pure function of the GROUP's composition and
+// the PARTY's current profile (levels + equipped weapon categories) at a given (zx, zz) seed —
+// none of which change between consecutive battles in the same zone (the only mutable thing,
+// `mob_taken`, is captured by the group list `read_mob_groups` already re-read fresh each pass).
+// Without this, re-fighting a zone re-simulated the same ~10 candidates every battle, a ~140 s
+// silent stretch (measured 2026-09-16: 10 candidates × 5 runs, 139.8 s) — on every one of the
+// BATTLES_PER_ZONE fights. The cache keys on the group index + full composition + the party
+// profile (levels, weapon category per character) + the run count, so ANY of those changing
+// recomputes naturally; nothing can go stale-and-wrong because the key encodes every input the
+// result depends on. Bounded (clears at 1000 entries) so a long roamer doesn't grow it forever.
+const SCREEN_CACHE_MAX = 1000
+const screen_cache = new Map<string, SimBatchResult>()
+const { policy: SCREEN_POLICY } = load_trained_policy()
+const SCREEN_POLICY_KEY = JSON.stringify(SCREEN_POLICY)
 
 // Detects a character already seated in an on-chain fight by walking its OWNER chain up to 2
 // hops (character -> immediate owner -> that owner's owner), since a character inside a fight is
@@ -195,15 +212,73 @@ export const find_or_create_fight = async (
   const hardest_first = [...easy_enough].sort((a, b) => avg_level_of(b) - avg_level_of(a))
   const easiest = [...easy_enough].sort((a, b) => avg_level_of(a) - avg_level_of(b))[0]!
   const candidates = [easiest, ...hardest_first.filter((g) => g !== easiest)].slice(0, SIM_SCREEN_CANDIDATES)
-  const screened: ScreenedGroup[] = candidates.map((group) => {
-    const mob_group: SimMobGroupMember[] = group.members.map((m) => ({ mob_type: m.mob_type, level: m.level_scalar }))
-    try {
-      return { group, mob_group, sim: simulate_many(sim_party, mob_group, SIM_SCREEN_RUNS) }
-    } catch (error) {
-      log(`  simulated screening skipped for group #${group.index} (${message_of(error)})`)
-      return { group, mob_group, sim: null }
-    }
+  // Fully offline, no gas -- but the screening batch used to cost a multi-minute silent stretch
+  // between "searching zone" and the pick (measured 2026-09-16: 50 groups, 10 candidates, 140s
+  // wall clock with no output at all). Three fixes since: the screen cache (below) reuses results
+  // across consecutive battles in the same zone (nothing its key encodes changes mid-zone), the
+  // spell-book accuracy fix (fight_progression.ts + read_spell_book) lets the party fight with
+  // its REAL invested spell levels (measured ~35% fewer turns than always-casting level-1), and
+  // the whole uncached batch now runs across worker threads (sim_pool.ts) instead of one fight
+  // after another. Log each candidate as its result lands so the wait still reads as progress,
+  // not a hang.
+  const party_profile = CHARACTERS.map((c) => {
+    const member = sim_party[CHARACTERS.findIndex((m) => m.id === c.id)]!
+    return `${member.level}/${member.weapon?.category ?? ''}`
+  }).join('|')
+  type CandidateWithSim = {
+    group: (typeof candidates)[number]
+    mob_group: SimMobGroupMember[]
+    cache_key: string
+  }
+  const candidates_with_sim: CandidateWithSim[] = candidates.map((group) => ({
+    group,
+    mob_group: group.members.map((m) => ({ mob_type: m.mob_type, level: m.level_scalar })),
+    cache_key: `${zx},${zz}#${group.index}#${group.members.map((m) => `${m.mob_type}:${m.level_scalar}`).join(',')}#${party_profile}#${SCREEN_POLICY_KEY}#${SIM_SCREEN_RUNS}`,
+  }))
+  const cached_hits = new Map<number, SimBatchResult>()
+  const to_sim: (CandidateWithSim & { index: number })[] = []
+  candidates_with_sim.forEach((entry, index) => {
+    const cached = screen_cache.get(entry.cache_key)
+    if (cached) cached_hits.set(index, cached)
+    else to_sim.push({ ...entry, index })
   })
+  log(
+    `simulating ${candidates.length} candidate group(s) (${SIM_SCREEN_RUNS} runs each, ${to_sim.length} to simulate across worker threads) — hardest first, this is the quiet part…`
+  )
+  const simulated_at = Date.now()
+  const sims =
+    to_sim.length > 0
+      ? await simulate_many_parallel(
+          sim_party,
+          to_sim.map((t) => ({ mob_group: t.mob_group, runs: SIM_SCREEN_RUNS })),
+          SCREEN_POLICY
+        )
+      : []
+  for (const [local, t] of to_sim.entries()) {
+    const sim = sims[local] ?? null
+    if (sim) {
+      screen_cache.set(t.cache_key, sim)
+      if (screen_cache.size > SCREEN_CACHE_MAX) screen_cache.clear()
+    }
+  }
+  const elapsed_s = ((Date.now() - simulated_at) / 1000).toFixed(1)
+  const screened: ScreenedGroup[] = []
+  for (let idx = 0; idx < candidates_with_sim.length; idx += 1) {
+    const { group, mob_group } = candidates_with_sim[idx]
+    const cached = cached_hits.get(idx)
+    const run_index = to_sim.findIndex((t) => t.index === idx)
+    const sim = cached ?? (run_index >= 0 ? (sims[run_index] ?? null) : null)
+    if (cached)
+      log(
+        `  group #${group.index} (avg lv ${avg_level_of(group).toFixed(1)}, ${mob_group.map((m) => `${m.mob_type}(${m.level})`).join(', ')}) — cached (${(cached.win_rate * 100).toFixed(0)}% win, ~${cached.avg_turns.toFixed(0)} turns)`
+      )
+    else if (sim)
+      log(
+        `  group #${group.index} (avg lv ${avg_level_of(group).toFixed(1)}, ${mob_group.map((m) => `${m.mob_type}(${m.level})`).join(', ')}) simulated in ${elapsed_s}s → ${(sim.win_rate * 100).toFixed(0)}% win, ~${sim.avg_turns.toFixed(0)} turns`
+      )
+    else log(`  simulated screening skipped for group #${group.index}`)
+    screened.push({ group, mob_group, sim })
+  }
   const viable = screened.filter((s) => s.sim !== null && s.sim.win_rate >= MIN_SIM_WIN_RATE)
   // "Always winnable" is meant to be non-negotiable (MIN_SIM_WIN_RATE's own comment) -- refuse to
   // engage rather than force the least-bad simulated option when NOTHING clears the bar, instead

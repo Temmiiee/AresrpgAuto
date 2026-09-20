@@ -2,10 +2,9 @@
 // hardcode 'testnet' (sdk_client.ts, enoki_auth.ts, faucet.ts) reads it from here instead, so
 // switching networks is a one-line env change, never a code change.
 //
-// pins.json's "mainnet" entry is still every field null (2026-09-06 — the game itself hasn't
-// deployed there yet), so NETWORK=mainnet will fail loudly against @aresrpg/sdk's own
-// `unknown network` guard until that changes. This switch exists so flipping it is trivial the
-// day it does, not so it works today.
+// pins.json's "mainnet" entry carries the live mainnet pins (synced from the RL repo, plus the
+// game-package v3 update 2026-09-17 — the Version object on-chain is current_version 3 while the
+// pinned 0x1ab0 package asserted 2, so every game door aborted 601 until the package was re-pinned).
 import type { SdkNetwork } from '@aresrpg/sdk'
 
 const RPC_URLS: Record<SdkNetwork, string> = {

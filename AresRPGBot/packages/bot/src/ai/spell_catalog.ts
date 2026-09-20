@@ -76,23 +76,35 @@ export type CastableSpell = {
 
 /** Every spell this class knows at this level. `role` splits damage (aimed at the enemy),
  *  support (a buff/heal aimed at an ally or self), and everything else (traps, displacement,
- *  utility) that the current turn logic doesn't know how to use well and treats as low priority. */
-export const castable_spells = (classe: string, level: number): CastableSpell[] =>
+ *  utility) that the current turn logic doesn't know how to use well and treats as low priority.
+ *
+ *  `spell_levels` is the character's raised-spell book (read_spell_book): a spell invested there
+ *  is scored/evaluated at ITS invested level instead of the level-1 default fight.move would
+ *  resolve with. This matters because prepare_party raises the best damage/heal spells on-chain —
+ *  without passing the invested levels in, the planner would keep rating every spell by its
+ *  weakest level-1 row no matter how many points were actually sunk into it (the accuracy gap
+ *  read_spell_book closes). Out-of-range levels clamp to the catalog's own max. */
+export const castable_spells = (
+  classe: string,
+  level: number,
+  spell_levels: Readonly<Record<string, number>> = {}
+): CastableSpell[] =>
   ALL_SPELLS.filter((spell) => spell.classe === classe && spell.unlock_level <= level).map((spell) => {
-    const first = spell.levels[0]! // invested level 1 — the self-learned default
-    const dmg = damage_amount(first)
-    const support = support_amount(first)
+    const invested = Math.max(1, Math.min(spell.levels.length, spell_levels[spell.name] ?? 1))
+    const row = spell.levels[invested - 1]! // invested level — the row fight.move actually resolves
+    const dmg = damage_amount(row)
+    const support = support_amount(row)
     const role: SpellRole = dmg > 0 ? 'damage' : support > 0 ? 'support' : 'other'
     const magnitude = role === 'damage' ? dmg : role === 'support' ? support : 0
     return {
       name: spell.name,
-      ap_cost: Math.max(1, first.ap_cost),
-      range_min: first.range_min,
-      range_max: first.range_max,
-      line_of_sight: first.line_of_sight,
+      ap_cost: Math.max(1, row.ap_cost),
+      range_min: row.range_min,
+      range_max: row.range_max,
+      line_of_sight: row.line_of_sight,
       role,
-      is_heal: first.effects.some(is_heal),
-      element: role === 'damage' ? dominant_element(first) : null,
-      score: magnitude / Math.max(1, first.ap_cost), // effect per AP — favors efficient spells over one big expensive one
+      is_heal: row.effects.some(is_heal),
+      element: role === 'damage' ? dominant_element(row) : null,
+      score: magnitude / Math.max(1, row.ap_cost), // effect per AP — favors efficient spells over one big expensive one
     }
   })

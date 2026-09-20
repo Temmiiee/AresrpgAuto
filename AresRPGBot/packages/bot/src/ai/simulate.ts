@@ -4,12 +4,13 @@
 // run_until_player), so apply()ing 'end_turn' automatically resolves every mob turn up to the
 // next living player — the caller only ever decides PLAYER actions.
 import { create_character_source, create_fight, player_max_hp, mob_scalar_for_level, xp_award_of } from '@aresrpg/fight'
-import type { FightMobInput, FightPlayerInput, HydratedFightCheckpoint } from '@aresrpg/fight'
+import type { FightMobInput, FightPlayerInput, HydratedFightCheckpoint, WeaponSource } from '@aresrpg/fight'
+
+import { get_item_price } from '../market/item_valuation.ts'
 
 import { decide_turn } from './sim_decide.ts'
 import { find_mob_template, all_spell_sources } from './sim_content.ts'
 import { DEFAULT_POLICY, type Policy } from './policy.ts'
-import { get_item_price } from '../market/item_valuation.ts'
 
 /** The shape of both sim_decide.ts's decide_turn and lookahead.ts's decide_turn_with_lookahead
  *  — simulate_fight doesn't care which one it's driving with. */
@@ -30,6 +31,14 @@ export type SimPartyMember = {
   intelligence: number
   chance: number
   agility: number
+  /** The character's equipped weapon (read_equipped_weapon) — absent means honestly unarmed:
+   *  the sim's build strikes with the same unarmed fallback the chain resolves for a bare slot. */
+  weapon?: WeaponSource
+  /** Raised spell levels (read_spell_book): spell name -> invested level. A spell absent here
+   *  casts at its self-learned level 1, matching the chain's own default. Absent entirely means
+   *  every spell at level 1 — the honest default for sims built from scratch (cli_train,
+   *  composition sweeps) that have no chain reads behind them. */
+  spell_levels?: Readonly<Record<string, number>>
 }
 
 export type SimMobGroupMember = { mob_type: string; level: number }
@@ -58,6 +67,8 @@ export const build_setup = (party: readonly SimPartyMember[], mob_group: readonl
       intelligence: BigInt(member.intelligence),
       chance: BigInt(member.chance),
       agility: BigInt(member.agility),
+      weapon: member.weapon ?? null,
+      spell_levels: Object.fromEntries(Object.entries(member.spell_levels ?? {}).map(([name, lvl]) => [name, BigInt(lvl)])),
     })
     return { id: `0xplayer${index}`, source }
   })
@@ -174,7 +185,8 @@ export const expected_loot_value_sui = (mob_group: readonly SimMobGroupMember[])
     let template
     try {
       template = find_mob_template(mob_type)
-    } catch {
+    } catch (error) {
+      console.warn(`simulate: skipping loot estimate for unknown mob_type ${mob_type} (${String(error)})`)
       continue
     }
     for (const drop of template.loot) {
@@ -197,8 +209,15 @@ export const expected_loot_value_sui = (mob_group: readonly SimMobGroupMember[])
 // weighted terms rather than a fabricated combined unit — SUI_PER_TURN_WEIGHT is a rough scale
 // pick (a typical ~0.01-0.05 SUI/turn single-material drop registers like a modest XP swing,
 // neither negligible nor dominant), a first cut for a real cli_tune.ts-style search later.
+//
+// 2026-09-16: SUI_PER_TURN_WEIGHT dropped 2_000 → 200 to compensate the 10x bump in
+// item_valuation.ts (item_prices.json x10, ROYALTY_FLOOR coverage). The expected-loot read feeds
+// on the now-valued unit prices, so the loot term silently became 10x stronger than this comment's
+// scale pick intended — enough to drown XP entirely and make fight discovery pick the richest
+// easy fights (1-xp lorito lv1-2) instead of the winnable ones that award real XP. ÷10 restores
+// the original "both terms matter" intent behind this heuristic.
 const XP_PER_TURN_WEIGHT = 1
-const SUI_PER_TURN_WEIGHT = 2_000
+const SUI_PER_TURN_WEIGHT = 200
 export const reward_score = (result: SimBatchResult, mob_group: readonly SimMobGroupMember[]): number => {
   const loot_per_turn = result.avg_turns > 0 ? expected_loot_value_sui(mob_group) / result.avg_turns : 0
   return result.avg_xp_per_turn * XP_PER_TURN_WEIGHT + loot_per_turn * SUI_PER_TURN_WEIGHT

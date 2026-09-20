@@ -2,8 +2,15 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { HydratedFightCheckpoint } from '@aresrpg/fight';
+
+import { live_state_to_checkpoint } from '../fight/live_checkpoint.ts';
+import { all_spell_sources } from './sim_content.ts';
+import type { SimPartyMember } from './simulate.ts';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = resolve(dirnameFromUrl(import.meta.url));
+const SPELLS = all_spell_sources();
 
 function dirnameFromUrl(url: URL | string): string {
   return new URL(url, 'file://').pathname.endsWith('/')
@@ -18,7 +25,7 @@ function dirnameFromUrl(url: URL | string): string {
 export class TSBridge {
   private bunProcess: ReturnType<typeof spawn> | null = null;
   private isInitialized = false;
-  private resolveCallback: ((value: unknown) => void) | null = null;
+  private resolveCallback: ((value: any) => void) | null = null;
   private rejectCallback: ((reason?: any) => void) | null = null;
 
   /** Path to the bridge server script */
@@ -33,22 +40,23 @@ export class TSBridge {
   async initialize(aresRpgRoot: string): Promise<void> {
     if (this.isInitialized) return;
 
-    return new Promise((resolve, reject) => {
-      this.resolveCallback = resolve;
+    return new Promise((promise_resolve, reject) => {
+      this.resolveCallback = promise_resolve;
       this.rejectCallback = reject;
 
       try {
         // Spawn the Bun process
-        this.bunProcess = spawn('bun', ['run', this.serverPath], {
+        const proc = spawn('bun', ['run', this.serverPath], {
           // Set the AresRPG root as environment variable
           env: { ...process.env, ARES_RPG_ROOT: aresRpgRoot },
           // Use pipes for stdin/stdout
           stdio: ['pipe', 'pipe', 'pipe']
         });
+        this.bunProcess = proc;
 
         // Handle process output
         let stdoutData = '';
-        this.bunProcess.stdout.on('data', (data) => {
+        proc.stdout?.on('data', (data) => {
           stdoutData += data.toString();
           const lines = stdoutData.split('\n');
           // Keep the last incomplete line in the buffer
@@ -75,11 +83,11 @@ export class TSBridge {
           }
         });
 
-        this.bunProcess.stderr.on('data', (data) => {
+        proc.stderr?.on('data', (data) => {
           console.error('TSBridge STDERR:', data.toString());
         });
 
-        this.bunProcess.on('error', (err) => {
+        proc.on('error', (err) => {
           if (this.rejectCallback) {
             this.rejectCallback(err);
             this.resolveCallback = null;
@@ -87,7 +95,7 @@ export class TSBridge {
           }
         });
 
-        this.bunProcess.on('close', (code) => {
+        proc.on('close', (code) => {
           if (this.rejectCallback) {
             this.rejectCallback(new Error(`Bun process exited with code ${code}`));
             this.resolveCallback = null;
@@ -97,8 +105,9 @@ export class TSBridge {
         });
 
         // Send a ready ping to make sure the process is ready
-        this.bunProcess.stdin.write(JSON.stringify({ ping: true }) + '\n');
-        this.bunProcess.stdin.flush();
+        proc.stdin.write(JSON.stringify({ ping: true }) + '\n');
+        // Bun's stdin Writable exposes flush(); the Node typing doesn't know it
+        (proc.stdin as any).flush();
 
       } catch (err) {
         reject(err);
@@ -120,14 +129,14 @@ export class TSBridge {
       throw new Error('TSBridge Bun process not available');
     }
 
-    return new Promise((resolve, reject) => {
-      this.resolveCallback = resolve;
+    return new Promise((promise_resolve, reject) => {
+      this.resolveCallback = promise_resolve;
       this.rejectCallback = reject;
 
       try {
         // Send the request to the Bun process
-        this.bunProcess.stdin.write(JSON.stringify(request) + '\n');
-        this.bunProcess.stdin.flush();
+        this.bunProcess!.stdin?.write(JSON.stringify(request) + '\n');
+        (this.bunProcess!.stdin as any)?.flush();
       } catch (err) {
         reject(err);
       }
@@ -208,13 +217,6 @@ export class TSBridge {
 }
 
 // Helper function to convert live fight state to bridge state format
-import { live_state_to_checkpoint } from '../fight/live_checkpoint.ts';
-import type { HydratedFightCheckpoint } from '@aresrpg/fight';
-import { all_spell_sources } from './sim_content.ts';
-import type { SimPartyMember } from './simulate.ts';
-
-const SPELLS = all_spell_sources();
-
 /**
  * Converts live fight state to the format expected by the bridge decision system.
  * This adapts the live_state_to_checkpoint function to return the plain object format

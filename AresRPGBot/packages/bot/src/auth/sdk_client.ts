@@ -12,6 +12,7 @@ import { character_actions } from '../../../sdk/src/character_actions.ts'
 import { fight_actions } from '../../../sdk/src/fight.ts'
 import { dungeon_actions } from '../../../sdk/src/dungeon.ts'
 import { mastery_actions } from '../../../sdk/src/mastery.ts'
+import { stack_actions } from '../../../sdk/src/stacks.ts'
 import { NETWORK, RPC_URL } from '../shared/network_config.ts'
 
 export const create_bot_sdk = (keypair: Signer) => {
@@ -22,8 +23,12 @@ export const create_bot_sdk = (keypair: Signer) => {
   // bumps it, so — matching the real client's auth.ts — this asks the network fresh every
   // time rather than memoizing: a cached version goes stale after the very next transaction
   // and the next kiosk door fails with "provided version doesn't match".
-  const kiosk_cap = async () => {
+  const kiosk_cap = async (kiosk_id?: string, _fresh?: boolean) => {
     const { kioskOwnerCaps } = await sdk.get_owned_kiosks(address)
+    if (kiosk_id) {
+      const wanted = kiosk_id.toLowerCase()
+      return kioskOwnerCaps.find((cap) => cap.kioskId.toLowerCase() === wanted) ?? null
+    }
     return kioskOwnerCaps.find((cap) => cap.isPersonal) ?? kioskOwnerCaps[0] ?? null
   }
 
@@ -35,6 +40,7 @@ export const create_bot_sdk = (keypair: Signer) => {
     marketplace: marketplace_actions(sdk, { address, kiosk_cap }),
     dungeon: dungeon_actions(sdk, { kiosk_cap }),
     mastery: mastery_actions(sdk, { address, kiosk_cap }),
+    stacks: stack_actions(sdk, { kiosk_cap }),
     kiosk_cap,
   }
 }

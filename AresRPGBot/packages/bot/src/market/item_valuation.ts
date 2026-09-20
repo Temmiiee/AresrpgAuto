@@ -14,27 +14,42 @@ const prices_store = create_local_json_store<Record<string, number>>(
 // silently priced as if it were level 1 regardless of what actually dropped — a level-9
 // resource and a level-1 one landed on the exact same number.
 const ITEMS_PATH = fileURLToPath(new URL('../../../../seed/content/items.json', import.meta.url))
-const ITEM_LEVEL_BY_TYPE: ReadonlyMap<string, number> = new Map(
-  (JSON.parse(readFileSync(ITEMS_PATH, 'utf8')) as { item_type: string; level: number }[]).map((i) => [
-    i.item_type,
-    i.level,
-  ])
-)
-
-// Default fallback prices in SUI for known items when market price is not listed
-const DEFAULT_ESTIMATED_PRICES_SUI: Record<string, number> = {
-  water: 0.005,
-  fire: 0.008,
-  earth: 0.008,
-  wind: 0.008,
-  wood: 0.01,
-  iron: 0.02,
-  gold: 0.05,
-  potion_hp: 0.015,
-  scroll_xp: 0.05,
+type SeedItem = {
+  item_type: string
+  level: number
+  consumable?: {
+    type?: string
+    rewards?: { item_type: string; amount: number }[]
+  }
 }
 
-const DEFAULT_FALLBACK_PRICE_SUI = 0.005
+const SEED_ITEMS = JSON.parse(readFileSync(ITEMS_PATH, 'utf8')) as SeedItem[]
+const ITEM_LEVEL_BY_TYPE: ReadonlyMap<string, number> = new Map(SEED_ITEMS.map((i) => [i.item_type, i.level]))
+const LOOT_BAG_CONTENT_BY_TYPE: ReadonlyMap<string, string> = new Map(
+  SEED_ITEMS.flatMap((item) => {
+    const reward = item.consumable?.type === 'loot_box' ? item.consumable.rewards?.[0] : undefined
+    return reward ? [[item.item_type, reward.item_type] as const] : []
+  })
+)
+
+// Default fallback prices in SUI for known items when market price is not listed.
+// x10 bump (2026-09-16): previous prices (0.005–0.05) were below the combined cost of loot
+// delivery + listing gas per item; items were selling at a net loss.
+const DEFAULT_ESTIMATED_PRICES_SUI: Record<string, number> = {
+  water: 0.05,
+  fire: 0.08,
+  earth: 0.08,
+  wind: 0.08,
+  wood: 0.1,
+  iron: 0.2,
+  gold: 0.5,
+  potion_hp: 0.15,
+  scroll_xp: 0.5,
+}
+
+const DEFAULT_FALLBACK_PRICE_SUI = 0.05
+const LOOT_BAG_VALUE_MULTIPLIER = 30
+const LOOT_BAG_MIN_PRICE_SUI = 0.3
 
 export type ItemValuation = {
   qty: number
@@ -77,6 +92,14 @@ export const get_item_price = (item_type: string): { unit_price_sui: number; est
   const custom = load_custom_prices()
   if (typeof custom[item_type] === 'number') {
     return { unit_price_sui: custom[item_type], estimated: false }
+  }
+  const bag_content = LOOT_BAG_CONTENT_BY_TYPE.get(item_type)
+  if (bag_content) {
+    const content_price = get_item_price(bag_content).unit_price_sui
+    return {
+      unit_price_sui: Number(Math.max(LOOT_BAG_MIN_PRICE_SUI, content_price * LOOT_BAG_VALUE_MULTIPLIER).toFixed(6)),
+      estimated: true,
+    }
   }
   const known = DEFAULT_ESTIMATED_PRICES_SUI[item_type.toLowerCase()]
   if (typeof known === 'number') {

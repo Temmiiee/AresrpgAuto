@@ -23539,7 +23539,7 @@
             "value": 1,
             "value_max": 1,
             "area_shape": 1,
-            "area_size": 2,
+            "area_size": 3,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -23551,7 +23551,7 @@
             "value": 11,
             "value_max": 22,
             "area_shape": 1,
-            "area_size": 2,
+            "area_size": 3,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -23579,7 +23579,7 @@
             "value": 1,
             "value_max": 1,
             "area_shape": 1,
-            "area_size": 2,
+            "area_size": 3,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -23591,7 +23591,7 @@
             "value": 15,
             "value_max": 24,
             "area_shape": 1,
-            "area_size": 2,
+            "area_size": 3,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -49738,7 +49738,7 @@
           {
             "kind": 4,
             "element": "",
-            "value": 2,
+            "value": 3,
             "value_max": 3,
             "area_shape": 2,
             "area_size": 1,
@@ -58975,16 +58975,16 @@
             "stat": 0
           },
           {
-            "kind": 17,
-            "element": "",
-            "value": 0,
-            "value_max": 0,
-            "area_shape": 0,
-            "area_size": 0,
-            "target_filter": 4,
+            "kind": 6,
+            "element": "air",
+            "value": 1,
+            "value_max": 1,
+            "area_shape": 2,
+            "area_size": 1,
+            "target_filter": 1,
             "chance_bp": 10000,
-            "turns": 1,
-            "stat": 0
+            "turns": 0,
+            "stat": 12
           }
         ],
         "crit_effects": []
@@ -59015,16 +59015,16 @@
             "stat": 0
           },
           {
-            "kind": 17,
-            "element": "",
-            "value": 0,
-            "value_max": 0,
-            "area_shape": 0,
-            "area_size": 0,
-            "target_filter": 4,
+            "kind": 6,
+            "element": "air",
+            "value": 2,
+            "value_max": 2,
+            "area_shape": 2,
+            "area_size": 1,
+            "target_filter": 1,
             "chance_bp": 10000,
-            "turns": 1,
-            "stat": 0
+            "turns": 0,
+            "stat": 12
           }
         ],
         "crit_effects": []
@@ -59055,16 +59055,16 @@
             "stat": 0
           },
           {
-            "kind": 17,
-            "element": "",
-            "value": 0,
-            "value_max": 0,
-            "area_shape": 0,
-            "area_size": 0,
-            "target_filter": 4,
+            "kind": 6,
+            "element": "air",
+            "value": 2,
+            "value_max": 3,
+            "area_shape": 2,
+            "area_size": 1,
+            "target_filter": 1,
             "chance_bp": 10000,
-            "turns": 1,
-            "stat": 0
+            "turns": 0,
+            "stat": 12
           }
         ],
         "crit_effects": []
@@ -59095,16 +59095,16 @@
             "stat": 0
           },
           {
-            "kind": 17,
-            "element": "",
-            "value": 0,
-            "value_max": 0,
-            "area_shape": 0,
-            "area_size": 0,
-            "target_filter": 4,
+            "kind": 6,
+            "element": "air",
+            "value": 3,
+            "value_max": 5,
+            "area_shape": 2,
+            "area_size": 1,
+            "target_filter": 1,
             "chance_bp": 10000,
-            "turns": 1,
-            "stat": 0
+            "turns": 0,
+            "stat": 12
           }
         ],
         "crit_effects": []
@@ -59135,16 +59135,16 @@
             "stat": 0
           },
           {
-            "kind": 17,
-            "element": "",
-            "value": 0,
-            "value_max": 0,
-            "area_shape": 0,
-            "area_size": 0,
-            "target_filter": 4,
+            "kind": 6,
+            "element": "air",
+            "value": 5,
+            "value_max": 7,
+            "area_shape": 2,
+            "area_size": 1,
+            "target_filter": 1,
             "chance_bp": 10000,
-            "turns": 1,
-            "stat": 0
+            "turns": 0,
+            "stat": 12
           }
         ],
         "crit_effects": []
@@ -59152,14 +59152,14 @@
       {
         "ap_cost": 3,
         "range_min": 1,
-        "range_max": 5,
+        "range_max": 6,
         "modifiable_range": false,
         "line_of_sight": false,
         "line_launch": false,
         "free_cell": true,
         "casts_per_turn": 0,
         "casts_per_target": 0,
-        "cooldown_turns": 4,
+        "cooldown_turns": 3,
         "crit_1_in": 0,
         "effects": [
           {
@@ -59175,16 +59175,16 @@
             "stat": 0
           },
           {
-            "kind": 17,
-            "element": "",
-            "value": 0,
-            "value_max": 0,
-            "area_shape": 0,
-            "area_size": 0,
-            "target_filter": 4,
+            "kind": 6,
+            "element": "air",
+            "value": 8,
+            "value_max": 10,
+            "area_shape": 2,
+            "area_size": 1,
+            "target_filter": 1,
             "chance_bp": 10000,
-            "turns": 1,
-            "stat": 0
+            "turns": 0,
+            "stat": 12
           }
         ],
         "crit_effects": []

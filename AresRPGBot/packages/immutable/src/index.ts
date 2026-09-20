@@ -19,6 +19,7 @@ export {
   job_xp_for_level,
   level_from_xp,
   max_level,
+  max_tier_for_level,
   tier_unlock_level,
   xp_for_level,
 } from './experience.ts'

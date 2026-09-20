@@ -24,6 +24,7 @@ test('reads one captured same-world checkpoint snapshot', async () => {
   expect(await read_character_checkpoint(client() as never, '0xgame', '0xcharacter', '01_first_shore')).toEqual({
     x: 50_000,
     z: 50_000,
+    pet: false,
   })
 })
 

@@ -333,9 +333,9 @@ document.getElementById('btn-refresh-inventory').addEventListener('click', refre
 
 // Categories a character actually wears/wields -- never touched by "bulk sell non-equipment",
 // only ever opted into one at a time by hand (seed/content/items.json's own category list,
-// 2026-09-06). Everything else (resources, consumables, runes, tools, and anything not in this
-// game's content yet) is fair game for the bulk button.
-const EQUIPMENT_CATEGORIES = new Set(['cloak','hat','amulet','boots','belt','ring','sword','daggers','bow','spear','axe','relic','pet','title','key']);
+// 2026-09-06). Tools are here too: a spare gathering tool is a roster asset, not sellable loot.
+// Everything else (resources, consumables, runes) is fair game for the bulk button.
+const EQUIPMENT_CATEGORIES = new Set(['cloak','hat','amulet','boots','belt','ring','sword','daggers','bow','spear','axe','tool_miner','tool_farmer','tool_herbalist','relic','pet','title','key']);
 
 function sellRowHtml(d) {
   return \`<label class="sell-row" style="cursor:pointer">

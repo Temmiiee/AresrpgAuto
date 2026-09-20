@@ -185,7 +185,7 @@ def main() -> None:
     p.add_argument("--episodes", type=int, default=1000,
                    help="épisodes à collecter si --dataset non fourni")
     p.add_argument("--seed", type=int, default=888_888,
-                   help="seed — distinct de rl.value (555_555), rl.train (12345), rl.evaluate (999_999)")
+                   help="seed — distinct de rl.value (555_555), rl.evolve (20260901), --holdout-seed (999_999)")
     p.add_argument("--difficulty", type=float, default=1.0)
     p.add_argument("--policy", default="models/policy.json")
     p.add_argument("--bins", type=int, default=10,

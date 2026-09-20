@@ -4,22 +4,29 @@ import { calculate_farming_profit, get_item_price, value_drops } from '../src/ma
 
 describe('get_item_price', () => {
   test('a custom override (item_prices.json) wins over everything else and is never "estimated"', () => {
-    // 'gold' is one of the 7 real overrides committed in item_prices.json (0.05 SUI).
+    // 'gold' is one of the overrides committed in item_prices.json (0.5 SUI after the x10 bump).
     const { unit_price_sui, estimated } = get_item_price('gold')
-    expect(unit_price_sui).toBe(0.05)
+    expect(unit_price_sui).toBe(0.5)
     expect(estimated).toBe(false)
   })
 
   test('a known drop-price default is used when there is no custom override', () => {
     // 'potion_hp' is in DEFAULT_ESTIMATED_PRICES_SUI but not in item_prices.json.
     const { unit_price_sui, estimated } = get_item_price('potion_hp')
-    expect(unit_price_sui).toBe(0.015)
+    expect(unit_price_sui).toBe(0.15)
     expect(estimated).toBe(true)
   })
 
   test('an item with no override, no known default, and no seed-content level falls back to the flat floor', () => {
     const { unit_price_sui, estimated } = get_item_price('__test_item_valuation_never_seen__')
-    expect(unit_price_sui).toBe(0.005) // DEFAULT_FALLBACK_PRICE_SUI * 1^0.6
+    expect(unit_price_sui).toBe(0.05) // DEFAULT_FALLBACK_PRICE_SUI * 1^0.6
+    expect(estimated).toBe(true)
+  })
+
+  test('a loot bag is valued from at least thirty units of its contained resource', () => {
+    const { unit_price_sui, estimated } = get_item_price('bag_quartz')
+    expect(unit_price_sui).toBeGreaterThanOrEqual(0.3)
+    expect(unit_price_sui).toBe(1.5)
     expect(estimated).toBe(true)
   })
 })
@@ -32,10 +39,10 @@ describe('value_drops', () => {
       __test_item_valuation_zero_qty__: 0,
     })
     expect(report.items.gold?.qty).toBe(3)
-    expect(report.items.gold?.total_sui).toBeCloseTo(0.15, 6)
-    expect(report.items.__test_item_valuation_never_seen__?.total_sui).toBeCloseTo(0.01, 6)
+    expect(report.items.gold?.total_sui).toBeCloseTo(1.5, 6)
+    expect(report.items.__test_item_valuation_never_seen__?.total_sui).toBeCloseTo(0.1, 6)
     expect(report.items.__test_item_valuation_zero_qty__).toBeUndefined()
-    expect(report.total_sui).toBeCloseTo(0.16, 6)
+    expect(report.total_sui).toBeCloseTo(1.6, 6)
   })
 
   test('an empty drop set values at exactly zero', () => {

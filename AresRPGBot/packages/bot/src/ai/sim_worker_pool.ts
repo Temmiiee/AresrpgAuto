@@ -3,6 +3,7 @@
 // as they happen (not batched at the end) for live progress logging. See sim_worker.ts for why
 // this exists.
 import type { SimWorkerJob, SimWorkerResult } from './sim_worker.ts'
+import { create_sim_worker } from './worker_bridge.ts'
 
 export type WorkerPool = {
   /** Runs one job, resolving with its fitness once that job's worker replies. Safe to call many
@@ -14,7 +15,7 @@ export type WorkerPool = {
 
 export const make_worker_pool = (worker_count: number): WorkerPool => {
   const worker_url = new URL('./sim_worker.ts', import.meta.url)
-  const workers = Array.from({ length: Math.max(1, worker_count) }, () => new Worker(worker_url))
+  const workers = Array.from({ length: Math.max(1, worker_count) }, () => create_sim_worker(worker_url))
   let next_id = 0
   let next_worker = 0
 
@@ -23,12 +24,12 @@ export const make_worker_pool = (worker_count: number): WorkerPool => {
       const id = next_id++
       const worker = workers[next_worker]!
       next_worker = (next_worker + 1) % workers.length
-      const on_message = (event: MessageEvent<SimWorkerResult>) => {
-        if (event.data.id !== id) return
-        worker.removeEventListener('message', on_message)
-        resolve(event.data.fitness)
-      }
-      worker.addEventListener('message', on_message)
+      const unsubscribe = worker.onMessage((message) => {
+        const reply = message as SimWorkerResult
+        if (reply.id !== id) return
+        unsubscribe()
+        resolve(reply.fitness)
+      })
       worker.postMessage({ ...job, id } satisfies SimWorkerJob)
     })
 

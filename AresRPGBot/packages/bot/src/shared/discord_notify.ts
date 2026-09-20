@@ -3,20 +3,24 @@
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL
 const MENTION = process.env.DISCORD_MENTION || ''
 
-export const send_discord_alert = async (message: string, mention: boolean = false): Promise<void> => {
+export type DiscordEmbed = Readonly<{
+  title?: string
+  description?: string
+  color?: number
+  fields?: readonly Readonly<{ name: string; value: string; inline?: boolean }>[]
+}>
+
+const post_webhook = async (payload: Readonly<Record<string, unknown>>): Promise<void> => {
   if (!WEBHOOK_URL) {
     console.log('[Discord] Webhook not configured, skipping notification')
     return
   }
-  
-  const content = mention && MENTION ? `${MENTION} ${message}` : message
-  
   console.log(`[Discord] Sending notification to webhook...`)
   try {
     const response = await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(payload),
     })
     
     if (!response.ok) {
@@ -28,6 +32,19 @@ export const send_discord_alert = async (message: string, mention: boolean = fal
   } catch (error) {
     console.error(`[Discord] Webhook error: ${error}`)
   }
+}
+
+export const send_discord_alert = async (message: string, mention: boolean = false): Promise<void> => {
+  const content = mention && MENTION ? `${MENTION} ${message}` : message
+  await post_webhook({ content })
+}
+
+/** Compact, nicely-formatted embed notification — the richer counterpart to send_discord_alert.
+ *  Discord truncates long descriptions at 2048 chars and field values at 1024; callers keep both
+ *  short so the message reads clean on mobile as well as desktop. */
+export const send_discord_embed = async (embed: DiscordEmbed, mention: boolean = false): Promise<void> => {
+  const content = mention && MENTION ? MENTION : ''
+  await post_webhook({ content, embeds: [embed] })
 }
 
 export const notify_session_expired = async (address: string, login_url?: string): Promise<void> => {
