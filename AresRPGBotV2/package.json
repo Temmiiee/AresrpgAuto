@@ -1,0 +1,21 @@
+{
+  "name": "aresrpg-bot-v2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-contained headless automation bot for AresRPG on Sui mainnet (zkLogin + official SDK v6).",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "sync-vendor": "bun scripts/sync_vendor.mjs",
+    "typecheck": "bun run --cwd packages/bot typecheck",
+    "bot": "bun run --cwd packages/bot start"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@types/node": "^26.6.2",
+    "bun-types": "1.4.2",
+    "typescript": "~6.0.3"
+  }
+}

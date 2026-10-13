@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
+// © 2026 Sceat — All rights reserved. See LICENSE.
+
+import { GAS_BUDGET_MIST } from './gas_budget.ts'
+
+export const readable_transaction_error = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replaceAll(/%([0-9a-f]{2})/gi, (encoded, hex: string) => {
+    const byte = Number.parseInt(hex, 16)
+    return byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : encoded
+  })
+}
+
+/** The SDK's executed-failure envelope. A digest means the transaction is terminal even when
+ * its game effects rolled back; operational callers must journal it instead of retrying. */
+export const executed_transaction_digest = (error: unknown): string | null =>
+  readable_transaction_error(error).match(/^\[sdk\] transaction (\S+) failed on-chain:/)?.[1] ?? null
+
+/** Travel/cooldown rejection from the world's movement-proof owner. This alone does not permit retry. */
+export const world_travel_refusal = (error: unknown): boolean => {
+  const message = readable_transaction_error(error)
+  return /abort code:\s*305\b/i.test(message) && message.includes('::world::prove_move')
+}
+
+/** A receipt-fresh owned ref may reach one resolver before another. Only pre-submission failures
+ * are retry candidates; a digest-bearing execution is terminal. Timing belongs to the caller. */
+export const pre_submission_version_race = (error: unknown): boolean => {
+  const message = readable_transaction_error(error)
+  const stale_input =
+    /provided version (?:doesn't|does not) match/i.test(message) ||
+    /transaction needs to be rebuilt because object .* is unavailable for consumption, current version:/i.test(message)
+  return !message.includes('failed on-chain') && message.includes('NOT submitted') && stale_input
+}
+
+export const pre_submission_stale_owned_ref = (error: unknown): boolean => {
+  const message = readable_transaction_error(error)
+  const versions = message.match(
+    /provided version (?:doesn't|does not) match[^]*?provided:\s*(\d+)\s+actual:\s*(0x[\da-f]+|\d+)/i
+  )
+  return (
+    !message.includes('failed on-chain') &&
+    message.includes('NOT submitted') &&
+    !!versions &&
+    BigInt(versions[1]!) < BigInt(versions[2]!)
+  )
+}
+
+export const pre_submission_close_projection_lag = (error: unknown): boolean => {
+  const message = readable_transaction_error(error)
+  const close_guard = /::fight::close|::combat::assert_closable/i.test(message)
+  return (
+    !message.includes('failed on-chain') &&
+    message.includes('NOT submitted') &&
+    /abort code:\s*1712/i.test(message) &&
+    close_guard
+  )
+}
+
+/** Only errors produced by our unsigned transaction-preparation boundary permit rebuilding a PTB. */
+export const pre_submission_failure = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : ''
+  return (
+    message.startsWith('[sdk] transaction resolution failed — NOT submitted:') ||
+    message.startsWith('[sdk] dry run failed — transaction NOT submitted (zero gas):') ||
+    (message.startsWith('[sdk] gas budget exceeded') && message.includes('NOT submitted'))
+  )
+}
+
+const GAS_BUDGET_REFUSAL = /insufficient.?gas|gas.?budget/i
+const refusal_error = (refusal: string): Error =>
+  GAS_BUDGET_REFUSAL.test(refusal)
+    ? new Error(`[sdk] gas budget exceeded — this action needs more than ${GAS_BUDGET_MIST} MIST; NOT submitted`)
+    : new Error(`[sdk] dry run failed — transaction NOT submitted (zero gas): ${refusal}`)
+export const transaction_resolution_error = (error: unknown): unknown => {
+  const message = error instanceof Error ? error.message : String(error)
+  if (GAS_BUDGET_REFUSAL.test(message)) return refusal_error(message)
+  if (message.includes('NOT submitted')) return error
+  return new Error(`[sdk] transaction resolution failed — NOT submitted: ${message}`, { cause: error })
+}

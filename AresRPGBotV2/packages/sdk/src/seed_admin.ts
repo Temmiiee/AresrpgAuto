@@ -1,0 +1,479 @@
+// SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
+// © 2026 Sceat — All rights reserved. See LICENSE.
+// Seed publishing effect boundary. It scans deterministic addresses in order, builds exactly one
+// generated batch, asks the connected wallet to sign it, simulates those bytes, then submits once.
+// Seeding is just the FIRST rebalance: every batch drives the same living doors any later content
+// change uses, under the one seed AdminCap.
+
+import { class_spell_shape_errors } from '@aresrpg/immutable'
+import { normalizeSuiObjectId } from '@mysten/sui/utils'
+
+import { read_rewards_economy } from './kares_economy.ts'
+import { object_revision, owned_ref, receipt_digest, shared_ref, type OwnedRef, type Receipt } from './cache.ts'
+import type { Sdk } from './client.ts'
+import { freeze_upgrade_targets } from './freeze_targets.ts'
+import {
+  create_freeze_forever_transaction,
+  create_seed_plan,
+  giftcards_for_network,
+  game_type_of,
+  slice_chunks,
+  type SeedContent,
+} from './seed.ts'
+import { giftcard_claim_id, giftcard_id } from './seed_ids.ts'
+import {
+  seed_ledger_after_batch,
+  created_seed_row_keys,
+  seed_sync_rows,
+  seed_sync_view,
+  type SeedLedger,
+  type SeedSyncRow,
+  type SeedSyncView,
+} from './seed_sync.ts'
+import { verified_recipe_ledger } from './seed_recipe_audit.ts'
+import { seed_update_batches, type SeedUpdateBatch } from './seed_updates.ts'
+
+export type { SeedLedger, SeedSyncView } from './seed_sync.ts'
+
+export type SeedApplyResult = Readonly<{
+  digests: readonly string[]
+  /** the ledger as it stands after the apply — the caller persists it */
+  ledger: SeedLedger
+  view: SeedSyncView
+}>
+
+export type SeedApplyProgress = Readonly<{ digest: string; ledger: SeedLedger }>
+export type SeedApplyHooks = Readonly<{
+  before_execute: (written: readonly string[]) => Promise<void>
+  checkpoint: (progress: SeedApplyProgress) => Promise<void>
+}>
+
+export type SeedAdminConfig = Readonly<{
+  /** the control package's one AdminCap — every content door writes through it */
+  admin_cap: string
+  /** the seed package's Registry root object */
+  content_root: string
+}>
+
+export type SeedBatchState = 'complete' | 'ready' | 'blocked' | 'pending'
+
+export type SeedBatchView = Readonly<{
+  id: string
+  phase: string
+  state: SeedBatchState
+  targets: number
+  missing_dependencies: readonly string[]
+}>
+
+export type SeedAdminSnapshot = Readonly<{
+  batches: readonly SeedBatchView[]
+}>
+
+export type SeedInspectionProgress = Readonly<{
+  inspected: number
+  total: number
+  batch: string | null
+}>
+
+export const next_seed_batch = (snapshot: SeedAdminSnapshot | null): SeedBatchView | null =>
+  snapshot?.batches.find(({ state }) => state === 'ready' || state === 'blocked') ?? null
+
+export type SeedBatchReceipt = Readonly<{
+  batch: string
+  digest: string
+  snapshot: SeedAdminSnapshot
+}>
+
+export type SeedAdminSession = Readonly<{
+  refresh: (on_progress?: (progress: SeedInspectionProgress) => void) => Promise<SeedAdminSnapshot>
+  execute: (
+    batch: string,
+    ledger: SeedLedger,
+    checkpoint?: (digest: string) => Promise<void>
+  ) => Promise<SeedBatchReceipt>
+  /** chain truth of the permanent freeze — read at page refresh, no polling */
+  read_frozen: () => Promise<boolean>
+  /** compare the authored files against the last chain write — new / changed / removed / fixed */
+  check_changes: (ledger: SeedLedger) => Promise<SeedSyncView>
+  /** Rewrite mutable rows, durably checkpointing each certified transaction before the next. */
+  apply_changes: (ledger: SeedLedger, hooks: SeedApplyHooks) => Promise<SeedApplyResult>
+  /** the ledger entries covering rows the publish lane just created — persisted by the caller */
+  created_ledger: (ledger: SeedLedger, batch: string) => Promise<SeedLedger>
+  /** the endgame: permanently freezes EVERY content door — cold-key-only on chain, irreversible */
+  freeze_forever: () => Promise<Readonly<{ digest: string; snapshot: SeedAdminSnapshot }>>
+  release?: () => Promise<void>
+}>
+
+const DEFAULT_MAX_TRANSACTION_BYTES = 131_072
+const DEFAULT_MAX_COMMANDS = 1_024
+const TRANSACTION_DATA_HEADROOM = 1_024
+// Current testnet corpus consumed ~36 SUI during the 2026-08-17 full publish proof. This is
+// working capital, not a gas budget: the release PTB returns whatever the seed signer did not use.
+export const SEED_SESSION_GAS = 50_000_000_000n
+
+export const apply_seed_update_batches = async (
+  batches: readonly SeedUpdateBatch[],
+  rows: readonly SeedSyncRow[],
+  ledger: SeedLedger,
+  execute: (batch: SeedUpdateBatch) => Promise<string>,
+  hooks: SeedApplyHooks,
+  revision: (id: string) => string | null = () => null
+): Promise<Readonly<{ digests: readonly string[]; ledger: SeedLedger }>> => {
+  const digests: string[] = []
+  let current = ledger
+  for (const batch of batches) {
+    await hooks.before_execute(batch.written)
+    const digest = await execute(batch)
+    current = seed_ledger_after_batch(rows, current, batch.written, revision)
+    await hooks.checkpoint(Object.freeze({ digest, ledger: current }))
+    digests.push(digest)
+  }
+  return Object.freeze({ digests: Object.freeze(digests), ledger: current })
+}
+
+const protocol_number = (value: string | null | undefined, fallback: number): number => {
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+export const create_seed_session_authorization_transaction = ({
+  sdk,
+  admin_cap,
+  recipient,
+  funding_mist = SEED_SESSION_GAS,
+}: Readonly<{ sdk: Sdk; admin_cap: string; recipient: string; funding_mist?: bigint }>) => {
+  if (funding_mist <= 0n || funding_mist > SEED_SESSION_GAS)
+    throw new Error(`Temporary admin funding must be between 1 MIST and ${SEED_SESSION_GAS} MIST`)
+  const transaction = sdk.tx()
+  transaction.moveCall({
+    target: `${sdk.pins.control_package}::admin::mint_temp_admin_cap`,
+    arguments: [
+      sdk.door_context.obj(transaction, admin_cap, false),
+      sdk.door_context.pure.address(transaction, recipient),
+    ],
+  })
+  const [funding] = transaction.splitCoins(transaction.gas, [funding_mist])
+  transaction.transferObjects([funding], recipient)
+  return transaction
+}
+
+export const project_temp_admin_cap = (receipt: Receipt): OwnedRef => {
+  const types = receipt.Transaction?.objectTypes ?? {}
+  const created = receipt.Transaction?.effects?.changedObjects ?? []
+  const admin_cap = created.find(
+    ({ objectId, idOperation }) =>
+      idOperation === 'Created' && !!objectId && types[objectId]?.endsWith('::admin::AdminCap')
+  )
+  if (!admin_cap?.objectId || !admin_cap.outputVersion || !admin_cap.outputDigest)
+    throw new Error('Seed session authorization created no temporary AdminCap ref')
+  return Object.freeze({
+    objectId: admin_cap.objectId,
+    version: String(admin_cap.outputVersion),
+    digest: admin_cap.outputDigest,
+  })
+}
+
+// Existence reads go through the normalizing doors — a raw Map probe with a short or
+// mixed-case id would report a hydrated object as missing forever.
+const object_exists = (sdk: Sdk, id: string): boolean => !!owned_ref(sdk.cache, id) || !!shared_ref(sdk.cache, id)
+
+export const verify_upgrade_cap_targets = async (sdk: Sdk): Promise<readonly string[]> => {
+  const normalized = freeze_upgrade_targets(sdk.pins)
+  const { objects } = await sdk.sui_client.core.getObjects({
+    objectIds: normalized.map(({ cap }) => cap),
+    include: { json: true },
+  })
+  for (const target of normalized) {
+    const object = objects.find((candidate) => !(candidate instanceof Error) && candidate.objectId === target.cap)
+    const controlled = object && !(object instanceof Error) ? object.json?.package : null
+    if (typeof controlled !== 'string' || normalizeSuiObjectId(controlled) !== target.package)
+      throw new Error(`UpgradeCap ${target.cap} does not control active package ${target.package}`)
+  }
+  return Object.freeze(normalized.map(({ cap }) => cap))
+}
+
+const assert_config = (sdk: Sdk, content: SeedContent, config: SeedAdminConfig): void => {
+  if (!config.admin_cap) throw new Error('An AdminCap object ID is required')
+  if (!config.content_root) throw new Error('The seed Registry root object ID is required')
+  for (const key of ['package', 'math_package', 'control_package', 'seed_package', 'seed_package_original'] as const)
+    if (typeof sdk.pins[key] !== 'string' || !sdk.pins[key]) throw new Error(`pins.json is missing ${key}`)
+  for (const key of ['content_root', 'loot_registry'] as const) {
+    const pin = sdk.pins[key]
+    if (!pin || typeof pin !== 'object' || !Reflect.get(pin, 'id') || !Reflect.get(pin, 'shared_version'))
+      throw new Error(`pins.json is missing ${key}`)
+  }
+}
+
+export const create_seed_admin = async ({
+  sdk,
+  content: authored_content,
+  config,
+  gift_campaign,
+}: Readonly<{
+  sdk: Sdk
+  content: SeedContent
+  config: SeedAdminConfig
+  gift_campaign?: string
+}>): Promise<SeedAdminSession> => {
+  const content =
+    gift_campaign === undefined
+      ? authored_content
+      : {
+          ...authored_content,
+          airdrop: {
+            giftcards: giftcards_for_network(sdk.network, authored_content).filter(
+              (card) => card.campaign === gift_campaign
+            ),
+          },
+        }
+  if (gift_campaign !== undefined && !content.airdrop.giftcards.length)
+    throw new Error(`No configured ${gift_campaign} gifts on ${sdk.network}`)
+  assert_config(sdk, content, config)
+  const full_plan = create_seed_plan(sdk, content)
+  const plan = {
+    batches: full_plan.batches.filter((batch) => gift_campaign === undefined || batch.phase === 'supply'),
+  }
+  const created_by_batch = new Map<string, ReadonlySet<string>>()
+  const claims = new Map(
+    giftcards_for_network(sdk.network, content).map((card) => {
+      const id = giftcard_id(config.content_root, game_type_of(sdk), card.id)
+      return [id, giftcard_claim_id(config.content_root, id)] as const
+    })
+  )
+  const exists = (id: string): boolean => object_exists(sdk, id) || object_exists(sdk, claims.get(id) ?? id)
+  const context = Object.freeze({
+    admin_cap: config.admin_cap,
+    content_root: config.content_root,
+  })
+  const absent = new Set<string>()
+  const hydrate_ids = async (ids: readonly string[]): Promise<void> => {
+    const unchecked = [...new Set(ids.flatMap((id) => [id, ...(claims.has(id) ? [claims.get(id)!] : [])]))].filter(
+      (id) => !absent.has(id)
+    )
+    if (!unchecked.length) return
+    await sdk.hydrate_unknown(unchecked)
+    for (const id of unchecked) {
+      if (object_exists(sdk, id)) absent.delete(id)
+      else absent.add(id)
+    }
+  }
+  const context_ids = [config.admin_cap, config.content_root]
+  await hydrate_ids(context_ids)
+  const missing_context = context_ids.filter((id) => !exists(id))
+  if (missing_context.length) throw new Error(`Seed object IDs do not exist: ${missing_context.join(', ')}`)
+
+  const refresh = async (on_progress?: (progress: SeedInspectionProgress) => void): Promise<SeedAdminSnapshot> => {
+    const views: SeedBatchView[] = []
+    let next_batch: string | null = null
+    const report = (view: SeedBatchView): void => {
+      on_progress?.(Object.freeze({ inspected: views.length, total: plan.batches.length, batch: view.id }))
+    }
+    for (const batch of plan.batches) {
+      if (next_batch !== null) {
+        const view = Object.freeze({
+          id: batch.id,
+          phase: batch.phase,
+          state: 'pending' as const,
+          targets: batch.target_ids.length,
+          missing_dependencies: [],
+        })
+        views.push(view)
+        report(view)
+        continue
+      }
+      if (batch.target_ids.length) await hydrate_ids(batch.target_ids)
+      const complete = batch.target_ids.every(exists)
+      if (complete) {
+        const view = Object.freeze({
+          id: batch.id,
+          phase: batch.phase,
+          state: 'complete' as const,
+          targets: batch.target_ids.length,
+          missing_dependencies: [],
+        })
+        views.push(view)
+        report(view)
+        continue
+      }
+      await hydrate_ids(batch.dependencies)
+      const missing_dependencies = batch.dependencies.filter((id) => !exists(id))
+      next_batch = batch.id
+      const view = Object.freeze({
+        id: batch.id,
+        phase: batch.phase,
+        state: missing_dependencies.length ? ('blocked' as const) : ('ready' as const),
+        targets: batch.target_ids.length,
+        missing_dependencies: Object.freeze(missing_dependencies),
+      })
+      views.push(view)
+      report(view)
+    }
+    return Object.freeze({ batches: Object.freeze(views) })
+  }
+
+  const refresh_after_write = async (batch_id: string, digest: string): Promise<SeedAdminSnapshot> => {
+    const targets = plan.batches.find(({ id }) => id === batch_id)?.target_ids ?? []
+    for (const id of targets) {
+      absent.delete(id)
+      absent.delete(claims.get(id) ?? id)
+    }
+    const snapshot = await refresh()
+    if (snapshot.batches.find(({ id }) => id === batch_id)?.state === 'complete') return snapshot
+    throw new Error(
+      `Seed batch ${batch_id} published · ${digest}, but its derived target is not readable yet. ` +
+        'Do not republish it; check seed status after the read node catches up.'
+    )
+  }
+
+  const sync_rows = seed_sync_rows(sdk, content).filter(
+    (row) => gift_campaign === undefined || row.domain === 'giftcard'
+  )
+  const revision = (id: string): string | null => object_revision(sdk.cache, id)
+  const board_catalog = sync_rows.find(({ domain }) => domain === 'board')?.chain_id ?? null
+  /** Chain truth for the endgame flag — read once per check, never polled: the flag only
+   * matters to this admin page, and every write door re-asserts it on chain anyway. */
+  const read_frozen = async (): Promise<boolean> => {
+    const { objects } = await sdk.sui_client.core.getObjects({
+      objectIds: [config.content_root],
+      include: { json: true },
+    })
+    const row = objects.find(({ objectId }) => objectId === config.content_root)
+    return row?.json?.frozen === true
+  }
+  const read_board_len = async (): Promise<number> => {
+    if (!board_catalog) return 0
+    const { objects } = await sdk.sui_client.core.getObjects({
+      objectIds: [board_catalog],
+      include: { json: true },
+    })
+    const row = objects.find(({ objectId }) => objectId === board_catalog)
+    const len = Number(row?.json?.len ?? 0)
+    if (!Number.isSafeInteger(len) || len < 0) throw new Error('The BoardCatalog carries an invalid length')
+    return len
+  }
+  // THE CLASS SPELL LAW: exactly twenty spells per class on the Dofus unlock ladder. The
+  // validator enforces it in CI; this second gate stops a locally edited file from ever
+  // being written (chain objects are forever). Reads still work so the page can SHOW it.
+  const law_errors = gift_campaign === undefined ? class_spell_shape_errors(content.spells) : []
+  const sync_addresses = Object.freeze([...new Set(sync_rows.flatMap(({ addresses }) => addresses))])
+  const check_changes = async (ledger: SeedLedger): Promise<SeedSyncView> => {
+    await hydrate_ids(sync_addresses)
+    const scoped_ledger =
+      gift_campaign === undefined
+        ? ledger
+        : Object.fromEntries(sync_rows.flatMap(({ key }) => (ledger[key] ? [[key, ledger[key]]] : [])))
+    const recipes = sync_rows.filter((row) => row.recipe && exists(row.chain_id))
+    const reads = await Promise.all(
+      slice_chunks(recipes, 50).map(
+        async (group) =>
+          (
+            await sdk.sui_client.core.getObjects({
+              objectIds: group.map((row) => row.chain_id),
+              include: { json: true },
+            })
+          ).objects
+      )
+    )
+    const verified = verified_recipe_ledger(recipes, scoped_ledger, reads.flat())
+    const view = seed_sync_view(sync_rows, verified, exists, await read_board_len(), revision)
+    const errors = [
+      ...law_errors,
+      ...view.errors,
+      ...view.fixed
+        .filter(({ key, domain }) => domain === 'giftcard' && scoped_ledger[key])
+        .map(({ label }) => `${label} was already issued with another allocation`),
+    ]
+    return Object.freeze({ ...view, errors: Object.freeze(errors) })
+  }
+
+  return Object.freeze({
+    refresh,
+    check_changes,
+    read_frozen,
+    apply_changes: async (ledger, hooks) => {
+      if (gift_campaign !== undefined) throw new Error('Gift issuance cannot update content')
+      const view = await check_changes(ledger)
+      if (view.errors.length) throw new Error(`Nothing was written — fix the files first: ${view.errors.join(' · ')}`)
+      const board_len = await read_board_len()
+      await hydrate_ids(view.changed.flatMap(({ hydrate }) => hydrate))
+      const batches = seed_update_batches(sdk, view.changed, context, {
+        chain_len: board_len,
+        authored_len: content.boards.length,
+      })
+      const applied = await apply_seed_update_batches(
+        batches,
+        sync_rows,
+        ledger,
+        async ({ build }) => receipt_digest(await sdk.execute(build())),
+        hooks,
+        revision
+      )
+      return Object.freeze({
+        digests: applied.digests,
+        ledger: applied.ledger,
+        view: seed_sync_view(sync_rows, applied.ledger, exists, content.boards.length, revision),
+      })
+    },
+    created_ledger: async (ledger, batch_id) => {
+      await hydrate_ids(sync_addresses)
+      const batch = plan.batches.find(({ id }) => id === batch_id)
+      if (!batch) throw new Error(`Unknown seed batch ${batch_id}`)
+      const targets = created_by_batch.get(batch_id)
+      if (!targets) throw new Error(`No certified creation result for seed batch ${batch_id}`)
+      const created = created_seed_row_keys(sync_rows, ledger, targets, exists)
+      // Untouched rows keep their old fingerprints so the mutable lane still rewrites them.
+      return seed_ledger_after_batch(sync_rows, ledger, [...created], revision)
+    },
+    execute: async (batch_id, ledger, checkpoint = async () => {}) => {
+      const changes = await check_changes(ledger)
+      if (changes.errors.length)
+        throw new Error(`Nothing was written — fix the files first: ${changes.errors.join(' · ')}`)
+      const before = await refresh()
+      const next = next_seed_batch(before)
+      if (next?.id !== batch_id || next.state !== 'ready')
+        throw new Error(`Seed batch ${batch_id} is not the next ready batch`)
+      const batch = plan.batches.find(({ id }) => id === batch_id)
+      if (!batch) throw new Error(`Unknown seed batch ${batch_id}`)
+      const existing = new Set([
+        ...sdk.cache.owned.keys(),
+        ...sdk.cache.shared.keys(),
+        ...[...claims.keys()].filter(exists),
+      ])
+      const transaction = batch.build(context, existing)
+      if (!transaction) throw new Error(`Seed batch ${batch_id} contains no pending work`)
+      const protocol = await sdk.sui_client.core.getProtocolConfig?.()
+      const attributes = protocol?.protocolConfig.attributes ?? {}
+      const max_commands = protocol_number(attributes.max_programmable_tx_commands, DEFAULT_MAX_COMMANDS)
+      const max_bytes = protocol_number(attributes.max_tx_size_bytes, DEFAULT_MAX_TRANSACTION_BYTES)
+      const commands = transaction.getData().commands.length
+      if (commands >= max_commands)
+        throw new Error(`Seed batch ${batch_id} has ${commands} commands; protocol requires fewer than ${max_commands}`)
+      const kind_bytes = await transaction.build({ onlyTransactionKind: true })
+      if (kind_bytes.byteLength + TRANSACTION_DATA_HEADROOM > max_bytes)
+        throw new Error(
+          `Seed batch ${batch_id} needs ${kind_bytes.byteLength + TRANSACTION_DATA_HEADROOM} bytes; protocol allows ${max_bytes}`
+        )
+      // No separate dry run here: the executor itself simulates the exact signed bytes and
+      // refuses before submission (and the wallet path preflights before the wallet opens).
+      const receipt = await sdk.execute(transaction)
+      const digest = receipt_digest(receipt)
+      created_by_batch.set(batch_id, new Set(batch.target_ids.filter((id) => !existing.has(id))))
+      await checkpoint(digest)
+      return Object.freeze({ batch: batch_id, digest, snapshot: await refresh_after_write(batch_id, digest) })
+    },
+    freeze_forever: async () => {
+      if (gift_campaign !== undefined) throw new Error('Gift issuance cannot freeze content')
+      if (!(await read_rewards_economy(sdk)).coin_type)
+        throw new Error('Fund the reward reserves before freezing the project')
+      const snapshot = await refresh()
+      if (snapshot.batches.some(({ state }) => state !== 'complete'))
+        throw new Error('Every seed batch must complete before freezing the game forever')
+      const upgrade_caps = await verify_upgrade_cap_targets(sdk)
+      await hydrate_ids(upgrade_caps)
+      const receipt = await sdk.execute(
+        create_freeze_forever_transaction(sdk, config.admin_cap, config.content_root, upgrade_caps)
+      )
+      return Object.freeze({ digest: receipt_digest(receipt), snapshot: await refresh() })
+    },
+  })
+}

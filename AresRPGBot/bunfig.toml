@@ -1,3 +1,0 @@
-[test]
-coverageSkipTestFiles = true
-coveragePathIgnorePatterns = ["**/*.gen.ts", "**/*.gen.mjs"]

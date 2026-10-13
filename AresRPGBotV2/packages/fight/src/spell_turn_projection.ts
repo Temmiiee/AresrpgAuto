@@ -1,0 +1,114 @@
+// SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
+// © 2026 Sceat — All rights reserved. See LICENSE.
+// The deterministic next-cast projection. HUD glow, rolled rows, and hover area all read this one result.
+
+import { zone_cells } from './combat_grid.ts'
+import { roll_value, rolls_magnitude } from './damage.ts'
+import { legal_cell } from './effects.ts'
+import { amplify_damage, primary_stat, effect_seed } from './fight_math.ts'
+import { KINDS, STATS, sheet_of } from './fighters.ts'
+import { draw } from './prng.ts'
+import { AREA_SHAPES, TARGET_FILTERS } from './move_contract.gen.ts'
+import { spell_level_of, spell_turn_rows } from './spell_turn.ts'
+import type { FightSheet, HydratedFightCheckpoint, PrngCursor, SpellEffect, SpellLevel } from './types.ts'
+import { weapon_level_of } from './weapon.ts'
+
+export type SpellTurnEffect = Readonly<SpellEffect & { critical_only: boolean }>
+
+export type SpellTurnProjection = Readonly<{
+  critical: boolean
+  crit_1_in: bigint
+  effects: readonly SpellTurnEffect[]
+}>
+
+const target_dependent_roll = (row: Readonly<SpellEffect>): boolean =>
+  ([KINDS.remove, KINDS.steal, KINDS.fixed_remove].includes(row.kind) && [STATS.ap, STATS.mp].includes(row.stat)) ||
+  (rolls_magnitude(row) &&
+    row.value_max > row.value &&
+    row.area_shape !== AREA_SHAPES.point &&
+    row.target_filter !== TARGET_FILTERS.only_caster)
+
+/** Card-only damage, before any target resistance, shield, or overkill limit. */
+const display_damage = (sheet: FightSheet, effect: SpellTurnEffect): SpellTurnEffect => {
+  const hp_loss = effect.stat === STATS.hp && [KINDS.remove, KINDS.steal, KINDS.fixed_remove].includes(effect.kind)
+  if (effect.kind !== KINDS.damage && !hp_loss) return effect
+  const primary = primary_stat(effect.element, sheet)
+  return Object.freeze({
+    ...effect,
+    value: amplify_damage(effect.value, primary, sheet.raw_damage),
+    value_max: amplify_damage(effect.value_max, primary, sheet.raw_damage),
+  })
+}
+
+const project_level_turn = (
+  checkpoint: Readonly<HydratedFightCheckpoint>,
+  caster: bigint,
+  name: string,
+  level: Readonly<SpellLevel> | null
+): SpellTurnProjection | null => {
+  if (!level) return null
+  const { critical, crit_1_in, rows } = spell_turn_rows(checkpoint, caster, name, level)
+  const cursor: PrngCursor = { state: effect_seed(checkpoint.contract.turn_seed, checkpoint.contract.turn_slot) }
+  let target_dependent = false
+  const effects = rows.flatMap((row, index) => {
+    if (target_dependent) return [Object.freeze({ ...row, critical_only: critical && index >= level.effects.length })]
+    if (row.chance_bp < 10_000n && draw(cursor) % 10_000n >= row.chance_bp) return []
+    const critical_only = critical && index >= level.effects.length
+    if (target_dependent_roll(row)) {
+      target_dependent = true
+      return [Object.freeze({ ...row, critical_only })]
+    }
+    if (!rolls_magnitude(row)) return [Object.freeze({ ...row, critical_only })]
+    const value = roll_value(row, cursor)
+    return [Object.freeze({ ...row, value, value_max: value, critical_only })]
+  })
+  const sheet = sheet_of(checkpoint, caster)
+  return Object.freeze({
+    critical,
+    crit_1_in,
+    effects: Object.freeze(effects.map((effect) => display_damage(sheet, effect))),
+  })
+}
+
+export const project_spell_turn = (
+  checkpoint: Readonly<HydratedFightCheckpoint>,
+  caster: bigint,
+  name: string
+): SpellTurnProjection | null => project_level_turn(checkpoint, caster, name, spell_level_of(checkpoint, caster, name))
+
+export const project_weapon_turn = (
+  checkpoint: Readonly<HydratedFightCheckpoint>,
+  caster: bigint
+): SpellTurnProjection | null => project_level_turn(checkpoint, caster, 'strike', weapon_level_of(checkpoint, caster))
+
+const level_area_cells = (
+  checkpoint: Readonly<HydratedFightCheckpoint>,
+  caster: bigint,
+  name: string,
+  target_cell: bigint,
+  level: Readonly<SpellLevel> | null
+): readonly bigint[] => {
+  const fighter = checkpoint.contract.fighters[Number(caster)]
+  if (!level || !fighter) return Object.freeze([])
+  const { rows } = spell_turn_rows(checkpoint, caster, name, level)
+  const cells = new Set(
+    rows
+      .flatMap((row) => zone_cells(row.area_shape, row.area_size, target_cell, fighter.cell))
+      .filter((cell) => legal_cell(checkpoint, cell))
+  )
+  return Object.freeze([...cells].sort((left, right) => Number(left - right)))
+}
+
+export const spell_area_cells = (
+  checkpoint: Readonly<HydratedFightCheckpoint>,
+  caster: bigint,
+  name: string,
+  target_cell: bigint
+): readonly bigint[] =>
+  level_area_cells(checkpoint, caster, name, target_cell, spell_level_of(checkpoint, caster, name))
+
+export const weapon_area_cells = (
+  checkpoint: Readonly<HydratedFightCheckpoint>,
+  caster: bigint,
+  target_cell: bigint
+): readonly bigint[] => level_area_cells(checkpoint, caster, 'strike', target_cell, weapon_level_of(checkpoint, caster))

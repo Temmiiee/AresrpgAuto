@@ -1,0 +1,27 @@
+{
+  "name": "@aresrpg/bot",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless AresRPG automation bot: zkLogin auth, authenticated live-state websocket, gather/fight/craft/jobs farming, Discord reporting.",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "login": "bun run src/cli/login.ts",
+    "doctor": "bun run src/cli/doctor.ts",
+    "status": "bun run src/cli/status.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aresrpg/fight": "workspace:*",
+    "@aresrpg/immutable": "workspace:*",
+    "@aresrpg/protocol": "workspace:*",
+    "@aresrpg/sdk": "workspace:*",
+    "@mysten/enoki": "^1.2.24",
+    "@mysten/kiosk": "1.4.13",
+    "@mysten/sui": "2.31.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "~6.0.3"
+  }
+}

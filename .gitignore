@@ -1,1 +1,12 @@
 .aider*
+
+# Nested upstream clone of aresrpg/aresrpg (reference only — it has its own .git).
+aresrpg/
+
+# Previous bot tree, kept locally as a backup during the V2 migration.
+AresRPGBotOld/
+
+# Build / state artifacts.
+node_modules/
+dist/
+*.log
