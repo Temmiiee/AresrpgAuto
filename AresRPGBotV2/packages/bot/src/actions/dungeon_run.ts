@@ -3,7 +3,7 @@
 // it, the ordinary fight driver (combat.ts) plays the turns, and `settle_pending` routes the ended
 // room back through the dungeon settlement door, which advances the run or ends it. Between rooms
 // the chain roots the character at the portal, so this driver only ever ENTERS or STARTS the
-// current room's fight — it never travels while a run is live.
+// current room's fight -- it never travels while a run is live.
 //
 // The roster/indexer trails a transaction by a few seconds, so both steps carry a grace window and
 // the started room is remembered; acting on a stale read would re-issue the same door (a harmless
@@ -51,7 +51,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
   const abandon = async (character: CharacterRow, why: string): Promise<void> => {
     try {
       await ctx.sdk.dungeon.abandon({ character_id: ctx.character_id, custody: custody_of(character) })
-      log_warn('dungeon', `${ctx.character_id}: abandoned run — ${why}`)
+      log_warn('dungeon', `${ctx.character_id}: abandoned run -- ${why}`)
     } catch (error) {
       log_warn('dungeon', `abandon failed: ${message_of(error)}`)
     }
@@ -95,9 +95,9 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     const preview = score_group(character, fake_group, allies)
     const MIN_WIN_RATE = 0.8
     if (preview.win_rate < MIN_WIN_RATE) {
-      log_warn('dungeon', `${run.dungeon} room ${run.room}: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% < ${MIN_WIN_RATE * 100}% — abandoning run`)
+      log_warn('dungeon', `${run.dungeon} room ${run.room}: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% < ${MIN_WIN_RATE * 100}% -- abandoning run`)
       await abandon(character, `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% too low`)
-      return outcome('skipped', `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% — abandoned`)
+      return outcome('skipped', `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% -- abandoned`)
     }
     log_info('dungeon', `${run.dungeon} room ${run.room} preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, turns=${preview.turns.toFixed(1)}, xp/turn=${Math.round(preview.xp_per_turn)}`)
 
@@ -146,7 +146,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       const preview = score_group(character, fake_group, allies)
       const MIN_WIN_RATE = 0.8
       if (preview.win_rate < MIN_WIN_RATE) {
-        log_warn('dungeon', `${dk.dungeon} room 1: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% < ${MIN_WIN_RATE * 100}% — skipping entry`)
+        log_warn('dungeon', `${dk.dungeon} room 1: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% < ${MIN_WIN_RATE * 100}% -- skipping entry`)
         return outcome('skipped', `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% too low for entry`)
       }
       log_info('dungeon', `${dk.dungeon} room 1 entry preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, turns=${preview.turns.toFixed(1)}`)
@@ -219,10 +219,69 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
 
     if (character.dungeon_run) return await start_room(character)
 
-    // No live run: only a held key opens one.
-    const key = held_dungeon_key(state.inventory, unavailable_item_ids(state))
-    if (!key) return null
-    return await enter(mover, character, key)
+    // No live run: try dungeons in difficulty order (easiest first).
+    // For each dungeon: if we hold a key, preview and enter if winnable.
+    // If no key, try to craft one (maybe_craft_dungeon_key handles this elsewhere).
+    // If we have a key but preview says unwinnable, mark it as unwanted for this session
+    // so we don't keep retrying it, and try the next difficulty.
+    const inventory = state.inventory
+    const unavailable = unavailable_item_ids(state)
+
+    // Session-persistent blacklist of dungeon keys we've previewed as unwinnable.
+    // Stored on the context so it survives across passes.
+    const blacklist = (ctx as any).dungeon_blacklist ??= new Set<string>()
+
+    let i = 0
+    let result: DungeonOutcome | null = null
+    while (i < DUNGEON_KEYS.length && result === null) {
+      const dk = DUNGEON_KEYS[i]
+      const dungeonName = dk.dungeon
+      const keyName = dk.key
+      // Skip blacklisted keys
+      if (blacklist.has(keyName)) {
+        i++
+        continue
+      }
+      // Check if we hold this key
+      const held = inventory.find((item) => item.item_type === keyName && !unavailable.has(item.id))
+      if (!held) {
+        i++
+        continue
+      }
+
+      // Preview room 1 before entering
+      const first_room = dungeon_rooms(dungeonName)[0]
+      let shouldEnter = true
+      if (first_room) {
+        const fake_group = room_to_mob_group(first_room)
+        const allies = dungeon_allies(character)
+        const preview = score_group(character, fake_group, allies)
+        const MIN_WIN_RATE = 0.8
+        if (preview.win_rate < MIN_WIN_RATE) {
+          const msg = dungeonName + ' room 1: preview win_rate=' + (preview.win_rate * 100).toFixed(0) + '% < ' + (MIN_WIN_RATE * 100).toFixed(0) + '% -- blacklisting key, trying next dungeon'
+          log_warn('dungeon', msg)
+          // Blacklist this key so we don't retry it this session
+          blacklist.add(keyName)
+          // If we already entered this dungeon, abandon the run
+          if ((character.dungeon_run as { dungeon: string; room: number } | undefined)?.dungeon === dungeonName) {
+            await abandon(character, 'preview win_rate ' + (preview.win_rate * 100).toFixed(0) + '% too low')
+          }
+          shouldEnter = false
+        } else {
+          const msg2 = dungeonName + ' room 1 entry preview: win_rate=' + (preview.win_rate * 100).toFixed(0) + '%, turns=' + preview.turns.toFixed(1)
+          log_info('dungeon', msg2)
+        }
+      }
+      if (shouldEnter) {
+        result = await enter(mover, character, keyName)
+      }
+      i++
+    }
+    if (result) return result
+
+    // No held key for any winnable dungeon. The maybe_craft_dungeon_key call in session.ts
+    // will attempt to craft keys when we have materials.
+    return null
   }
 
   return Object.freeze({ run_once })

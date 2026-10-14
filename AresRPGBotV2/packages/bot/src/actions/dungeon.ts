@@ -9,32 +9,45 @@ import type { CharacterRow } from '@aresrpg/protocol'
 import type { ItemRow } from '@aresrpg/protocol'
 
 /** Dungeon key recipes we care about. Each has: output item, ingredients, source city. */
-export const DUNGEON_KEYS = Object.freeze([
+export interface DungeonKeyConfig {
+  key: string
+  dungeon: string
+  city: string
+  city_zone: { zx: number; zz: number }
+  ingredients: Record<string, number>
+  job: string
+  difficulty: number
+}
+
+export const DUNGEON_KEYS: readonly DungeonKeyConfig[] = Object.freeze([
   {
     key: 'key_of_gilded_lorito',
     dungeon: 'gilded_lorito',
     city: 'thebes',
-    city_zone: { zx: 1578, zz: 1562 }, // thebes zone
-    ingredients: { stone_lorito_plume: 2, quartz_set_trinket: 2 },
-    job: 'JEWELER', // uses quartz_set_trinket
+    city_zone: { zx: 1578, zz: 1562 },
+    ingredients: { stone_lorito_plume: 2, quartz_set_trinket: 2 } as Record<string, number>,
+    job: 'JEWELER',
+    difficulty: 1,
   },
   {
     key: 'key_of_tangled_aftermath',
     dungeon: 'tangled_aftermath',
     city: 'the_ruins',
     city_zone: { zx: 1127, zz: 1521 },
-    ingredients: { aragne_fang: 3, aragne_carapace: 2, embertide_webbing: 1 },
-    job: 'CARVER', // uses aragne parts
+    ingredients: { aragne_fang: 3, aragne_carapace: 2, embertide_webbing: 1 } as Record<string, number>,
+    job: 'CARVER',
+    difficulty: 2,
   },
   {
     key: 'key_of_ivory_rampart',
     dungeon: 'ivory_rampart',
     city: 'fuwage',
     city_zone: { zx: 445, zz: 709 },
-    ingredients: { fuwa_horn: 1, fuwa_eye: 1, fuwa_fleece: 1, nifuwa_fleece: 1 },
-    job: 'TAILOR', // uses fuwa fleece
+    ingredients: { fuwa_horn: 1, fuwa_eye: 1, fuwa_fleece: 1, nifuwa_fleece: 1 } as Record<string, number>,
+    job: 'TAILOR',
+    difficulty: 3,
   },
-] as const)
+])
 
 /** Find the RecipeDetail for a dungeon key. */
 export const dungeon_key_detail = (key: string): RecipeDetail | null => {
@@ -61,16 +74,25 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
   if (!character) return false
   const inventory = state.inventory
   const unavailable = unavailable_item_ids(state)
+  // Shared blacklist from dungeon runner (keys previewed as unwinnable)
+  const blacklist = (ctx as any).dungeon_blacklist ?? new Set<string>()
 
   for (const dk of DUNGEON_KEYS) {
-    if (can_craft_key(dk.key, inventory, unavailable)) {
+    if (blacklist.has(dk.key)) continue
+    const canCraft = can_craft_key(dk.key, inventory, unavailable)
+    if (canCraft) {
       const detail = dungeon_key_detail(dk.key)!
       const plan = plan_recipe(character, detail, inventory, unavailable)
-      if (!plan) return false
+      if (!plan) {
+        log_warn('dungeon', `${character.name}: plan_recipe failed for ${dk.key}`)
+        return false
+      }
       const result = await craft_once(ctx, plan)
       if (result.success) {
         log_info('dungeon', `crafted ${dk.key} for ${dk.dungeon}`)
         return true
+      } else {
+        log_warn('dungeon', `${character.name}: craft_once failed for ${dk.key}: ${result.outcome}`)
       }
     }
   }

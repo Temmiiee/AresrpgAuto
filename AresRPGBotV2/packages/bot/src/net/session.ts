@@ -659,8 +659,9 @@ export const play_loop = async (
       if (await run_chore(rt, false)) return idle_sleep_ms
     }
 
-    // Dungeon: leader crafts keys (omori only)
-    if (group_mode && is_leader && should_run_dungeons(current)) {
+    // Dungeon: leader crafts keys (omori only) - do this regardless of group_mode
+    // so we craft keys even when party is in cooldown or not grouping.
+    if (is_leader && should_run_dungeons(current)) {
       if (await maybe_craft_dungeon_key(ctx)) return idle_sleep_ms
     }
 
