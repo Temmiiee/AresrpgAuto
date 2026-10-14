@@ -16,8 +16,9 @@ import {
   type GatheringJob,
   type JobSlug,
 } from '@aresrpg/immutable'
-import type { SeedItem, SeedMob, SeedRecipe, SeedSpell } from '@aresrpg/sdk/seed'
+import type { SeedDungeon, SeedItem, SeedMob, SeedRecipe, SeedSpell } from '@aresrpg/sdk/seed'
 
+import dungeons_source from '../../../../seed/content/dungeons.json'
 import items_source from '../../../../seed/content/items.json'
 import mobs_source from '../../../../seed/content/mobs.json'
 import recipes_source from '../../../../seed/content/recipes.json'
@@ -103,6 +104,7 @@ const fill_world = (world: RawSeedWorld): SeedWorld =>
 
 export const items: readonly SeedItem[] = Object.freeze(items_source as unknown as readonly SeedItem[])
 export const mobs: readonly SeedMob[] = Object.freeze(mobs_source as unknown as readonly SeedMob[])
+export const dungeons: readonly SeedDungeon[] = Object.freeze(dungeons_source as unknown as readonly SeedDungeon[])
 export const recipes: readonly SeedRecipe[] = Object.freeze(recipes_source as unknown as readonly SeedRecipe[])
 export const spells: readonly SeedSpell[] = Object.freeze(spells_source as unknown as readonly SeedSpell[])
 export const worlds: readonly SeedWorld[] = Object.freeze(
@@ -116,6 +118,18 @@ export const items_by_type = keyed(items, ({ item_type }) => item_type)
 export const mobs_by_type = keyed(mobs, ({ mob_type }) => mob_type)
 export const recipes_by_output = keyed(recipes, ({ output_type }) => output_type)
 export const worlds_by_id = keyed(worlds, ({ world }) => world)
+export const dungeons_by_id = keyed(dungeons, ({ dungeon }) => dungeon)
+
+/** The ordered room compositions of a dungeon; each room is a list of the mobs it stages. */
+export const dungeon_rooms = (dungeon: string): readonly (readonly Readonly<{ mob_type: string }>[])[] =>
+  dungeons_by_id[dungeon]?.rooms ?? []
+
+/** The authored city portal of a dungeon inside a world, or null when that world has no such city. */
+export const dungeon_city = (
+  world: SeedWorld,
+  dungeon: string
+): Readonly<{ city: string; x: number; z: number; dungeon: string }> | null =>
+  world.cities.find((city) => city.dungeon === dungeon) ?? null
 
 /** The job a recipe belongs to: the output's authored craft category first, then the recipe row. */
 export const recipe_job = (recipe: SeedRecipe): string =>

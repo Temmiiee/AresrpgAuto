@@ -52,6 +52,7 @@ import {
   leader_group_step,
   party_attempting,
   rally_to_leader,
+  reset_rendezvous,
   type PartyState,
 } from '../actions/party.ts'
 import {
@@ -63,6 +64,8 @@ import {
 } from '../actions/excursion.ts'
 import { safe_travel_to } from '../actions/roam.ts'
 import { maybe_craft_dungeon_key, should_run_dungeons } from '../actions/dungeon.ts'
+import { create_dungeon_runner, type DungeonRunner } from '../actions/dungeon_run.ts'
+import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions/cross_world.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, type ActionContext } from '../actions/context.ts'
 import { active_fight_of, freshness, unavailable_item_ids } from '../state/selectors.ts'
@@ -174,6 +177,8 @@ type CharRuntime = {
   ctx: ActionContext
   mover: Mover
   roamer: Roamer
+  dungeon: DungeonRunner
+  cross_world: CrossWorldGatherer
   stats: PlayStats
   xp_mark: XpMark | null
   chore_pending: boolean
@@ -371,6 +376,12 @@ export const play_loop = async (
   // ── create per-character runtimes (all on the shared socket) ────────
   const runtimes: CharRuntime[] = []
 
+  // The party's home world — where the group actually plays — captured once. The cross-world detacher
+  // must return HERE and treat every other world as the trip target. Using the detacher's own current
+  // world instead would invert the trip after a restart mid-journey (it would be left in the target
+  // world and mistake that for home). The leader's world is authoritative; config.world is the fallback.
+  const home_world = leader.world ?? config.world ?? WORLD_FALLBACK
+
   for (const character of party) {
     const world = character.world ?? config.world ?? WORLD_FALLBACK
 
@@ -389,6 +400,8 @@ export const play_loop = async (
 
     const mover = create_mover(ctx)
     const roamer = create_roamer(ctx)
+    const dungeon = create_dungeon_runner(ctx)
+    const cross_world = create_cross_world_gatherer(ctx, home_world)
 
     // The chore plan is keyed by character name: omori rotates every crafting job while each other
     // character owns ONE gathering job, so the party covers every gathering leaf and craft trade.
@@ -402,6 +415,8 @@ export const play_loop = async (
       ctx,
       mover,
       roamer,
+      dungeon,
+      cross_world,
       stats: empty_stats,
       xp_mark: xp_snapshot(character),
       chore_pending: false,
@@ -557,8 +572,44 @@ export const play_loop = async (
     // a chore — that strands the rendezvous and forces a fresh multi-minute convergence. So the group
     // step runs FIRST for followers; the leader instead CRAFTS first (below) so omori's crafting jobs
     // still level while the party chains fights. A settled fight re-forms the party before harvesting.
-    const group_mode = toggles.group && party_attempting(party_state)
+    //
+    // A live dungeon run roots the leader at the portal, where it cannot engage until the run ends.
+    // Grouping is SUSPENDED for that window so the other three keep fighting/gathering solo instead
+    // of rallying to an unavailable leader and idling; any in-flight rendezvous is abandoned (its
+    // claim released) so it does not resume stale once the leader returns.
+    const leader_row = game_state.characters.find((c) => c.id === party_state.leader_id)
+    const leader_dungeon_busy = leader_row?.dungeon_run != null
+    if (leader_dungeon_busy && party_state.phase !== 'idle' && character.id === party_state.leader_id) {
+      const target = party_state.target
+      if (target) ctx.claims.release(target.claim_key, party_state.leader_id ?? ctx.character_id)
+      reset_rendezvous(party_state)
+    }
+    const group_mode = toggles.group && party_attempting(party_state) && !leader_dungeon_busy
     const is_leader = character.id === party_state.leader_id
+
+    // Dungeon (leader only): while omori holds a key it runs the dungeon SOLO. This runs before the
+    // excursion/group steps — a live run roots the character at the portal, so travelling would only
+    // fail. Step 2 above drives the room turns; step 1 routes the ended room's settlement through
+    // the dungeon door, which advances the run or ends it.
+    if (is_leader && should_run_dungeons(current)) {
+      const dungeon = await rt.dungeon.run_once(mover)
+      if (dungeon !== null) {
+        if (dungeon.kind !== 'skipped' && dungeon.kind !== 'waiting')
+          log_info('session', `${character.name}: dungeon ${dungeon.kind} — ${dungeon.detail}`)
+        return idle_sleep_ms
+      }
+    }
+
+    // Cross-world gathering (the designated detacher only): drive its trip state machine. A detacher
+    // is marked on the shared party so the leader's rendezvous ignores the missing seat; while it is
+    // away its whole pass belongs to the trip, so it never wanders back into a nauvis rendezvous.
+    if (toggles.cross_world) {
+      const cross = await rt.cross_world.run_once(party_state, mover)
+      if (cross.handled) {
+        log_debug('cross_world', `${character.name}: ${cross.detail}`)
+        return idle_sleep_ms
+      }
+    }
 
     // Excursion management (leader only): if the party is grouping, check whether a gather gap
     // has persisted and plan a relocation. This runs BEFORE the group step so the leader walks to
@@ -606,7 +657,9 @@ export const play_loop = async (
     if (group_mode) {
       const handled = is_leader
         ? await leader_group_step(ctx, mover, current, party_state)
-        : await follower_group_step(ctx, mover, current, party_state)
+        : party_state.detached.has(current.id)
+          ? null
+          : await follower_group_step(ctx, mover, current, party_state)
       if (handled !== null) return handled
     }
 

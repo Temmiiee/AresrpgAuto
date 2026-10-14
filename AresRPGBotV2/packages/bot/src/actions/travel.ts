@@ -33,6 +33,11 @@ const step_min_ms = (mounted: boolean): number =>
   Math.ceil(1000 / (SPEED_BUDGET_BLOCKS_PER_SECOND * (mounted ? PET_SPEED_MULTIPLIER : 1))) + 5
 const POLL_MS = 40
 const MAX_LEG_STEPS = 20_000
+/** A checkpoint timestamp this far ahead of the live chain clock cannot be real. The server's very
+ *  first roster push can carry such a sentinel (observed: at_ms ~4.9e12 against a ~1.79e12 chain
+ *  clock); adopting it makes `travel_proof_ready` fail its `now_ms < from_ms` test on EVERY leg, so
+ *  the character can never travel, gather, engage or enter a dungeon again. */
+const ANCHOR_FUTURE_SLACK_MS = 30_000
 
 export type Pose = Readonly<{ x: number; y: number; z: number }>
 
@@ -103,13 +108,17 @@ export const create_mover = (ctx: ActionContext): Mover => {
       at_ms: character.at_ms ?? 0,
       pet: pet_now,
     })
-    const changed =
-      anchor === null ||
-      anchor.world !== next.world ||
-      anchor.x !== next.x ||
-      anchor.z !== next.z ||
-      anchor.at_ms < next.at_ms
-    if (!changed) return
+    // "Newer wins" is the normal rule, but it deadlocks against a poisoned anchor: a sentinel
+    // at_ms in the future is ordered ABOVE every real checkpoint, so the guard would refuse them
+    // all forever. Also adopt a row that is strictly LESS in the future than the current anchor —
+    // a one-pass self-heal — while never adopting a worse future value.
+    const chain = chain_now(ctx.state().chain_clock, Date.now())
+    const ahead_of_chain = (at_ms: number): boolean => chain !== null && at_ms > chain + ANCHOR_FUTURE_SLACK_MS
+    const moved =
+      anchor === null || anchor.world !== next.world || anchor.x !== next.x || anchor.z !== next.z
+    const newer = anchor !== null && anchor.at_ms < next.at_ms && !ahead_of_chain(next.at_ms)
+    const healed = anchor !== null && ahead_of_chain(anchor.at_ms) && next.at_ms < anchor.at_ms
+    if (!(moved || newer || healed)) return
     anchor = next
     anchor_local_ms = Date.now()
     pose = anchor_pose(next)
@@ -169,13 +178,13 @@ export const create_mover = (ctx: ActionContext): Mover => {
     const { zx, zz } = zone_of(pose.x, pose.z)
     await ctx.sdk.character.search_zone({
       character_id: ctx.character_id,
-      world: ctx.world,
+      world: character.world ?? ctx.world,
       x: pose.x,
       z: pose.z,
       refresh,
       custody: custody_of(character),
     })
-    log_info('travel', `zone ${ctx.world}:${zx}:${zz} searched at ${pose.x},${pose.z}`)
+    log_info('travel', `zone ${character.world ?? ctx.world}:${zx}:${zz} searched at ${pose.x},${pose.z}`)
   }
 
   return Object.freeze({

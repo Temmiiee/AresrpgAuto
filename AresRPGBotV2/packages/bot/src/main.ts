@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   log_info('main', `config: ${config.network}/${config.rpc_url}`)
   log_info('main', `WS: ${config.server_ws_url}`)
   log_info('main', `origin: ${config.origin}`)
-  log_info('main', `play: gather=${config.play.gather}, fight=${config.play.fight}, roam=${config.play.roam}, craft=${config.play.craft}, group=${config.play.group}`)
+  log_info('main', `play: gather=${config.play.gather}, fight=${config.play.fight}, roam=${config.play.roam}, craft=${config.play.craft}, group=${config.play.group}, cross_world=${config.play.cross_world}`)
   log_info('main', `idle sleep: ${config.idle_sleep_ms}ms`)
   log_info('main', `party: up to ${config.party_size} simultaneous characters`)
   log_info('main', `character: ${address}`)
@@ -68,6 +68,7 @@ async function main(): Promise<void> {
       roam: config.play.roam,
       craft: config.play.craft,
       group: config.play.group,
+      cross_world: config.play.cross_world,
     },
     config.idle_sleep_ms,
   )

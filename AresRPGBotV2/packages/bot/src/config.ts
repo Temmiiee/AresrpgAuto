@@ -15,6 +15,8 @@ export type PlayToggles = Readonly<{
   craft: boolean
   /** fight as ONE party: the leader engages and every other character joins the same fight */
   group: boolean
+  /** let the designated character periodically detach to gather a richer world (e.g. yakutia) */
+  cross_world: boolean
 }>
 
 const env_flag = (raw: string | undefined, fallback: boolean): boolean => {
@@ -114,6 +116,14 @@ export type BotConfig = Readonly<{
   leader_name: string
   /** minutes between party-wide Discord progress digests (0 disables them) */
   digest_minutes: number
+  /** the character (lowercased name) that periodically detaches for cross-world gathering */
+  cross_world_gatherer: string
+  /** explicit cross-world target world; null = the richest resource world the detacher can reach */
+  cross_world_world: string | null
+  /** how long between cross-world trips (ms); 0 disables the trip cycle */
+  cross_world_interval_ms: number
+  /** how long the detacher spends gathering in the target world before returning (ms) */
+  cross_world_dwell_ms: number
 }>
 
 export const config: BotConfig = Object.freeze({
@@ -134,6 +144,7 @@ export const config: BotConfig = Object.freeze({
     roam: env_flag(process.env.BOT_ROAM, true),
     craft: env_flag(process.env.BOT_CRAFT, true),
     group: env_flag(process.env.BOT_GROUP, true),
+    cross_world: env_flag(process.env.BOT_CROSS_WORLD, true),
   }),
   idle_sleep_ms: env_int(process.env.BOT_IDLE_SLEEP_MS) ?? 5_000,
   state_dir: process.env.BOT_STATE_DIR ?? '.state',
@@ -141,4 +152,8 @@ export const config: BotConfig = Object.freeze({
   chore_plan: parse_chore_plan(process.env.BOT_CHORE_PLAN),
   leader_name: process.env.BOT_LEADER ?? 'omori',
   digest_minutes: Math.max(0, env_int(process.env.BOT_DIGEST_MINUTES) ?? 60),
+  cross_world_gatherer: (process.env.BOT_CROSS_WORLD_GATHERER ?? 'archero').toLowerCase(),
+  cross_world_world: process.env.BOT_CROSS_WORLD_WORLD ?? null,
+  cross_world_interval_ms: Math.max(0, env_int(process.env.BOT_CROSS_WORLD_INTERVAL_MS) ?? 1_800_000),
+  cross_world_dwell_ms: Math.max(0, env_int(process.env.BOT_CROSS_WORLD_DWELL_MS) ?? 600_000),
 })

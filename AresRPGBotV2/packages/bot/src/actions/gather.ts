@@ -89,7 +89,8 @@ export const gather_once = async (
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
   if (!character) return skipped('character not in roster yet')
-  if (character.world !== ctx.world) return skipped(`character is in ${character.world ?? 'no world'}`)
+  if (!character.world) return skipped('character has not joined a world')
+  const world = character.world
   if (character.ambush) return skipped('a protector verdict is pending')
 
   const jobs = character.jobs ?? {}
@@ -97,6 +98,7 @@ export const gather_once = async (
   const held = state.inventory
   const unavailable = unavailable_item_ids(state)
   const candidates = select_window_resource_packs(state)
+    .filter(({ zone }) => zone.world === world)
     .flatMap(({ pack }) => {
       const gatherable = gatherable_of(pack.item_type)
       if (!gatherable) return []
@@ -128,7 +130,7 @@ export const gather_once = async (
   const inventory = ctx.state().inventory
   const receipt = await ctx.sdk.character.gather({
     character_id: ctx.character_id,
-    world: ctx.world,
+    world,
     zone_x: zx,
     zone_z: zz,
     pack_index: target.pack.index,

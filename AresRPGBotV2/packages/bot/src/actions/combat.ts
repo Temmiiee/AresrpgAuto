@@ -389,14 +389,26 @@ const settle_one = async (
     (row) => row.fight === fight && !row.settled && !rows.some((r) => r.fighter === row.fighter)
   )
   const boss_rewards = rows.some((row) => row.boss_weight > 0)
+  // A dungeon room settles through the dungeon door (its settle advances or ends the run); an
+  // ordinary fight through the fight door. Both share the seat/loot/`last`/`boss_rewards` shape.
+  const dungeon = rows.find((row) => row.dungeon !== null)?.dungeon ?? null
   try {
-    const receipt = await ctx.sdk.fight.settle({
-      fight,
-      settlements,
-      custody: custody_of(character),
-      last,
-      boss_rewards,
-    })
+    const receipt = dungeon
+      ? await ctx.sdk.dungeon.settle({
+          fight,
+          dungeon,
+          settlements,
+          custody: custody_of(character),
+          last,
+          boss_rewards,
+        })
+      : await ctx.sdk.fight.settle({
+          fight,
+          settlements,
+          custody: custody_of(character),
+          last,
+          boss_rewards,
+        })
     ctx.ledger.append({
       kind: 'fight_settle',
       digest: receipt.digest,

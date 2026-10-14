@@ -9,6 +9,7 @@ import type { Signer } from '@mysten/sui/cryptography'
 import type { KioskOwnerCap } from '@mysten/kiosk'
 
 import { character_actions } from '../../../sdk/src/character_actions.ts'
+import { dungeon_actions } from '../../../sdk/src/dungeon.ts'
 import { fight_actions } from '../../../sdk/src/fight.ts'
 import { create_personal_kiosk_runner } from '../../../sdk/src/kiosk_runner.ts'
 import type { KioskCapLoader } from '../../../sdk/src/kiosk_runner.ts'
@@ -46,6 +47,7 @@ export const create_bot_sdk = (signer: Signer, { transaction_storage_path }: Bot
     address,
     character: character_actions(sdk, { kiosk_cap }),
     fight: fight_actions(sdk, { kiosk_cap }),
+    dungeon: dungeon_actions(sdk, { kiosk_cap }),
     kiosk_cap,
   }
 }

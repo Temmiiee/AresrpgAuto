@@ -91,6 +91,9 @@ export type PartyState = {
   deferred_log_ms: Map<string, number>
   /** member id → latest streamed pose (x,z) for reach checks */
   poses: Map<string, { x: number; z: number }>
+  /** member ids temporarily OUT of the group (cross-world gathering). The rendezvous and the role
+   *  assignment ignore them, so a detacher never strands the leader's `all_staged` check. */
+  detached: Set<string>
 }
 
 export const create_party = (): PartyState => ({
@@ -109,11 +112,13 @@ export const create_party = (): PartyState => ({
   need_since: new Map(),
   deferred_log_ms: new Map(),
   poses: new Map(),
+  detached: new Set(),
 })
 
 /** Clear the current rendezvous/fight. The excursion state (poses, need_since, etc.) is managed
- *  separately and persists across fight resets. */
-const party_reset = (party: PartyState): void => {
+ *  separately and persists across fight resets. Exported so the loop can abandon an in-flight
+ *  rendezvous when the leader becomes unavailable (a dungeon run roots it at the portal). */
+export const reset_rendezvous = (party: PartyState): void => {
   party.phase = 'idle'
   party.fight = null
   party.target = null
@@ -138,7 +143,7 @@ const fight_outstanding = (state: GameState, fight: string): boolean =>
 
 const allies_of = (state: GameState, party: PartyState, leader_id: string): readonly CharacterRow[] =>
   party.members
-    .filter((id) => id !== leader_id)
+    .filter((id) => id !== leader_id && !party.detached.has(id))
     .flatMap((id) => {
       const row = state.characters.find((c) => c.id === id)
       return row ? [row] : []
@@ -176,7 +181,7 @@ export const leader_group_step = async (
   if (party.phase === 'staging') {
     const target = party.target
     if (!target) {
-      party_reset(party)
+      reset_rendezvous(party)
       return null
     }
     try {
@@ -187,7 +192,7 @@ export const leader_group_step = async (
     // Everyone in position AND the leader can prove its own leg: fight now. This is tested BEFORE the
     // timeout so a follower that arrives in the same pass the window elapses still gets its fight
     // (the followers touch `staged` from their own concurrent pass, so the two checks race).
-    const followers = party.members.filter((id) => id !== party.leader_id)
+    const followers = party.members.filter((id) => id !== party.leader_id && !party.detached.has(id))
     const all_staged = followers.length === 0 || followers.every((id) => party.staged.has(id))
     if (all_staged && mover.can_reach(target.x, target.z)) {
       const outcome = await engage_target(ctx, mover, target.candidate)
@@ -209,7 +214,7 @@ export const leader_group_step = async (
       if (outcome.kind === 'traveling') return idle
       log_warn('party', `group engage failed: ${outcome.detail}`)
       party.failures += 1
-      party_reset(party)
+      reset_rendezvous(party)
       return null
     }
     // Not everyone has arrived. Give up only once the whole window has elapsed.
@@ -222,7 +227,7 @@ export const leader_group_step = async (
         log_warn('party', `rendezvous keeps failing — playing solo for ${Math.round(GROUP_COOLDOWN_MS / 60_000)}m`)
       }
       log_warn('party', `rendezvous timed out — abandoning group ${target.candidate.group.index}`)
-      party_reset(party)
+      reset_rendezvous(party)
       return null
     }
     return idle
@@ -233,7 +238,7 @@ export const leader_group_step = async (
     // The roster/indexer can lag an engage by seconds, so do not conclude "gone" too early.
     if (party.fight && fight_outstanding(state, party.fight)) return idle
     if (active_still_fresh(party)) return idle
-    party_reset(party)
+    reset_rendezvous(party)
     return null
   }
 
@@ -314,7 +319,7 @@ export const follower_group_step = async (
     // once the fight has had a chance to appear (the roster lags the engage).
     if (party.fight && fight_outstanding(ctx.state(), party.fight)) return idle
     if (active_still_fresh(party)) return idle
-    party_reset(party)
+    reset_rendezvous(party)
     return null
   }
   return null
