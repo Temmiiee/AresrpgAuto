@@ -27,14 +27,14 @@ import type {
 } from '@aresrpg/protocol'
 
 import { catalog_spell_sources } from '../content/fight_sources.ts'
-import { log_info, log_warn } from '../shared/logger.ts'
+import { log_info, log_warn, log_debug } from '../shared/logger.ts'
 import { active_fight_of, chain_now, select_character, select_window_mob_groups } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import { screen_groups, viable_ranking, type GroupCandidate } from './fight_preview.ts'
 import type { FightRuntimeStore } from './fight_registry.ts'
 import type { Mover } from './travel.ts'
-import { describe_actions, plan_turn } from './turn_plan.ts'
+import { describe_actions, plan_turn, plan_turn_party, type TurnAction } from './turn_plan.ts'
 
 /** Submit end-turn only once the chain clock has passed the turn floor, with a small margin. */
 const TURN_GUARD_MS = 500
@@ -156,8 +156,10 @@ const drive_placement = async (
 
 const drive_turn = async (
   ctx: ActionContext,
+  actions: readonly TurnAction[],
   cp: HydratedFightCheckpoint,
-  seat: number
+  seat: number,
+  fight_id: string
 ): Promise<FightDriveOutcome> => {
   const contract = cp.contract
   const identity = `${contract.round}:${contract.turn_ptr}:${contract.turn_started_ms}`
@@ -169,7 +171,6 @@ const drive_turn = async (
   const floor = Number(contract.turn_started_ms) + Number(CONTRACT_CONSTANTS.turn_min_ms) + TURN_GUARD_MS
   if (observed < floor) return { kind: 'waiting_turn', detail: `turn floor in ${floor - observed}ms` }
 
-  const actions = plan_turn(cp, seat)
   const receipt = await ctx.sdk.fight.commit_turn({ fight: contract.id, actions })
   ctx.fight_runtimes.mark_committed(contract.id, identity)
   const summary = describe_actions(actions) || 'pass'
@@ -202,9 +203,39 @@ export const drive_fight = async (ctx: ActionContext): Promise<FightDriveOutcome
   if (seat === null) return { kind: 'not_seated', detail: fight_id }
 
   if (cp.contract.round === 0n) return await drive_placement(ctx, cp.contract, seat)
+  
   const actor = cp.contract.queue[Number(cp.contract.turn_ptr)]
   if (actor !== BigInt(seat)) return { kind: 'not_our_turn', detail: `now seat ${actor}` }
-  return await drive_turn(ctx, cp, seat)
+
+  // Determine if this is a group fight: check for allied seats in the same fight.
+  const party_seats: number[] = []
+  for (let i = 0; i < cp.contract.fighters.length; i++) {
+    const f = cp.contract.fighters[i]
+    if (f && f.kind.type === 'player' && f.team === 0n && f.kind.character !== ctx.character_id) {
+      party_seats.push(i)
+    }
+  }
+  
+  // Use party-aware planner when we have allies, solo planner otherwise.
+  const actions = party_seats.length > 0
+    ? plan_turn_party(cp, seat, party_seats)
+    : plan_turn(cp, seat)
+  
+  if (actions.length === 0) {
+    // It is our turn but the planner found nothing to do. Committing an empty turn (a pass) is the
+    // ONLY way to advance: without it the turn never ends and the whole party deadlocks on a fight
+    // that can never progress (observed: an 8h-old fight stuck forever on a no-op turn, freezing
+    // every seated character so they never roam/gather/craft again).
+    const me = cp.contract.fighters[seat]
+    const enemies_alive = cp.contract.fighters.filter((f) => !f.dead && f.team !== me?.team).length
+    log_debug(
+      'combat',
+      `seat ${seat} no legal actions — passing (round=${cp.contract.round} ptr=${cp.contract.turn_ptr} dead=${me?.dead} ap=${me?.ap} mp=${me?.mp} enemies=${enemies_alive})`
+    )
+    return await drive_turn(ctx, [], cp, seat, fight_id)
+  }
+  
+  return await drive_turn(ctx, actions, cp, seat, fight_id)
 }
 
 // ── engaging a mob group ─────────────────────────────────────────────
@@ -231,11 +262,12 @@ export const pick_engage_target = (
   for (const { candidate, score } of scored)
     log_info(
       'preview',
-      `group ${candidate.group.index} (${candidate.group.members.length} mobs): ${Math.round(score.win_rate * 100)}% win, ${score.turns.toFixed(1)} turns, ${Math.round(score.xp_per_turn)} xp/turn`
+      `group ${candidate.group.index} (${candidate.group.members.length} mobs): ${Math.round(score.win_rate * 100)}% win, ${score.turns.toFixed(1)} turns, ${Math.round(score.xp_per_turn)} xp/turn, ${Math.round(score.loot_per_turn * 100) / 100} loot/turn`
     )
   // Claim the best sure-win group no other party member is already walking to. A group is a single
   // on-chain bit, so two characters engaging it would race and one would abort.
-  const ranked = viable_ranking(pose, scored)
+  const party_size = 1 + allies.length
+  const ranked = viable_ranking(pose, scored, party_size)
   const winner = ranked.find(({ candidate }) => ctx.claims.claim(claim_key(candidate), ctx.character_id))
   return winner ? winner.candidate : null
 }

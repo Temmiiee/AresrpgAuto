@@ -15,4 +15,10 @@ export const log_error = (scope: string, error: unknown): void => {
   console.error(`[${stamp()}] ${scope} ✗ ${message}`)
 }
 
+/** Verbose diagnostics, off unless BOT_DEBUG is set. Used to trace decision paths that would
+ *  otherwise return silently (waiting turns, held projections, group holds). */
+export const log_debug = (scope: string, message: string): void => {
+  if (process.env.BOT_DEBUG) console.log(`[${stamp()}] ${scope} · ${message}`)
+}
+
 export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

@@ -3,7 +3,7 @@ import { play_loop } from './net/session.ts'
 import { get_enoki_signer } from './auth/enoki_auth.ts'
 import { config } from './config.ts'
 import { log_info, log_error } from './shared/logger.ts'
-import { notify } from './shared/discord_notify.ts'
+import { notify, notify_await } from './shared/discord_notify.ts'
 
 // ── CLI parsing ────────────────────────────────────────────────────
 const args = process.argv.slice(2)
@@ -73,7 +73,22 @@ async function main(): Promise<void> {
   )
 }
 
-main().catch((err: any) => {
+main().catch(async (err: any) => {
   log_error('main', `fatal error: ${err.message}`)
+  // An unattended operator must learn the bot died, not discover it hours later — flush the fatal
+  // notice before exiting (notify_await, not the fire-and-forget notify).
+  await notify_await(`❌ AresRPGBotV2 crashed — ${err?.message ?? String(err)}`, 'error')
   process.exit(1)
+})
+
+// An unhandled rejection or exception anywhere else is also fatal: report it before the process
+// dies so the operator is never left wondering whether the bot is still farming.
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason)
+  log_error('main', `unhandled rejection: ${message}`)
+  void notify_await(`❌ AresRPGBotV2 unhandled rejection — ${message}`, 'error')
+})
+process.on('uncaughtException', (error) => {
+  log_error('main', `uncaught exception: ${error.message}`)
+  void notify_await(`❌ AresRPGBotV2 uncaught exception — ${error.message}`, 'error')
 })

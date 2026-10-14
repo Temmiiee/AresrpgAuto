@@ -20,6 +20,8 @@ import {
   type HydratedFightCheckpoint,
 } from '@aresrpg/fight'
 
+import { log_info, log_debug } from '../shared/logger.ts'
+
 import type { BotSdk } from '../auth/sdk_client.ts'
 
 /** One committed turn action, exactly as the SDK's commit_turn builder types it. */
@@ -42,6 +44,18 @@ export const spell_names_for = (cp: HydratedFightCheckpoint, seat: number): read
   const source = cp.sources.players[fighter.kind.character]
   return source ? Object.keys(source.spell_levels) : []
 }
+
+/** Get current HP for a fighter. Max HP is not on Fighter; we use current HP for relative comparisons. */
+const fighter_hp = (fighter: Fighter): number => Number(fighter.hp ?? 0n)
+
+/** Check if a spell is a heal (targets allies, restores HP). */
+const is_heal_spell = (name: string): boolean =>
+  name.toLowerCase().includes('soothe') || name.toLowerCase().includes('heal') || name.toLowerCase().includes('bramble')
+
+/** Check if a spell is a damage spell (targets enemies). */
+const is_damage_spell = (name: string): boolean =>
+  name.toLowerCase().includes('strike') || name.toLowerCase().includes('arrow') || name.toLowerCase().includes('sacrifice') ||
+  name.toLowerCase().includes('bramble') && !name.toLowerCase().includes('soothe')
 
 /** The longest legal path (bounded by the fighter's MP) ending closest to the nearest enemy. */
 const step_toward_enemy = (
@@ -67,8 +81,104 @@ const step_toward_enemy = (
   return path && path.length > 0 ? path : null
 }
 
-/** The next single legal action for a seated fighter, or null when nothing helps: an in-range
- *  weapon strike, else the first spell with an enemy in reach, else one move toward the nearest. */
+/** The best action for ONE seat given a SHARED party context (focus fire, heal priority, positioning). */
+const next_action_party = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  ally_seats: readonly number[],
+  party_role: 'tank' | 'support' | 'dps'
+): TurnAction | null => {
+  const me = cp.contract.fighters[seat]
+  if (!me || me.dead) return null
+  const actor = BigInt(seat)
+  const enemies = cp.contract.fighters.filter((fighter) => !fighter.dead && fighter.team !== me.team)
+  if (enemies.length === 0) return null
+  const enemy_cells = new Set(enemies.map((fighter) => fighter.cell))
+  const allies = cp.contract.fighters.filter((f, i) => !f.dead && f.team === me.team && ally_seats.includes(i))
+
+  // 1. HEAL PRIORITY: if any ally < 50% HP and I have a heal, HEAL THEM
+  // Note: max_hp not on Fighter; we use current HP for relative (lower = more hurt)
+  const hurt_ally = allies
+    .map((ally) => ({ ally, hp: fighter_hp(ally) }))
+    .filter(({ hp }) => hp > 0)
+    .sort((a, b) => a.hp - b.hp)[0]
+  if (hurt_ally) {
+    for (const name of spell_names_for(cp, seat)) {
+      if (!is_heal_spell(name)) continue
+      const targets = spell_target_cells(cp, actor, name).targetable
+      if (targets.includes(hurt_ally.ally.cell)) {
+        log_info('combat', `seat ${seat} (${party_role}): HEAL ${name} on ally at ${hurt_ally.ally.cell} (HP ${hurt_ally.hp})`)
+        return { type: 'cast', fighter_idx: actor, spell: name, target_cell: hurt_ally.ally.cell }
+      }
+    }
+  }
+
+  // 2. FOCUS FIRE: pick the enemy with LOWEST HP (kill confirmation)
+  const strike = weapon_target_cells(cp, actor).targetable.find((cell) => enemy_cells.has(cell))
+  if (strike !== undefined) {
+    const target_fighter = enemies.find((f) => f.cell === strike)
+    const hp = fighter_hp(target_fighter!)
+    log_info('combat', `seat ${seat} (${party_role}): STRIKE enemy at ${strike} (HP ${hp})`)
+    return { type: 'strike', fighter_idx: actor, target_cell: strike }
+  }
+
+  // 3. DAMAGE SPELLS: prefer lowest-HP enemy in range
+  const enemy_hp = enemies
+    .map((e) => ({ ...e, hp: fighter_hp(e) }))
+    .sort((a, b) => a.hp - b.hp)
+  for (const enemy of enemy_hp) {
+    for (const name of spell_names_for(cp, seat)) {
+      if (!is_damage_spell(name)) continue
+      const targets = spell_target_cells(cp, actor, name).targetable
+      if (targets.includes(enemy.cell)) {
+        log_info('combat', `seat ${seat} (${party_role}): CAST ${name} on enemy at ${enemy.cell} (HP ${enemy.hp})`)
+        return { type: 'cast', fighter_idx: actor, spell: name, target_cell: enemy.cell }
+      }
+    }
+  }
+
+  // 4. POSITIONING: no attack in range — ALWAYS close the distance to the nearest enemy. (An
+  //    earlier "supports hold back when an ally is ahead" rule returned a null action, which made a
+  //    whole turn empty: the character wasted its turn AND, before the pass guard existed, froze the
+  //    fight on a no-op turn. Closing distance gets every seat into range and can never deadlock.)
+  const path = step_toward_enemy(cp, seat, enemies)
+  if (path === null) {
+    log_debug(
+      'plan',
+      `seat ${seat}: no path — enemies=${enemies.length} weapon=${weapon_target_cells(cp, actor).targetable.length} reachable=${reachable_fight_cells(cp, actor).length} spells=${spell_names_for(cp, seat).join('|')}`
+    )
+    return null
+  }
+  log_debug('plan', `seat ${seat} (${party_role}): MOVE forward ${path.length}`)
+  return { type: 'move', path }
+}
+
+/** Assign a party role to each seat based on stats. */
+const assign_roles = (cp: HydratedFightCheckpoint, seats: readonly number[]): Map<number, 'tank' | 'support' | 'dps'> => {
+  const roles = new Map<number, 'tank' | 'support' | 'dps'>()
+  const seat_stats = seats.map((seat) => {
+    const fighter = cp.contract.fighters[seat]
+    const source = fighter?.kind.type === 'player' ? cp.sources.players[fighter.kind.character] : null
+    const vit = source ? Number(source.vitality ?? 0n) : 0
+    const has_heal = spell_names_for(cp, seat).some(is_heal_spell)
+    return { seat, vit, has_heal }
+  })
+  
+  // One tank (highest vitality)
+  const tank = seat_stats.reduce((best, cur) => cur.vit > best.vit ? cur : best)
+  roles.set(tank.seat, 'tank')
+  
+  // Supports = have heals (excluding tank)
+  for (const s of seat_stats) {
+    if (s.seat === tank.seat) continue
+    if (s.has_heal) roles.set(s.seat, 'support')
+    else roles.set(s.seat, 'dps')
+  }
+  
+  return roles
+}
+
+/** The next single legal action for a seated fighter (solo). */
 const next_action = (cp: HydratedFightCheckpoint, seat: number): TurnAction | null => {
   const me = cp.contract.fighters[seat]
   if (!me || me.dead) return null
@@ -89,8 +199,7 @@ const next_action = (cp: HydratedFightCheckpoint, seat: number): TurnAction | nu
   return path === null ? null : { type: 'move', path }
 }
 
-/** A full greedy turn: take legal actions until none remain. The scratch local fight applies each
- *  step so the next decision sees the real remaining AP/MP; it is discarded, never submitted. */
+/** A full greedy turn: take legal actions until none remain (solo). */
 export const plan_turn = (cp: HydratedFightCheckpoint, seat: number): readonly TurnAction[] => {
   const scratch = create_fight({ state: cp, mode: 'local' })
   const actions: TurnAction[] = []
@@ -103,6 +212,38 @@ export const plan_turn = (cp: HydratedFightCheckpoint, seat: number): readonly T
     actions.push(action)
     state = result.state
   }
+  return actions
+}
+
+/** A full coordinated turn for a party seat. */
+export const plan_turn_party = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  party_seats: readonly number[] = []
+): readonly TurnAction[] => {
+  if (party_seats.length === 0) return plan_turn(cp, seat) // solo fallback
+  
+  const roles = assign_roles(cp, party_seats)
+  const my_role = roles.get(seat) ?? 'dps'
+  const scratch = create_fight({ state: cp, mode: 'local' })
+  const actions: TurnAction[] = []
+  let state = scratch.state()
+  
+  while (actions.length < MAX_TURN_ACTIONS) {
+    const action = next_action_party(state, seat, party_seats, my_role)
+    if (action === null) break
+    const result = scratch.apply(sim_commands([action], BigInt(seat))[0]!)
+    if (result.error) {
+      log_debug('plan', `seat ${seat}: apply error ${String(result.error)}`)
+      break
+    }
+    actions.push(action)
+    state = result.state
+  }
+  log_debug(
+    'plan',
+    `plan_turn_party seat=${seat} role=${my_role} allies=[${party_seats.join(',')}] actions=${actions.length} ap=${cp.contract.fighters[seat]?.ap} mp=${cp.contract.fighters[seat]?.mp}`
+  )
   return actions
 }
 

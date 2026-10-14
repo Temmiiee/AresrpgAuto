@@ -28,8 +28,8 @@ import type { Signer } from '@mysten/sui/cryptography'
 import type { CharacterRow, ClientPacket, ServerPacket } from '@aresrpg/protocol'
 
 import { create_server_link, type ServerLink, type ServerLinkStatus } from './server_link.ts'
-import { config, type ChoreRole, type PlayToggles } from '../config.ts'
-import { log_info, log_warn, log_error, sleep } from '../shared/logger.ts'
+import { config, GATHERING_JOBS, type ChoreRole, type PlayToggles } from '../config.ts'
+import { log_info, log_warn, log_error, log_debug, sleep } from '../shared/logger.ts'
 import { notify } from '../shared/discord_notify.ts'
 import { create_bot_sdk } from '../auth/sdk_client.ts'
 import { create_ledger } from '../chain/ledger.ts'
@@ -52,13 +52,24 @@ import {
   leader_group_step,
   party_attempting,
   rally_to_leader,
+  type PartyState,
 } from '../actions/party.ts'
+import {
+  maybe_start_excursion,
+  excursion_done,
+  finish_excursion,
+  type PartyPose,
+  type Excursion,
+} from '../actions/excursion.ts'
+import { safe_travel_to } from '../actions/roam.ts'
+import { maybe_craft_dungeon_key, should_run_dungeons } from '../actions/dungeon.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, type ActionContext } from '../actions/context.ts'
 import { active_fight_of, freshness, unavailable_item_ids } from '../state/selectors.ts'
 import { initial_game_state, reduce, type GameState } from '../state/store.ts'
 import { recipe_detail, recipes_by_output } from '../content/catalog.ts'
 import { plan_recipe, craft_once } from '../actions/craft.ts'
+import { job_level_from_xp, job_slugs } from '@aresrpg/immutable'
 
 /** Fired when the socket connection is lost / expired. */
 export type SessionEvent =
@@ -131,6 +142,8 @@ const ENGAGE_GRACE_MS = 45_000
 const WORLD_FALLBACK = 'nauvis'
 /** How many settled fights between console progress digests. */
 const SUMMARY_EVERY_FIGHTS = 10
+/** How often the party-wide Discord digest is sent (configurable; 0 disables). */
+const DIGEST_INTERVAL_MS = config.digest_minutes * 60_000
 /** How far (in blocks) a party member may wander for a node while the party is grouping. Two zones is
  *  about 90s of travel under the speed law, cheap enough that the next rendezvous still lands. */
 const PARTY_GATHER_RADIUS = 1_024
@@ -164,10 +177,29 @@ type CharRuntime = {
   stats: PlayStats
   xp_mark: XpMark | null
   chore_pending: boolean
-  /** the non-combat chore this character owns (gather one job / rotate crafts / none) */
+  /** the non-combat chore this character owns (gather one job / rotate crafts / rotate all gathers / none) */
   chore: ChoreRole
+  /** rotation cursor for the `gather_all` chore (index into GATHERING_JOBS) */
+  gather_cursor: number
   /** set right after an engage; engages are suppressed until the fight surfaces or the grace ends */
   awaiting_fight_ms: number | null
+}
+
+/** Human-readable one-liner for a chore role, logged at startup so it is obvious what each
+ *  character will do with its non-combat time. */
+const describe_chore = (chore: ChoreRole): string => {
+  switch (chore.kind) {
+    case 'craft':
+      return 'rotate all crafting jobs'
+    case 'gather':
+      return `gather ${chore.job}`
+    case 'gather_all':
+      return `gather all (${GATHERING_JOBS.join('/')})`
+    case 'gather_craft':
+      return `gather ${chore.job} + rotate crafts`
+    case 'none':
+      return 'none'
+  }
 }
 
 export const play_loop = async (
@@ -206,6 +238,14 @@ export const play_loop = async (
   const claims = create_group_claims()
   /** The shared group-fight rendezvous, filled in once the roster is known. */
   const party_state = create_party()
+
+  // ── party-wide Discord digest window ────────────────────────────────
+  // A single accumulator for the WHOLE party, separate from each runtime's per-character console
+  // stats (which reset every SUMMARY_EVERY_FIGHTS). Folded at each fight/gather/craft and flushed
+  // to Discord on a timer, then reset. `digest_marks` snapshots every character's xp so the digest
+  // can report the xp gained inside the window without extra chain reads.
+  let digest_stats: PlayStats = empty_stats
+  const digest_marks = new Map<string, XpMark>()
 
   // ── shared game state (folded from the one connection) ─────────────
   let game_state: GameState = initial_game_state
@@ -303,6 +343,31 @@ export const play_loop = async (
     `party: leader=${leader.name} members=${party.length} group=${toggles.group} — effective_lvl=${effectiveLevel}`
   )
 
+  // Startup diagnostic: log every character's job levels so we can see the actual state.
+  const job_lines: string[] = []
+  for (const c of party) {
+    const levels = (job_slugs as readonly string[])
+      .map((j) => {
+        const xp = Number(c.jobs?.[j] ?? '0')
+        return `${j.slice(0, 3)}:${job_level_from_xp(xp)}`
+      })
+      .join(' ')
+    log_info('session', `${c.name} jobs — ${levels}`)
+    job_lines.push(`**${c.name}** (lvl ${c.level}) — ${levels}`)
+  }
+
+  // Startup notification: reassure the operator the bot resumed, which party it drives and at what
+  // job levels. This is the "it is running" heartbeat the operator asked for; the periodic digest
+  // (below) is the recurring "what it is doing" follow-up.
+  notify(
+    [
+      `✅ AresRPGBotV2 started — ${party_label}`,
+      `leader=${leader.name} · group=${toggles.group} · world=${leader.world ?? config.world ?? WORLD_FALLBACK}`,
+      ...job_lines,
+    ].join('\n'),
+    'success'
+  )
+
   // ── create per-character runtimes (all on the shared socket) ────────
   const runtimes: CharRuntime[] = []
 
@@ -328,6 +393,7 @@ export const play_loop = async (
     // The chore plan is keyed by character name: omori rotates every crafting job while each other
     // character owns ONE gathering job, so the party covers every gathering leaf and craft trade.
     const chore: ChoreRole = config.chore_plan[character.name.toLowerCase()] ?? Object.freeze({ kind: 'none' })
+    log_info('session', `${character.name}: chore = ${describe_chore(chore)}`)
     if (chore.kind === 'none')
       log_warn('session', `${character.name}: no chore assignment — this character will only fight`)
 
@@ -340,6 +406,7 @@ export const play_loop = async (
       xp_mark: xp_snapshot(character),
       chore_pending: false,
       chore,
+      gather_cursor: 0,
       awaiting_fight_ms: null,
     })
   }
@@ -435,11 +502,20 @@ export const play_loop = async (
 
     mover.sync(current)
 
+    // Track the latest streamed pose for excursion reach checks.
+    if (current.x !== undefined && current.z !== undefined)
+      party_state.poses.set(character.id, { x: current.x, z: current.z })
+
     // 1. reconcile any ended fight (settle loot, then close the fight object)
+    log_debug(
+      'pass',
+      `${character.name}: active_fight=${active_fight_of(current) ?? '-'} resolutions=${game_state.resolutions.length} group_attempting=${party_attempting(party_state)}`
+    )
     const settled = await settle_pending(ctx)
     if (settled.settled) {
       log_info('session', `${character.name}: ${settled.detail}`)
       rt.stats = settled.reports.reduce(record_fight, rt.stats)
+      digest_stats = settled.reports.reduce(record_fight, digest_stats)
       rt.chore_pending = true
       flush_summary(rt)
       return SETTLE_POLL_MS
@@ -457,6 +533,7 @@ export const play_loop = async (
     if (active_fight) {
       rt.awaiting_fight_ms = null
       const outcome = await fight_runtimes.with_lock(active_fight, () => drive_fight(ctx))
+      log_debug('pass', `${character.name}: fight outcome=${outcome.kind}${outcome.detail ? ` (${outcome.detail})` : ''}`)
       if (outcome.kind !== 'waiting_turn' && outcome.kind !== 'not_our_turn')
         log_info('session', `${character.name}: fight ${outcome.kind}${outcome.detail ? ` (${outcome.detail})` : ''}`)
       return FIGHT_POLL_MS
@@ -482,10 +559,50 @@ export const play_loop = async (
     // still level while the party chains fights. A settled fight re-forms the party before harvesting.
     const group_mode = toggles.group && party_attempting(party_state)
     const is_leader = character.id === party_state.leader_id
+
+    // Excursion management (leader only): if the party is grouping, check whether a gather gap
+    // has persisted and plan a relocation. This runs BEFORE the group step so the leader walks to
+    // the resource instead of staging a fight.
+    if (group_mode && is_leader) {
+      const pose: PartyPose = mover.pose()
+      if (party_state.excursion) {
+        // Active excursion: check if it's done (dwell elapsed or all needs satisfied).
+        if (excursion_done(game_state, party_state)) {
+          finish_excursion(party_state)
+        } else if (party_state.excursion.arrived_ms === 0) {
+          // Still traveling: move the leader toward the destination.
+          // Don't plan new fights while traveling.
+          if (await safe_travel_to(mover, party_state.excursion.x, party_state.excursion.z)) {
+            // Arrived at the zone center; prove the leg and discover the zone so the window updates.
+            if (await mover.prove_ready(party_state.excursion.x, party_state.excursion.z)) {
+              await mover.ensure_zone(false)
+            }
+            party_state.excursion = Object.freeze({
+              ...party_state.excursion,
+              arrived_ms: Date.now(),
+            })
+            log_info('party', `excursion: arrived at ${party_state.excursion.zx}:${party_state.excursion.zz}`)
+          }
+          return idle_sleep_ms
+        }
+        // Dwell phase (arrived_ms > 0 but not done): allow normal fight staging at the destination.
+        // Fall through to leader_group_step which will pick fights at the excursion zone.
+      } else if (await maybe_start_excursion(ctx, party_state, current, pose)) {
+        // Excursion just started; skip this pass so the leader begins walking.
+        return idle_sleep_ms
+      }
+    }
+
     if (group_mode && is_leader && rt.chore_pending) {
       rt.chore_pending = false
       if (await run_chore(rt, false)) return idle_sleep_ms
     }
+
+    // Dungeon: leader crafts keys (omori only)
+    if (group_mode && is_leader && should_run_dungeons(current)) {
+      if (await maybe_craft_dungeon_key(ctx)) return idle_sleep_ms
+    }
+
     if (group_mode) {
       const handled = is_leader
         ? await leader_group_step(ctx, mover, current, party_state)
@@ -557,17 +674,31 @@ export const play_loop = async (
   const run_chore = async (rt: CharRuntime, local_only = false): Promise<boolean> => {
     const { ctx, mover, chore } = rt
     let acted = false
-    if (chore.kind === 'gather' && toggles.gather) {
-      const gathered = await gather_once(ctx, mover, chore.job, local_only ? PARTY_GATHER_RADIUS : undefined)
+
+    // Which gathering job this pass should harvest, if any. `gather_all` rotates every job via a
+    // per-character cursor; `gather` and `gather_craft` target their one assigned job.
+    const gather_job =
+      chore.kind === 'gather' || chore.kind === 'gather_craft'
+        ? chore.job
+        : chore.kind === 'gather_all'
+          ? GATHERING_JOBS[rt.gather_cursor % GATHERING_JOBS.length]
+          : undefined
+
+    if (gather_job !== undefined && toggles.gather) {
+      const gathered = await gather_once(ctx, mover, gather_job, local_only ? PARTY_GATHER_RADIUS : undefined)
       if (gathered.kind === 'gathered') {
         rt.stats = record_gather(rt.stats, gathered.item_type, gathered.quantity)
+        digest_stats = record_gather(digest_stats, gathered.item_type, gathered.quantity)
         acted = true
       }
+      // Advance the rotation so the all-resource gatherer sweeps FARMER → HERBALIST → MINER.
+      if (chore.kind === 'gather_all') rt.gather_cursor = (rt.gather_cursor + 1) % GATHERING_JOBS.length
     }
-    if (chore.kind === 'craft' && toggles.craft) {
+    if ((chore.kind === 'craft' || chore.kind === 'gather_craft') && toggles.craft) {
       const crafted = await drive_craft(ctx)
       if (crafted.success) {
         rt.stats = record_craft(rt.stats, crafted.output_type, crafted.successes)
+        digest_stats = record_craft(digest_stats, crafted.output_type, crafted.successes)
         acted = true
       }
     }
@@ -602,7 +733,38 @@ export const play_loop = async (
     }
   }
 
+  /** The party-wide progress digest: every DIGEST_INTERVAL_MS, send ONE Discord message with the
+   *  fights, xp, loot, gathering and crafting the whole party accumulated since the last digest,
+   *  then start a fresh window. Seeded marks so the first digest measures from startup. */
+  const digest_loop = async (rts: readonly CharRuntime[]): Promise<void> => {
+    if (config.digest_minutes <= 0) return
+    for (const rt of rts) {
+      const c = game_state.characters.find((x) => x.id === rt.character.id)
+      if (c) digest_marks.set(rt.character.id, xp_snapshot(c))
+    }
+    while (!stopped) {
+      await sleep(DIGEST_INTERVAL_MS)
+      if (stopped) break
+      let total_xp = 0n
+      const jobs: Record<string, bigint> = {}
+      for (const rt of rts) {
+        const c = game_state.characters.find((x) => x.id === rt.character.id)
+        if (!c) continue
+        const now = xp_snapshot(c)
+        const delta = xp_delta(digest_marks.get(rt.character.id) ?? now, now)
+        total_xp += delta.xp
+        for (const [job, gained] of Object.entries(delta.jobs)) jobs[job] = (jobs[job] ?? 0n) + gained
+        digest_marks.set(rt.character.id, now)
+      }
+      const body = format_summary(digest_stats, total_xp, jobs)
+      log_info('session', `digest: ${body.replace(/\n/g, ' | ')}`)
+      notify(`📊 AresRPGBotV2 digest — last ${config.digest_minutes}m · ${party_label}\n${body}`, 'info')
+      digest_stats = empty_stats
+    }
+  }
+
   // Launch all character loops in parallel. The shared socket requires no heartbeat task: the
   // server pushes liveness packets continuously, so there is no periodic Discord ping any more.
-  await Promise.all(runtimes.map((rt) => run_character(rt)))
+  // A party-wide progress digest is the one periodic message, and only when one is configured.
+  await Promise.all([...runtimes.map((rt) => run_character(rt)), digest_loop(runtimes)])
 }

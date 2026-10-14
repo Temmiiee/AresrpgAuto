@@ -43,8 +43,8 @@ const clamp = (value: number, low: number, high: number): number => Math.min(Mat
 
 /** `Mover.travel_to` throws once a single leg passes its step cap (a long diagonal). The blocks it
  *  already streamed persist in the mover, so the next pass resumes where this one stopped — treat
- *  the cap as a pause, not a failure. */
-const safe_travel_to = async (mover: Mover, x: number, z: number): Promise<boolean> => {
+ *  the cap as a pause, not a failure. Shared with the gathering excursion, which walks the same way. */
+export const safe_travel_to = async (mover: Mover, x: number, z: number): Promise<boolean> => {
   try {
     await mover.travel_to(x, z)
     return mover.pose().x === x && mover.pose().z === z

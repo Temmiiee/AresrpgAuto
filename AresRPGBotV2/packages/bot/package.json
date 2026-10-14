@@ -18,7 +18,8 @@
     "@aresrpg/sdk": "workspace:*",
     "@mysten/enoki": "^1.2.24",
     "@mysten/kiosk": "1.4.13",
-    "@mysten/sui": "2.31.3"
+    "@mysten/sui": "2.31.3",
+    "simplex-noise": "4.0.3"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",

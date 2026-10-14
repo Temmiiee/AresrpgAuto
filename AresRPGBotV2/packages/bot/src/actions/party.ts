@@ -28,6 +28,8 @@ import type { Mover } from './travel.ts'
 const STAGE_TIMEOUT_MS = 300_000
 /** How long an active group fight may be invisible to the roster/indexer before we conclude it ended. */
 const ACTIVE_GRACE_MS = 60_000
+/** How far (in blocks) a gatherer may range from a pack and still call its specialty "available". */
+export const PARTY_GATHER_RADIUS = 1_024
 /** Consecutive failed rendezvous before the party stops grouping for a while. */
 const MAX_STAGE_FAILURES = 3
 /** How long to stay in solo mode after repeated rendezvous failures. */
@@ -66,6 +68,29 @@ export type PartyState = {
   failures: number
   /** while now < retry_after_ms the party plays solo instead of trying to rendezvous */
   retry_after_ms: number
+
+  // excursion (gathering relocation)
+  /** the currently active whole-party gathering excursion, or null */
+  excursion: Readonly<{
+    world: string
+    zx: number
+    zz: number
+    x: number
+    z: number
+    biome: string
+    kind: 'biome' | 'city'
+    member_ids: readonly string[]
+    started_ms: number
+    arrived_ms: number
+  }> | null
+  /** when the last excursion finished (starts the cooldown) */
+  last_excursion_ms: number
+  /** per-member id → when the gather gap was first seen (persistence gate) */
+  need_since: Map<string, number>
+  /** cross-world need key → last log time (rate limit the deferred warning) */
+  deferred_log_ms: Map<string, number>
+  /** member id → latest streamed pose (x,z) for reach checks */
+  poses: Map<string, { x: number; z: number }>
 }
 
 export const create_party = (): PartyState => ({
@@ -79,9 +104,15 @@ export const create_party = (): PartyState => ({
   active_since_ms: 0,
   failures: 0,
   retry_after_ms: 0,
+  excursion: null,
+  last_excursion_ms: 0,
+  need_since: new Map(),
+  deferred_log_ms: new Map(),
+  poses: new Map(),
 })
 
-/** Clear the current rendezvous/fight. */
+/** Clear the current rendezvous/fight. The excursion state (poses, need_since, etc.) is managed
+ *  separately and persists across fight resets. */
 const party_reset = (party: PartyState): void => {
   party.phase = 'idle'
   party.fight = null
@@ -89,6 +120,7 @@ const party_reset = (party: PartyState): void => {
   party.staged = new Set()
   party.staged_at_ms = 0
   party.active_since_ms = 0
+  // excursion is cleared by finish_excursion when the relocation is done
 }
 
 /** True while the active fight has not been visible long enough to conclude it is over. */

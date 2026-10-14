@@ -246,17 +246,33 @@ export const nearest_candidates = (
 /** The sure-win groups, best reward per turn first. Loot only breaks ties: there is no live price
  *  feed, and turning expected drop quantity into an additive "value" is exactly how a trivial
  *  high-drop fight outranks a hard, high-XP one (the Old bot's 1-xp lesson). Ties then fall to
- *  fewer turns, then to the closer group. */
+ *  fewer turns, then to the closer group.
+ *
+ *  When `party_size > 1` (group fight), we bias toward LARGER mob groups because:
+ *  - 4 players kill more mobs per round → fight ends in similar turns but yields more total drops
+ *  - Monster drops are the bottleneck for crafting (HANDYMAN tools, etc.)
+ *  The bias is a soft multiplier on loot_per_turn so XP still matters but drops count more. */
 export const viable_ranking = (
   pose: Readonly<{ x: number; z: number }>,
-  scored: readonly ScoredGroup[]
-): readonly ScoredGroup[] =>
-  scored
+  scored: readonly ScoredGroup[],
+  party_size: number = 1
+): readonly ScoredGroup[] => {
+  const loot_weight = party_size > 1 ? party_size * 0.5 : 0 // 1.0 for duo, 1.5 for trio, 2.0 for 4
+  return scored
     .filter(({ score }) => score.win_rate >= MIN_WIN_RATE)
     .sort(
-      (left, right) =>
-        right.score.xp_per_turn - left.score.xp_per_turn ||
-        right.score.loot_per_turn - left.score.loot_per_turn ||
-        left.score.turns - right.score.turns ||
-        distance_to(pose, left.candidate.group) - distance_to(pose, right.candidate.group)
+      (left, right) => {
+        const left_mobs = left.candidate.group.members.length
+        const right_mobs = right.candidate.group.members.length
+        const left_val = left.score.xp_per_turn + left.score.loot_per_turn * loot_weight
+        const right_val = right.score.xp_per_turn + right.score.loot_per_turn * loot_weight
+        return (
+          right_val - left_val ||
+          // Among equal value, prefer MORE mobs (more drops per fight)
+          right_mobs - left_mobs ||
+          left.score.turns - right.score.turns ||
+          distance_to(pose, left.candidate.group) - distance_to(pose, right.candidate.group)
+        )
+      }
     )
+}
