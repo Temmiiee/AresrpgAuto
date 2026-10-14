@@ -227,7 +227,7 @@ export const drive_fight = async (ctx: ActionContext): Promise<FightDriveOutcome
     // that can never progress (observed: an 8h-old fight stuck forever on a no-op turn, freezing
     // every seated character so they never roam/gather/craft again).
     const me = cp.contract.fighters[seat]
-    const enemies_alive = cp.contract.fighters.filter((f) => !f.dead && f.team !== me?.team).length
+    const enemies_alive = cp.contract.fighters.filter((f: typeof cp.contract.fighters[0]) => !f.dead && f.team !== me?.team).length
     log_debug(
       'combat',
       `seat ${seat} no legal actions — passing (round=${cp.contract.round} ptr=${cp.contract.turn_ptr} dead=${me?.dead} ap=${me?.ap} mp=${me?.mp} enemies=${enemies_alive})`

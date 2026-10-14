@@ -16,6 +16,7 @@ import { active_fight_of, select_character, unavailable_item_ids } from '../stat
 import { custody_of, type ActionContext } from './context.ts'
 import { DUNGEON_KEYS, held_dungeon_key, should_run_dungeons } from './dungeon.ts'
 import { safe_travel_to } from './roam.ts'
+import { score_group, mob_inputs, type MobGroupRow } from './fight_preview.ts'
 import type { Mover } from './travel.ts'
 
 /** After a successful `enter`, wait this long for the roster to reveal `dungeon_run` before
@@ -29,10 +30,12 @@ const message_of = (error: unknown): string => (error instanceof Error ? error.m
 export type DungeonOutcome = Readonly<{
   kind: 'entered' | 'started' | 'waiting' | 'traveling' | 'skipped'
   detail: string
+  /** When kind === 'started', the fight ID that was created. */
+  fight_id?: string
 }>
 
-const outcome = (kind: DungeonOutcome['kind'], detail: string): DungeonOutcome =>
-  Object.freeze({ kind, detail })
+const outcome = (kind: DungeonOutcome['kind'], detail: string, fight_id?: string): DungeonOutcome =>
+  Object.freeze({ kind, detail, ...(fight_id ? { fight_id } : {}) })
 
 export type DungeonRunner = Readonly<{
   /** Enter or start the current room, or null when this character has no dungeon business. */
@@ -54,6 +57,24 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     }
   }
 
+  /** Build a fake MobGroupRow from a dungeon room's mob list for preview purposes. */
+  const room_to_mob_group = (room: readonly { mob_type: string }[]): MobGroupRow => ({
+    index: 0,
+    x: 0,
+    z: 0,
+    members: room.map((row, i) => ({ mob_type: row.mob_type, level_scalar: 50 + i })),
+  })
+
+  /** Collect available allies for a dungeon fight: other party members in the same world, not in a fight. */
+  const dungeon_allies = (character: CharacterRow): readonly CharacterRow[] => {
+    const state = ctx.state()
+    const party_ids = ctx.party_state?.members ?? []
+    return party_ids
+      .filter((id) => id !== character.id && !ctx.party_state?.detached.has(id))
+      .map((id) => select_character(state, id))
+      .filter((c): c is CharacterRow => c !== null && c.world === character.world && !active_fight_of(c) && c.custody !== 'fight')
+  }
+
   /** Stage the run's current room: birth its fight (the turns are driven elsewhere). */
   const start_room = async (character: CharacterRow): Promise<DungeonOutcome> => {
     const run = character.dungeon_run!
@@ -66,6 +87,20 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       await abandon(character, `${run.dungeon} room ${run.room} has no authored mobs`)
       return outcome('skipped', `${run.dungeon} room ${run.room} unknown`)
     }
+
+    // Preview the fight with our current party. If we can't win reliably, abandon the run
+    // instead of burning a key on a guaranteed loss.
+    const fake_group = room_to_mob_group(room)
+    const allies = dungeon_allies(character)
+    const preview = score_group(character, fake_group, allies)
+    const MIN_WIN_RATE = 0.8
+    if (preview.win_rate < MIN_WIN_RATE) {
+      log_warn('dungeon', `${run.dungeon} room ${run.room}: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% < ${MIN_WIN_RATE * 100}% — abandoning run`)
+      await abandon(character, `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% too low`)
+      return outcome('skipped', `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% — abandoned`)
+    }
+    log_info('dungeon', `${run.dungeon} room ${run.room} preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, turns=${preview.turns.toFixed(1)}, xp/turn=${Math.round(preview.xp_per_turn)}`)
+
     last_start_ms = Date.now()
     try {
       const receipt = await ctx.sdk.dungeon.start_fight({
@@ -83,7 +118,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
         detail: { dungeon: run.dungeon, room: run.room, mobs: room.map((row) => row.mob_type) },
       })
       log_info('dungeon', `${run.dungeon} room ${run.room} (${room.length} mobs) -> fight ${receipt.fight}`)
-      return outcome('started', `${run.dungeon} room ${run.room} fight ${receipt.fight}`)
+      return outcome('started', `${run.dungeon} room ${run.room} fight ${receipt.fight}`, receipt.fight)
     } catch (error) {
       log_warn('dungeon', `start ${run.dungeon} room ${run.room} failed: ${message_of(error)}`)
       return outcome('skipped', `start failed: ${message_of(error)}`)
@@ -102,6 +137,21 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     }
     if (character.world !== world.world)
       return outcome('skipped', `in ${character.world ?? 'no world'}; ${dk.dungeon} portal is in ${world.world}`)
+
+    // Preview room 1 BEFORE walking/burning a key. If we can't win the first room, don't enter.
+    const first_room = dungeon_rooms(dk.dungeon)[0]
+    if (first_room) {
+      const fake_group = room_to_mob_group(first_room)
+      const allies = dungeon_allies(character)
+      const preview = score_group(character, fake_group, allies)
+      const MIN_WIN_RATE = 0.8
+      if (preview.win_rate < MIN_WIN_RATE) {
+        log_warn('dungeon', `${dk.dungeon} room 1: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% < ${MIN_WIN_RATE * 100}% — skipping entry`)
+        return outcome('skipped', `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% too low for entry`)
+      }
+      log_info('dungeon', `${dk.dungeon} room 1 entry preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, turns=${preview.turns.toFixed(1)}`)
+    }
+
     if (Date.now() - last_enter_ms < ENTER_GRACE_MS) return outcome('waiting', 'recent enter; waiting for the roster')
     if (!(await safe_travel_to(mover, city.x, city.z))) return outcome('traveling', `walking to the ${city.city} portal`)
     if (!(await mover.prove_ready(city.x, city.z))) {

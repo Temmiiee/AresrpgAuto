@@ -39,6 +39,9 @@ const TURN_MIN_MS = 3_100n
 
 export type GroupCandidate = Readonly<{ zone: ZoneRow; group: MobGroupRow }>
 
+export type { MobGroupRow }
+export { mob_inputs }
+
 export type FightScore = Readonly<{
   /** share of preview seeds the twin won */
   win_rate: number

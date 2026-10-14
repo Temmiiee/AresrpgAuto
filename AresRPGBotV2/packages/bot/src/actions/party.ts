@@ -151,7 +151,7 @@ const allies_of = (state: GameState, party: PartyState, leader_id: string): read
 
 /** Join every follower seat in ONE transaction on the leader's kiosk. The joins land before any
  *  seat readies, so the fight cannot start without the party. */
-const join_followers = async (ctx: ActionContext, followers: readonly string[], fight: string): Promise<number> => {
+export const join_followers = async (ctx: ActionContext, followers: readonly string[], fight: string): Promise<number> => {
   if (followers.length === 0) return 0
   const leader = select_character(ctx.state(), ctx.character_id)
   if (!leader) return 0

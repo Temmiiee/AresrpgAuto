@@ -8,6 +8,7 @@ import type { Ledger } from '../chain/ledger.ts'
 import type { GameState } from '../state/store.ts'
 import type { NotifyLevel } from '../shared/discord_notify.ts'
 import type { FightRuntimeStore } from './fight_registry.ts'
+import type { PartyState } from './party.ts'
 
 /**
  * A cross-character claim registry. Every character in the party shares ONE server connection and
@@ -67,6 +68,8 @@ export type ActionContext = Readonly<{
   fight_runtimes: FightRuntimeStore
   /** the cross-character live-group claims, so the party never double-engages one group */
   claims: GroupClaims
+  /** shared party state for dungeon/group coordination */
+  party_state: PartyState
 }>
 
 /** The wire custody pair for a character: the kiosk holding it plus its personal cap identity. */

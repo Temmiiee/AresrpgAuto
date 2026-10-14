@@ -49,6 +49,7 @@ import { close_pending, drive_fight, engage_once, handle_fight_packet, settle_pe
 import {
   create_party,
   follower_group_step,
+  join_followers,
   leader_group_step,
   party_attempting,
   rally_to_leader,
@@ -396,6 +397,7 @@ export const play_loop = async (
       notify,
       fight_runtimes,
       claims,
+      party_state,
     }
 
     const mover = create_mover(ctx)
@@ -573,29 +575,37 @@ export const play_loop = async (
     // step runs FIRST for followers; the leader instead CRAFTS first (below) so omori's crafting jobs
     // still level while the party chains fights. A settled fight re-forms the party before harvesting.
     //
-    // A live dungeon run roots the leader at the portal, where it cannot engage until the run ends.
-    // Grouping is SUSPENDED for that window so the other three keep fighting/gathering solo instead
-    // of rallying to an unavailable leader and idling; any in-flight rendezvous is abandoned (its
-    // claim released) so it does not resume stale once the leader returns.
-    const leader_row = game_state.characters.find((c) => c.id === party_state.leader_id)
-    const leader_dungeon_busy = leader_row?.dungeon_run != null
-    if (leader_dungeon_busy && party_state.phase !== 'idle' && character.id === party_state.leader_id) {
-      const target = party_state.target
-      if (target) ctx.claims.release(target.claim_key, party_state.leader_id ?? ctx.character_id)
-      reset_rendezvous(party_state)
-    }
-    const group_mode = toggles.group && party_attempting(party_state) && !leader_dungeon_busy
+    // Dungeon runs are now GROUP activities: the leader starts each room's fight, then all followers
+    // join it. The leader is rooted at the portal but the fight is a normal group fight.
+    const group_mode = toggles.group && party_attempting(party_state)
     const is_leader = character.id === party_state.leader_id
 
-    // Dungeon (leader only): while omori holds a key it runs the dungeon SOLO. This runs before the
+    // Dungeon (leader only): while omori holds a key it runs the dungeon. This runs before the
     // excursion/group steps — a live run roots the character at the portal, so travelling would only
     // fail. Step 2 above drives the room turns; step 1 routes the ended room's settlement through
     // the dungeon door, which advances the run or ends it.
+    // When the leader starts a room, it becomes the party's active group fight — followers join it.
     if (is_leader && should_run_dungeons(current)) {
       const dungeon = await rt.dungeon.run_once(mover)
       if (dungeon !== null) {
         if (dungeon.kind !== 'skipped' && dungeon.kind !== 'waiting')
           log_info('session', `${character.name}: dungeon ${dungeon.kind} — ${dungeon.detail}`)
+        // If a room fight was started, join all followers to it immediately.
+        if (dungeon.kind === 'started' && dungeon.fight_id) {
+          const followers = party_state.members.filter((id) => id !== party_state.leader_id && !party_state.detached.has(id))
+          if (followers.length > 0) {
+            try {
+              await join_followers(ctx, followers, dungeon.fight_id)
+            } catch (error) {
+              log_warn('party', `dungeon join failed: ${error instanceof Error ? error.message : String(error)}`)
+            }
+          }
+          party_state.fight = dungeon.fight_id
+          party_state.phase = 'active'
+          party_state.active_since_ms = Date.now()
+          party_state.failures = 0
+          log_info('party', `dungeon room fight ${dungeon.fight_id} — party engaged`)
+        }
         return idle_sleep_ms
       }
     }
