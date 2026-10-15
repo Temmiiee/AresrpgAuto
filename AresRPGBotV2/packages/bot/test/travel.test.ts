@@ -3,6 +3,8 @@
 // "newer wins" rule orders that sentinel above every real checkpoint, so without a self-heal a
 // character can never prove a leg again (the dungeon/roam/gather deadlock this pins).
 import { create_mover } from '../src/actions/travel.ts'
+import { chain_now } from '../src/state/selectors.ts'
+import { initial_game_state, reduce } from '../src/state/store.ts'
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000
 
@@ -70,5 +72,32 @@ describe('mover anchor sync', () => {
     mover.sync(character({ at_ms: now - 120_000 }))
     mover.sync(character({ at_ms: now - 60_000 }))
     expect(mover.can_reach(100, 200)).toBe(true)
+  })
+})
+
+describe('chain clock integrality', () => {
+  it('floors a fractional server sample age so travel proofs still pass', () => {
+    const packet = {
+      type: 'packet/server_info',
+      online: 1,
+      indexing_lag: 0,
+      current_epoch: null,
+      chain_timestamp_ms: Date.now() - 500,
+      // The server reports the sample age with sub-millisecond precision.
+      chain_sample_age_ms: 12.7,
+    }
+    const state = reduce(initial_game_state, { kind: 'packet', packet } as never)
+    const now = chain_now(state.chain_clock, Date.now())
+    expect(now).not.toBeNull()
+    expect(Number.isSafeInteger(now as number)).toBe(true)
+  })
+
+  it('never hands a fractional now to a travel proof', () => {
+    // `travel_proof_ready` rejects a non-integer `now_ms` outright, so a fractional chain clock
+    // froze EVERY leg (the character could not walk, gather or engage — a look-alike network stall).
+    const clock = { chain_ms: 1_000_000, received_ms: 1_000_000 + 0.416 }
+    const now = chain_now(clock, 1_000_001)
+    expect(now).toBe(1_000_000)
+    expect(Number.isSafeInteger(now as number)).toBe(true)
   })
 })

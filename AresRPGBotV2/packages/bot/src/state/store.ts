@@ -100,7 +100,11 @@ const chain_clock_from = (
   received_ms: number
 ): ChainClock => {
   const chain_ms = Number(packet.chain_timestamp_ms)
-  const sample_age_ms = packet.chain_sample_age_ms ?? 0
+  // The server reports the sample age with sub-millisecond precision. Keep the clock integer-valued:
+  // `chain_now` feeds `travel_proof_ready`, whose `Number.isSafeInteger(now_ms)` guard rejects a
+  // fractional `now_ms` outright — so a fractional sample age silently froze EVERY leg (the bot
+  // could not walk, gather or engage, and it looked exactly like an indexer/network stall).
+  const sample_age_ms = Math.floor(packet.chain_sample_age_ms ?? 0)
   const valid = [Number.isFinite(sample_age_ms), sample_age_ms >= 0, Number.isSafeInteger(chain_ms), chain_ms > 0].every(
     Boolean
   )

@@ -32,7 +32,9 @@ const MAX_SAMPLE_AGE_MS = 15_000
 export const chain_now = (clock: ChainClock, monotonic_ms: number): number | null => {
   if (!clock) return null
   const elapsed = monotonic_ms - clock.received_ms
-  return elapsed < 0 || elapsed > MAX_SAMPLE_AGE_MS ? null : clock.chain_ms + elapsed
+  // Floor: this value feeds `travel_proof_ready`, which rejects a non-integer `now_ms`, so even a
+  // stray fraction (e.g. a sub-ms server sample age) would freeze every travel leg.
+  return elapsed < 0 || elapsed > MAX_SAMPLE_AGE_MS ? null : Math.floor(clock.chain_ms + elapsed)
 }
 
 /** The pre-transaction gate: connected, gameplay unfrozen, projection caught up, chain clock live.

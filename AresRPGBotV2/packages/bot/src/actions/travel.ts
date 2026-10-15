@@ -23,7 +23,7 @@ import {
 } from '@aresrpg/protocol'
 
 import { chain_now, checkpoint_of } from '../state/selectors.ts'
-import { log_info, sleep } from '../shared/logger.ts'
+import { log_info, log_warn, sleep } from '../shared/logger.ts'
 import { custody_of, type ActionContext } from './context.ts'
 
 /** One block takes at least this long at the legal speed, with a hair of margin. Mounted, the
@@ -33,6 +33,11 @@ const step_min_ms = (mounted: boolean): number =>
   Math.ceil(1000 / (SPEED_BUDGET_BLOCKS_PER_SECOND * (mounted ? PET_SPEED_MULTIPLIER : 1))) + 5
 const POLL_MS = 40
 const MAX_LEG_STEPS = 20_000
+/** How often a travel leg that cannot take a single step dumps WHY, so a character stranded by a
+ *  null/poisoned anchor or a pet-rule mismatch is diagnosable instead of silently spinning to the
+ *  deadline. */
+const STALL_DIAG_MS = 30_000
+let last_stall_diag_ms = 0
 /** A checkpoint timestamp this far ahead of the live chain clock cannot be real. The server's very
  *  first roster push can carry such a sentinel (observed: at_ms ~4.9e12 against a ~1.79e12 chain
  *  clock); adopting it makes `travel_proof_ready` fail its `now_ms < from_ms` test on EVERY leg, so
@@ -147,6 +152,10 @@ export const create_mover = (ctx: ActionContext): Mover => {
     const total = Math.abs(to_x - pose.x) + Math.abs(to_z - pose.z)
     const deadline = Date.now() + step_min_ms(false) * Math.min(total, MAX_LEG_STEPS) * 4 + 30_000
     let steps = 0
+    // Wall instant of the last block actually streamed. The gate below is shut on most polls (a step
+    // is allowed once per `step_min_ms`), so a stuck-ness warning must key off "no block moved", not
+    // "this poll was gated" — otherwise a healthy walk spams a false "no step".
+    let last_step_ms = Date.now()
     while (pose.x !== to_x || pose.z !== to_z) {
       if (steps >= MAX_LEG_STEPS) throw new Error(`travel_to exceeded ${MAX_LEG_STEPS} steps`)
       if (Date.now() > deadline) throw new Error(`travel_to stalled after ${steps} of ${total} steps`)
@@ -154,11 +163,21 @@ export const create_mover = (ctx: ActionContext): Mover => {
       const mounted = anchor !== null && anchor.pet && pet_now
       const wall_ok = Date.now() - last_report_ms >= step_min_ms(mounted)
       if (!anchor || !wall_ok || !can_reach(next.x, next.z)) {
+        const now = Date.now()
+        if (now - last_step_ms > STALL_DIAG_MS && now - last_stall_diag_ms > STALL_DIAG_MS) {
+          last_stall_diag_ms = now
+          const who = ctx.state().characters.find((c) => c.id === ctx.character_id)?.name ?? ctx.character_id.slice(0, 8)
+          log_warn(
+            'travel',
+            `${who}: stalled ${Math.round((now - last_step_ms) / 1000)}s at ${pose.x},${pose.z} -> ${to_x},${to_z} — anchor=${anchor ? `${anchor.x},${anchor.z}@${anchor.at_ms} pet=${anchor.pet}` : 'null'} pet_now=${pet_now} wall_ok=${wall_ok} reach_next=${can_reach(next.x, next.z)} eff=${effective_now()} chain=${chain_now(ctx.state().chain_clock, now)}`
+          )
+        }
         await sleep(POLL_MS)
         continue
       }
       pose = next
       steps += 1
+      last_step_ms = Date.now()
       report()
     }
   }
