@@ -665,8 +665,9 @@ export const play_loop = async (
     }
 
     // Leader roams BEFORE group step to find a good zone for the next fight
+    // Use very small step (100 blocks) when grouping so followers can keep up within the staging timeout
     if (group_mode && is_leader && toggles.roam) {
-      const roamed = await roamer.roam_once(mover, effectiveLevel)
+      const roamed = await roamer.roam_once(mover, effectiveLevel, 100)
       if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
       if (
         roamed.kind === 'roamed' ||
@@ -705,7 +706,7 @@ export const play_loop = async (
       }
 
       // Leader already roamed before group step. Followers already rallied.
-      // Solo play (no group): roam and engage.
+      // Solo play (no group): roam and engage with default step (2500 blocks).
       if (!group_mode && toggles.roam) {
         const roamed = await roamer.roam_once(mover, effectiveLevel)
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)

@@ -24,16 +24,18 @@ import type { GroupCandidate } from './fight_preview.ts'
 import type { Mover } from './travel.ts'
 
 /** How long a rendezvous may run before the party gives up and falls back to solo play. Long enough
- *  for a follower to hop its chain checkpoint (search_zone) across several zones at the speed law. */
-const STAGE_TIMEOUT_MS = 300_000
+ *  for a follower to hop its chain checkpoint (search_zone) across several zones at the speed law.
+ *  Increased to 15 minutes to accommodate follower travel after leader roams. */
+const STAGE_TIMEOUT_MS = 900_000
 /** How long an active group fight may be invisible to the roster/indexer before we conclude it ended. */
 const ACTIVE_GRACE_MS = 60_000
 /** How far (in blocks) a gatherer may range from a pack and still call its specialty "available". */
 export const PARTY_GATHER_RADIUS = 1_024
 /** Consecutive failed rendezvous before the party stops grouping for a while. */
-const MAX_STAGE_FAILURES = 3
-/** How long to stay in solo mode after repeated rendezvous failures. */
-const GROUP_COOLDOWN_MS = 300_000
+const MAX_STAGE_FAILURES = 5
+/** How long to stay in solo mode after repeated rendezvous failures. Reduced to 60s so the party
+ *  quickly retries grouping instead of staying solo for 5 minutes. */
+const GROUP_COOLDOWN_MS = 60_000
 /** How close a follower parks to the leader between fights before it stops drifting (blocks). */
 const RALLY_STANDOFF = 256
 

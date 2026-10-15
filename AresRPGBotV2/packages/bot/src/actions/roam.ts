@@ -103,17 +103,18 @@ export const plan_roam = (
   level: number,
   pose: Readonly<{ x: number; z: number }>,
   world: SeedWorld,
-  assessment: WindowAssessment
+  assessment: WindowAssessment,
+  stepBlocks: number = STEP_BLOCKS
 ): RoamPlan => {
   const current = distance_at(pose)
   if (assessment.overwhelming) {
-    const distance = clamp(current - STEP_BLOCKS, MIN_ROAM_DISTANCE, MAX_ROAM_DISTANCE)
+    const distance = clamp(current - stepBlocks, MIN_ROAM_DISTANCE, MAX_ROAM_DISTANCE)
     return distance < current
       ? Object.freeze({ kind: 'advance', distance, reason: 'prey out of reach' })
       : Object.freeze({ kind: 'stay', reason: 'already at the inner ring' })
   }
   if (assessment.groups === 0 || assessment.trivial) {
-    const want = Math.max(current + STEP_BLOCKS, target_distance(level, world))
+    const want = Math.max(current + stepBlocks, target_distance(level, world))
     const distance = clamp(want, MIN_ROAM_DISTANCE, MAX_ROAM_DISTANCE)
     return distance > current
       ? Object.freeze({
@@ -134,7 +135,7 @@ export type RoamOutcome = Readonly<{
 const outcome = (kind: RoamOutcome['kind'], detail: string): RoamOutcome => Object.freeze({ kind, detail })
 
 export type Roamer = Readonly<{
-  roam_once: (mover: Mover, level?: number) => Promise<RoamOutcome>
+  roam_once: (mover: Mover, level?: number, stepBlocks?: number) => Promise<RoamOutcome>
 }>
 
 export const create_roamer = (ctx: ActionContext): Roamer => {
@@ -190,7 +191,7 @@ export const create_roamer = (ctx: ActionContext): Roamer => {
     return outcome('roamed', `${target.zx}:${target.zz}`)
   }
 
-  const roam_once = async (mover: Mover, level?: number): Promise<RoamOutcome> => {
+  const roam_once = async (mover: Mover, level?: number, stepBlocks?: number): Promise<RoamOutcome> => {
     const state = ctx.state()
     const character = select_character(state, ctx.character_id)
     if (!character) return outcome('skipped', 'character not in roster yet')
@@ -220,7 +221,9 @@ export const create_roamer = (ctx: ActionContext): Roamer => {
 
     const nearby = nearest_candidates(pose, select_window_mob_groups(state)).map(({ group }) => group)
     const assessment = assess_window(effectiveLevel, nearby)
-    const plan = plan_roam(effectiveLevel, pose, fight_world, assessment)
+    // Use smaller steps when grouping so followers can keep up
+    const step = stepBlocks ?? STEP_BLOCKS
+    const plan = plan_roam(effectiveLevel, pose, fight_world, assessment, step)
     if (plan.kind === 'stay') {
       // Log the live level match once per distinct window, so it is visible whether the prey we
       // hold at is actually high enough for the character (and never spams every pass).
