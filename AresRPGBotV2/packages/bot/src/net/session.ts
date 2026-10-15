@@ -64,7 +64,7 @@ import {
   type Excursion,
 } from '../actions/excursion.ts'
 import { safe_travel_to } from '../actions/roam.ts'
-import { maybe_craft_dungeon_key, should_run_dungeons } from '../actions/dungeon.ts'
+import { maybe_craft_dungeon_key, DUNGEON_KEYS, should_run_dungeons } from '../actions/dungeon.ts'
 import { create_dungeon_runner, type DungeonRunner } from '../actions/dungeon_run.ts'
 import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions/cross_world.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
@@ -72,7 +72,7 @@ import { create_group_claims, type ActionContext } from '../actions/context.ts'
 import { active_fight_of, freshness, unavailable_item_ids } from '../state/selectors.ts'
 import { initial_game_state, reduce, type GameState } from '../state/store.ts'
 import { recipe_detail, recipes_by_output } from '../content/catalog.ts'
-import { plan_recipe, craft_once } from '../actions/craft.ts'
+import { plan_recipe, craft_gather_demand, craft_once } from '../actions/craft.ts'
 import { job_level_from_xp, job_slugs } from '@aresrpg/immutable'
 
 /** Fired when the socket connection is lost / expired. */
@@ -151,6 +151,9 @@ const DIGEST_INTERVAL_MS = config.digest_minutes * 60_000
 /** How far (in blocks) a party member may wander for a node while the party is grouping. Two zones is
  *  about 90s of travel under the speed law, cheap enough that the next rendezvous still lands. */
 const PARTY_GATHER_RADIUS = 1_024
+/** The dungeon key outputs folded into the gather demand: their materials are the ones a key run
+ *  needs, and asking for them here means they gather on the same nodes the jobs already want. */
+const KEY_OUTPUTS: readonly string[] = Object.freeze(DUNGEON_KEYS.map(({ key }) => key))
 
 type XpMark = Readonly<{ experience: bigint; jobs: Readonly<Record<string, bigint>> }>
 
@@ -766,7 +769,14 @@ export const play_loop = async (
           : undefined
 
     if (gather_job !== undefined && toggles.gather) {
-      const gathered = await gather_once(ctx, mover, gather_job, local_only ? PARTY_GATHER_RADIUS : undefined)
+      // Recipe-driven gathering: the party shares ONE kiosk inventory and ONE crafter, so the
+      // leader's job levels decide which inputs the rotations still owe — every gatherer then
+      // walks toward those (and the dungeon-key materials) instead of the tier ladder alone.
+      const crafter = game_state.characters.find((c) => c.id === party_state.leader_id)
+      const demand = crafter
+        ? craft_gather_demand(crafter, game_state.inventory, unavailable_item_ids(game_state), KEY_OUTPUTS)
+        : undefined
+      const gathered = await gather_once(ctx, mover, gather_job, local_only ? PARTY_GATHER_RADIUS : undefined, demand)
       if (gathered.kind === 'gathered') {
         rt.stats = record_gather(rt.stats, gathered.item_type, gathered.quantity)
         digest_stats = record_gather(digest_stats, gathered.item_type, gathered.quantity)

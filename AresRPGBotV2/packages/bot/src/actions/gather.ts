@@ -28,6 +28,27 @@ const find_held = (
 const distance_to = (pose: Readonly<{ x: number; z: number }>, x: number, z: number): number =>
   Math.abs(pose.x - x) + Math.abs(pose.z - z)
 
+export type GatherCandidate = Readonly<{
+  pack: Readonly<{ item_type: string; x: number; z: number }>
+  gatherable: Gatherable
+}>
+
+/** Rank live packs for harvest. A pack the crafting rotation still needs outranks every other pack
+ *  by its demand score (recipe-driven gathering), then the higher tier wins, then the nearer pack.
+ *  A pack in no demand scores 0, so a demanded staple — even a tier-1 wheat against a tier-3
+ *  ivory_shroom — wins. Exported so that rule is tested without a live socket. */
+export const rank_gather_candidates = <T extends GatherCandidate>(
+  candidates: readonly T[],
+  demand: ReadonlyMap<string, number> | undefined,
+  pose: Readonly<{ x: number; z: number }>
+): readonly T[] =>
+  [...candidates].sort(
+    (left, right) =>
+      (demand?.get(right.pack.item_type) ?? 0) - (demand?.get(left.pack.item_type) ?? 0) ||
+      right.gatherable.tier - left.gatherable.tier ||
+      distance_to(pose, left.pack.x, left.pack.z) - distance_to(pose, right.pack.x, right.pack.z)
+  )
+
 /** Whether the character already has (worn or held) the tool a job's gathers require. Packs whose
  *  job tool is missing (or only held as an unavailable item) are not candidates: harvesting them
  *  is refused, and skipping them lets the highest tier the character can ACTUALLY harvest win. */
@@ -84,7 +105,11 @@ export const gather_once = async (
   job?: GatheringJob,
   /** when set, ignore packs farther than this many blocks (keeps a party member near the group so
    *  a rendezvous stays cheap instead of chasing a node two zones away) */
-  max_distance?: number
+  max_distance?: number,
+  /** when set, a pack whose item the crafting rotation still needs is picked BEFORE any higher-tier
+   *  pack the window happens to hold (recipe-driven gathering — without it the gatherers climb the
+   *  tier ladder to ivory_shrooms and never feed the wheat/quartz the stalled trades craft from) */
+  demand?: ReadonlyMap<string, number>
 ): Promise<GatherOutcome> => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
@@ -97,22 +122,21 @@ export const gather_once = async (
   const pose = mover.pose()
   const held = state.inventory
   const unavailable = unavailable_item_ids(state)
-  const candidates = select_window_resource_packs(state)
-    .filter(({ zone }) => zone.world === world)
-    .flatMap(({ pack }) => {
-      const gatherable = gatherable_of(pack.item_type)
-      if (!gatherable) return []
-      if (job !== undefined && gatherable.job !== job) return []
-      if (tier_unlock_level(gatherable.tier) > job_level_from_xp(Number(jobs[gatherable.job] ?? 0))) return []
-      if (!tool_ready(character, held, gatherable.job, unavailable)) return []
-      return [{ pack, gatherable }]
-    })
-    .filter(({ pack }) => max_distance === undefined || distance_to(pose, pack.x, pack.z) <= max_distance)
-    .sort(
-      (left, right) =>
-        right.gatherable.tier - left.gatherable.tier ||
-        distance_to(pose, left.pack.x, left.pack.z) - distance_to(pose, right.pack.x, right.pack.z)
-    )
+  const candidates = rank_gather_candidates(
+    select_window_resource_packs(state)
+      .filter(({ zone }) => zone.world === world)
+      .flatMap(({ pack }) => {
+        const gatherable = gatherable_of(pack.item_type)
+        if (!gatherable) return []
+        if (job !== undefined && gatherable.job !== job) return []
+        if (tier_unlock_level(gatherable.tier) > job_level_from_xp(Number(jobs[gatherable.job] ?? 0))) return []
+        if (!tool_ready(character, held, gatherable.job, unavailable)) return []
+        return [{ pack, gatherable }]
+      })
+      .filter(({ pack }) => max_distance === undefined || distance_to(pose, pack.x, pack.z) <= max_distance),
+    demand,
+    pose
+  )
 
   const target = candidates[0]
   if (!target) return skipped('no tool-ready unlocked live packs in the tracked window')

@@ -1,8 +1,9 @@
 // craft tests – the recipe planner owns craftability; a plan is built only from held facts.
 import { item_is_stackable, job_xp_for_level } from '@aresrpg/immutable'
 
-import { craft_once, plan_recipe, drive_craft } from '../src/actions/craft.ts'
-import { items_by_type, recipe_detail, recipes_by_output } from '../src/content/catalog.ts'
+import { craft_once, craft_gather_demand, plan_recipe, drive_craft } from '../src/actions/craft.ts'
+import { rank_gather_candidates } from '../src/actions/gather.ts'
+import { gatherable_demand, items_by_type, recipe_detail, recipes_by_output } from '../src/content/catalog.ts'
 
 describe('craft actions type check', () => {
   it('exposes the planner and the craft doors', () => {
@@ -61,5 +62,127 @@ describe('craft drive_craft', () => {
     const result = await drive_craft(ctx)
     expect(result.success).toBe(false)
     expect(result.outcome).toBe('nothing_craftable')
+  })
+})
+
+// recipe-driven gathering — the loop the bot was missing. `plan_recipe` can only propose what the
+// inventory already holds, so a trade with nothing held fell through the rotation forever; these
+// pin the demand derivation that closes the gap from the other side.
+describe('gatherable_demand', () => {
+  it('expands a craft through its intermediates down to the gatherable leaves', () => {
+    // quartz_set_trinket <- shiny_trinket (a mob drop, never gathered) + quartz_powder + barley_flour;
+    // quartz_powder <- quartz x2, barley_flour <- wheat_barley x2 + wheat x2.
+    const demand = gatherable_demand('quartz_set_trinket')
+    expect(demand.get('quartz')).toBe(2)
+    expect(demand.get('wheat_barley')).toBe(2)
+    expect(demand.get('wheat')).toBe(2)
+    expect(demand.has('shiny_trinket')).toBe(false)
+    expect(demand.has('water')).toBe(false)
+  })
+
+  it('counts the multiplied quantity of a deeper chain', () => {
+    // rootglass_token <- mushroom_lacquer + quartz_powder x10 -> quartz x20, green_mushroom x2
+    const demand = gatherable_demand('rootglass_token')
+    expect(demand.get('quartz')).toBe(20)
+    expect(demand.get('green_mushroom')).toBe(2)
+  })
+
+  it('reports no leaves for a leaf and for a pure mob drop', () => {
+    expect(gatherable_demand('wheat').size).toBe(0)
+    expect(gatherable_demand('shiny_trinket').size).toBe(0)
+  })
+
+  it('walks each output once', () => {
+    expect(gatherable_demand('quartz_set_trinket')).toBe(gatherable_demand('quartz_set_trinket'))
+  })
+
+  it('resolves a dungeon key down to its gatherable leaves', () => {
+    expect([...gatherable_demand('key_of_gilded_lorito').keys()].sort()).toEqual([
+      'amber',
+      'quartz',
+      'wheat',
+      'wheat_barley',
+    ])
+  })
+})
+
+describe('craft_gather_demand', () => {
+  const crafter = (jobs: Record<string, number>): any =>
+    ({
+      id: 'c',
+      name: 'c',
+      jobs: Object.fromEntries(Object.entries(jobs).map(([job, level]) => [job, String(job_xp_for_level(level))])),
+    }) as any
+
+  it('demands the tier-1 staples the stalled trades were missing', () => {
+    // omori as shipped: FAR:1 HER:60 MIN:1 JEW:1 BAK:3 HAN:4 — none of those could craft, because
+    // nothing ever gathered the staples their recipes resolve to.
+    const omori = crafter({ FARMER: 1, HERBALIST: 60, MINER: 1, JEWELER: 1, BAKER: 3, HANDYMAN: 4 })
+    const demand = craft_gather_demand(omori, [], new Set())
+    expect(demand.has('wheat')).toBe(true) // FARMER flour chain, and the BAKER flour it feeds
+    expect(demand.has('quartz')).toBe(true) // MINER powders, and the JEWELER settings they feed
+    expect(demand.has('green_mushroom')).toBe(true) // HERBALIST powder
+    expect(demand.has('water')).toBe(false) // drops from mobs; not something a gather can aim at
+    expect(demand.has('shiny_trinket')).toBe(false)
+  })
+
+  it('ranks the universal staple above the narrow one, not by tier', () => {
+    const omori = crafter({ FARMER: 1, HERBALIST: 60, MINER: 1, JEWELER: 1, BAKER: 3, HANDYMAN: 4 })
+    const demand = craft_gather_demand(omori, [], new Set())
+    // wheat feeds the flour chain AND a dozen low-tier TAILOR/JEWELER recipes; wheat_barley only the
+    // chain. Tier alone would send a FARMER to the T2 barley and starve the T1 wheat again.
+    expect(demand.get('wheat')!).toBeGreaterThan(demand.get('wheat_barley')!)
+  })
+
+  it('hands priority back once the stock reaches the line', () => {
+    const omori = crafter({ FARMER: 1, MINER: 1 })
+    const stocked = [{ id: 'w', item_type: 'wheat', amount: 200, category: 'resource' }] as any[]
+    const demand = craft_gather_demand(omori, stocked, new Set())
+    expect(demand.has('wheat')).toBe(false)
+    expect(demand.has('quartz')).toBe(true)
+  })
+
+  it('treats a worn (unavailable) stack as not held', () => {
+    const omori = crafter({ FARMER: 1 })
+    const worn = [{ id: 'w', item_type: 'wheat', amount: 200, category: 'resource' }] as any[]
+    expect(craft_gather_demand(omori, worn, new Set()).has('wheat')).toBe(false)
+    expect(craft_gather_demand(omori, worn, new Set(['w'])).has('wheat')).toBe(true)
+  })
+
+  it('folds dungeon-key materials into the demand', () => {
+    const omori = crafter({ FARMER: 1, MINER: 1, HANDYMAN: 4 })
+    const without_keys = craft_gather_demand(omori, [], new Set())
+    const with_keys = craft_gather_demand(omori, [], new Set(), ['key_of_gilded_lorito'])
+    // the key chain needs amber (through amber_powder), so its leverage rises while it is demanded
+    expect(with_keys.get('amber')!).toBeGreaterThan(without_keys.get('amber')!)
+  })
+})
+
+describe('rank_gather_candidates', () => {
+  const pack = (item_type: string, tier: number, x = 0, z = 0): any => ({
+    pack: { item_type, x, z, index: 0 },
+    gatherable: { item_type, job: 'FARMER', tier, protector: 'p', rare_item_type: 'r' },
+  })
+
+  it('sends a demanded tier-1 staple ahead of an undemanded tier-3 pack', () => {
+    const ranked = rank_gather_candidates([pack('ivory_shrooms', 3), pack('wheat', 1)], new Map([['wheat', 5]]), {
+      x: 0,
+      z: 0,
+    })
+    expect(ranked[0]!.pack.item_type).toBe('wheat')
+  })
+
+  it('prefers the higher demand score, then the higher tier, then the nearer pack', () => {
+    const pose = { x: 0, z: 0 }
+    expect(
+      rank_gather_candidates([pack('a', 1), pack('b', 1)], new Map([['a', 3], ['b', 9]]), pose)[0]!.pack.item_type
+    ).toBe('b')
+    expect(rank_gather_candidates([pack('a', 1), pack('b', 3)], undefined, pose)[0]!.pack.item_type).toBe('b')
+    expect(rank_gather_candidates([pack('a', 2, 9, 0), pack('b', 2, 1, 0)], undefined, pose)[0]!.pack.item_type).toBe('b')
+  })
+
+  it('keeps the shipped tier order when nothing is demanded', () => {
+    const ranked = rank_gather_candidates([pack('low', 1), pack('high', 4)], new Map(), { x: 0, z: 0 })
+    expect(ranked.map((row) => row.pack.item_type)).toEqual(['high', 'low'])
   })
 })

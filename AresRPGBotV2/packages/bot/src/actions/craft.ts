@@ -18,7 +18,14 @@ import {
 } from '@aresrpg/immutable'
 import type { CharacterRow, ItemRow } from '@aresrpg/protocol'
 
-import { items_by_type, job_recipes, type RecipeDetail } from '../content/catalog.ts'
+import {
+  gatherable_demand,
+  items_by_type,
+  job_recipes,
+  recipe_detail,
+  recipes_by_output,
+  type RecipeDetail,
+} from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
 import { select_character, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
@@ -115,6 +122,57 @@ export const select_craft_target = (ctx: ActionContext): CraftPlan | null => {
     }
   }
   return null
+}
+
+/** A gatherable input is demanded only while its held stock sits under this line: enough that the
+ *  crafter's next batch never drains it straight to zero, low enough that a well-fed gatherer hands
+ *  its priority back and climbs the tier ladder instead of pinning on one staple forever. */
+const DEMAND_STOCK = 60
+
+/** Recipe-driven gathering: the gatherable inputs the crafting rotation still OWES, ranked.
+ *
+ *  `plan_recipe` can only propose what the inventory already holds, so a trade with nothing held
+ *  falls through the rotation forever — observed as JEWELER/BAKER/HANDYMAN stuck at level 1/3/4
+ *  while the gatherers farmed the highest tier in the window (ivory_shrooms), never the tier-1
+ *  staples their chains actually eat. The gatherers cannot see that gap on their own: only the
+ *  crafter knows which recipes are one missing input away, so this derives the demand from the
+ *  crafter's job levels and the gather action consumes it.
+ *
+ *  Every level-eligible recipe is walked down to its gatherable leaves (through any intermediate
+ *  craft). The returned rank is the leaf's TOTAL one-craft requirement across those recipes, not
+ *  its tier: wheat feeds the flour chain AND a dozen low-tier TAILOR/JEWELER recipes, so it must
+ *  outrank the narrow wheat_barley beside it rather than lose to it on tier. A leaf drops out once
+ *  its stock reaches {@link DEMAND_STOCK}. `extra_outputs` folds in recipes that are not part of the
+ *  rotation but whose inputs the party must still stock: the dungeon keys. */
+export const craft_gather_demand = (
+  character: CharacterRow,
+  inventory: readonly ItemRow[],
+  unavailable: ReadonlySet<string>,
+  extra_outputs: readonly string[] = []
+): ReadonlyMap<string, number> => {
+  const jobs = character.jobs ?? {}
+  /** leaf -> summed one-craft requirement over every eligible recipe that resolves to it. */
+  const leverage = new Map<string, number>()
+  const note = (detail: RecipeDetail): void => {
+    const level = job_level_from_xp(Number(jobs[detail.job] ?? '0'))
+    if (level < craft_required_level(detail.ingredients.length)) return
+    if (craft_xp_at_level(detail.ingredients.length, level) <= 0) return
+    for (const [item_type, quantity] of gatherable_demand(detail.output_type))
+      leverage.set(item_type, (leverage.get(item_type) ?? 0) + quantity)
+  }
+
+  for (const job of rotation_order(character)) for (const detail of job_recipes(job)) note(detail)
+  for (const output_type of extra_outputs) {
+    const recipe = recipes_by_output[output_type]
+    if (recipe) note(recipe_detail(recipe))
+  }
+
+  const demand = new Map<string, number>()
+  for (const [item_type, rank] of leverage) {
+    const stack = inventory.find((row) => row.item_type === item_type && !unavailable.has(row.id))
+    if ((stack?.amount ?? 0) < DEMAND_STOCK) demand.set(item_type, rank)
+  }
+  return demand
 }
 
 export type CraftResult = Readonly<{

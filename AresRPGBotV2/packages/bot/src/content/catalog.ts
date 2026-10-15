@@ -188,4 +188,38 @@ export const tool_category_of_job = (job: GatheringJob): string => TOOL_BY_JOB[j
 export const job_recipes = (job: string): readonly RecipeDetail[] =>
   recipes_by_job()[job] ?? Object.freeze([])
 
+const demand_memo = new Map<string, ReadonlyMap<string, number>>()
+const demand_visiting = new Set<string>()
+const no_demand: ReadonlyMap<string, number> = new Map()
+
+/** How much ONE craft of `output_type` consumes of each gatherable input, walked down the craft DAG.
+ *  An ingredient a world grows is a leaf; an ingredient that is itself craftable expands (its own
+ *  per-craft quantity multiplied through); an ingredient that only drops from a mob is skipped —
+ *  nothing the gather action can aim at. This is the missing edge of the loop: `plan_recipe` knows
+ *  what is held, but nothing else ever said what must be harvested to make it. Memoised because the
+ *  demand derivation asks every job's recipes, and cycle-guarded so a self-referential seed cannot
+ *  hang a pass. Read-only. */
+export const gatherable_demand = (output_type: string): ReadonlyMap<string, number> => {
+  const cached = demand_memo.get(output_type)
+  if (cached) return cached
+  if (demand_visiting.has(output_type)) return no_demand
+  demand_visiting.add(output_type)
+
+  const result = new Map<string, number>()
+  const recipe = recipes_by_output[output_type]
+  if (recipe)
+    for (const ingredient of recipe_detail(recipe).ingredients) {
+      if (gatherable_of(ingredient.item_type)) {
+        result.set(ingredient.item_type, (result.get(ingredient.item_type) ?? 0) + ingredient.quantity)
+        continue
+      }
+      for (const [leaf, quantity] of gatherable_demand(ingredient.item_type))
+        result.set(leaf, (result.get(leaf) ?? 0) + ingredient.quantity * quantity)
+    }
+
+  demand_visiting.delete(output_type)
+  demand_memo.set(output_type, result)
+  return result
+}
+
 export { craft_batch_limit }
