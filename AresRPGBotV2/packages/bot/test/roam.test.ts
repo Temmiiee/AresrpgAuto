@@ -58,6 +58,14 @@ describe('roam plan_roam', () => {
     if (plan.kind === 'advance') expect(plan.distance).toBeGreaterThan(432)
   })
 
+  it('creeps one step toward the band instead of jumping to it', () => {
+    // Level 30's band is ~20_000; the old plan used Math.max and jumped straight there in one leg,
+    // stranding the followers. The bounded plan steps out exactly one STEP_BLOCKS (2_500).
+    const plan = plan_roam(30, thebes, nauvis, assess_window(30, [group('bramble', 0, 3)]))
+    expect(plan.kind).toBe('advance')
+    if (plan.kind === 'advance') expect(plan.distance).toBe(432 + 2_500)
+  })
+
   it('holds when the window already pays', () => {
     const plan = plan_roam(5, thebes, nauvis, assess_window(5, [group('bramble', 100)]))
     expect(plan.kind).toBe('stay')

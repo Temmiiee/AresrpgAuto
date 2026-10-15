@@ -52,7 +52,9 @@ import {
   join_followers,
   leader_group_step,
   party_attempting,
+  PARTY_RADIUS,
   rally_to_leader,
+  regroup_step,
   reset_rendezvous,
   type PartyState,
 } from '../actions/party.ts'
@@ -588,6 +590,29 @@ export const play_loop = async (
     const group_mode = toggles.group && party_attempting(party_state)
     const is_leader = character.id === party_state.leader_id
 
+    // 3c. keep the party together. Every activity below can hand the LEADER a far target — the
+    // recipe-driven chore's demanded node, a dungeon city, an excursion zone, a roam band — and each
+    // walks it there in ONE silent `travel_to` leg (a healthy multi-minute walk logs nothing while
+    // the followers, left at the old spot, are eventually written off as stragglers). So before any
+    // of them runs, and before the leader opens a rendezvous, a leader that has drifted outside
+    // PARTY_RADIUS walks back to the party and does nothing else this pass. A live dungeon run owns
+    // the character at the portal, so it is exempt — this gate collects it the moment the run ends.
+    if (group_mode && is_leader && !current.dungeon_run) {
+      const regroup = regroup_step(party_state, mover.pose())
+      if (regroup) {
+        log_warn(
+          'party',
+          `${character.name}: regrouping — ${Math.round(regroup.offset)} blocks from the party centre, walking back to ${regroup.x},${regroup.z}`
+        )
+        try {
+          await mover.travel_to(regroup.x, regroup.z)
+        } catch (error) {
+          log_warn('party', `regroup leg paused: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        return idle_sleep_ms
+      }
+    }
+
     // Dungeon (leader only): while omori holds a key it runs the dungeon. This runs before the
     // excursion/group steps — a live run roots the character at the portal, so travelling would only
     // fail. Step 2 above drives the room turns; step 1 routes the ended room's settlement through
@@ -664,7 +689,10 @@ export const play_loop = async (
 
     if (group_mode && is_leader && rt.chore_pending) {
       rt.chore_pending = false
-      if (await run_chore(rt, false)) return idle_sleep_ms
+      // Bounded to the party's neighbourhood: an unbounded chore hands the leader the demanded node
+      // the crafting rotation owes, which may be zones away, and walks it there alone in one silent
+      // leg. Bounded, the leader harvests what is local and lets the party relocate when needed.
+      if (await run_chore(rt, true)) return idle_sleep_ms
     }
 
     if (group_mode) {
@@ -675,12 +703,14 @@ export const play_loop = async (
           : await follower_group_step(ctx, mover, current, party_state)
       if (handled !== null) return handled
       // The group step found nothing to stage in the CURRENT window — only now does the leader
-      // roam, with a deliberately small step (100 blocks) so followers keep the rendezvous inside
-      // the staging timeout. This must run AFTER the group step, never before: a `waiting`/`roamed`
-      // return skipped the leader's `leader_group_step` travel_to AND its stage-timeout check for a
-      // whole pass, so an already-staged group sat parked (observed: 13:52 staging -> 14:53 engage).
+      // roam, with a bounded step (PARTY_RADIUS) so a relocation creeps toward the band and the
+      // followers keep the rendezvous inside the staging timeout instead of being left behind for a
+      // single 20_000-block leg. This must run AFTER the group step, never before: a `waiting`/
+      // `roamed` return skipped the leader's `leader_group_step` travel_to AND its stage-timeout
+      // check for a whole pass, so an already-staged group sat parked (observed: 13:52 staging ->
+      // 14:53 engage).
       if (is_leader && toggles.roam) {
-        const roamed = await roamer.roam_once(mover, effectiveLevel, 100)
+        const roamed = await roamer.roam_once(mover, effectiveLevel, PARTY_RADIUS)
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
           roamed.kind === 'roamed' ||

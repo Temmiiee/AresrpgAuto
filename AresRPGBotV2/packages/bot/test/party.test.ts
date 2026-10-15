@@ -6,6 +6,9 @@ import {
   follower_group_step,
   leader_group_step,
   party_attempting,
+  party_center,
+  PARTY_RADIUS,
+  regroup_step,
   reset_rendezvous,
 } from '../src/actions/party.ts'
 import type { PartyState } from '../src/actions/party.ts'
@@ -194,5 +197,45 @@ describe('party stragglers', () => {
     party.stragglers.add('follower')
     reset_rendezvous(party)
     expect(party.stragglers.has('follower')).toBe(true)
+  })
+})
+
+describe('party_center / regroup_step', () => {
+  const party_with_poses = (): PartyState => {
+    const party = create_party()
+    party.leader_id = 'leader'
+    party.members = ['leader', 'a', 'b', 'c']
+    return party
+  }
+
+  it('falls back to the leader pose when no follower pose is known', () => {
+    const party = party_with_poses()
+    expect(party_center(party, { x: 5, z: 6 })).toEqual({ x: 5, z: 6 })
+  })
+
+  it('is the median follower pose, ignoring a detached outlier', () => {
+    const party = party_with_poses()
+    party.poses.set('a', { x: 100, z: 100 })
+    party.poses.set('b', { x: 200, z: 300 })
+    party.poses.set('c', { x: 9_999, z: 9_999 })
+    party.detached.add('c')
+    expect(party_center(party, { x: 0, z: 0 })).toEqual({ x: 150, z: 200 })
+  })
+
+  it('does not ask a leader already inside PARTY_RADIUS to regroup', () => {
+    const party = party_with_poses()
+    party.poses.set('a', { x: 50_000, z: 50_000 })
+    expect(regroup_step(party, { x: 50_000 + PARTY_RADIUS, z: 50_000 })).toBeNull()
+  })
+
+  it('sends a strayed leader to the PARTY_RADIUS boundary on the line to the centre', () => {
+    const party = party_with_poses()
+    party.poses.set('a', { x: 50_000, z: 50_000 })
+    const step = regroup_step(party, { x: 50_000 + 3 * PARTY_RADIUS, z: 50_000 })
+    expect(step).not.toBeNull()
+    // three radii out walks back two, landing exactly on the boundary (never overshooting the party)
+    expect(step!.x).toBe(50_000 + PARTY_RADIUS)
+    expect(step!.z).toBe(50_000)
+    expect(step!.offset).toBe(3 * PARTY_RADIUS)
   })
 })

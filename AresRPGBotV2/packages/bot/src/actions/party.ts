@@ -36,6 +36,13 @@ const STAGE_GRACE_MS = 90_000
 const ACTIVE_GRACE_MS = 60_000
 /** How far (in blocks) a gatherer may range from a pack and still call its specialty "available". */
 export const PARTY_GATHER_RADIUS = 1_024
+/** How far (blocks) the leader may stray from the party's centre of mass before it must walk back
+ *  and rejoin — and the most a single group relocation may step. Any activity that hands the leader
+ *  a far target (the recipe-driven chore's demanded node, a dungeon city, an excursion zone, a roam
+ *  band) otherwise walks it across the map in ONE silent `travel_to` leg — a healthy multi-minute
+ *  walk logs nothing — while the followers are left behind and written off as stragglers. Bigger
+ *  than a zone (512), far smaller than the roam band (≤20_000), so a rendezvous stays a short hop. */
+export const PARTY_RADIUS = 2_000
 /** Consecutive failed rendezvous before the party stops grouping for a while. */
 const MAX_STAGE_FAILURES = 5
 /** How long to stay in solo mode after repeated rendezvous failures. Reduced to 60s so the party
@@ -186,6 +193,54 @@ export const allies_of = (state: GameState, party: PartyState, leader_id: string
       return row ? [row] : []
     })
 
+/** The party's centre of mass: the per-axis MEDIAN of the non-leader, non-detached member poses.
+ *  Falls back to `leader_pose` when no follower pose is known yet (solo, or before the first stream).
+ *  The median — not the mean — ignores a single outlier, so one straggler mid-trek cannot drag the
+ *  centre (and the rendezvous it anchors) off the cluster the rest of the party is actually standing
+ *  in. Detached members (cross-world gatherers) are left out: they are deliberately elsewhere. */
+export const party_center = (
+  party: PartyState,
+  leader_pose: Readonly<{ x: number; z: number }>
+): Readonly<{ x: number; z: number }> => {
+  const xs: number[] = []
+  const zs: number[] = []
+  for (const id of party.members) {
+    if (id === party.leader_id || party.detached.has(id)) continue
+    const pose = party.poses.get(id)
+    if (!pose) continue
+    xs.push(pose.x)
+    zs.push(pose.z)
+  }
+  if (xs.length === 0) return leader_pose
+  const median = (values: number[]): number => {
+    values.sort((left, right) => left - right)
+    const mid = values.length >> 1
+    return values.length % 2 === 1 ? values[mid]! : Math.round((values[mid - 1]! + values[mid]!) / 2)
+  }
+  return Object.freeze({ x: median(xs), z: median(zs) })
+}
+
+/** Where the leader must walk to rejoin the party, or null when it is already close enough. The
+ *  target is the point exactly `PARTY_RADIUS` from the centre on the line to the leader — walking to
+ *  the centre itself would cross the inbound followers and overshoot past them. `offset` is the
+ *  current stray distance (for the log). Callers own the walk itself. */
+export const regroup_step = (
+  party: PartyState,
+  pose: Readonly<{ x: number; z: number }>
+): Readonly<{ x: number; z: number; offset: number }> | null => {
+  const centre = party_center(party, pose)
+  const dx = pose.x - centre.x
+  const dz = pose.z - centre.z
+  const offset = Math.hypot(dx, dz)
+  if (offset <= PARTY_RADIUS) return null
+  const scale = (offset - PARTY_RADIUS) / offset
+  return Object.freeze({
+    x: Math.round(pose.x - dx * scale),
+    z: Math.round(pose.z - dz * scale),
+    offset,
+  })
+}
+
 /** Join every follower seat in ONE transaction on the leader's kiosk. The joins land before any
  *  seat readies, so the fight cannot start without the party. */
 export const join_followers = async (ctx: ActionContext, followers: readonly string[], fight: string): Promise<number> => {
@@ -325,7 +380,11 @@ export const leader_group_step = async (
   if (!party_attempting(party)) return null
   if (character.custody === 'fight') return null
   const allies = allies_of(state, party, ctx.character_id)
-  const candidate = pick_engage_target(ctx, mover.pose(), character, allies)
+  // Plan the rendezvous from the party's centre of mass, not the leader's own pose: the followers
+  // gather there, so the group opens where the side already stands instead of thousands of blocks
+  // behind it — which the leader would then walk to alone, stranding them. The leader is guaranteed
+  // to be near that centre (the session's regroup gate above), so this stays a short hop.
+  const candidate = pick_engage_target(ctx, party_center(party, mover.pose()), character, allies)
   if (!candidate) return null
   party.phase = 'staging'
   party.fight = null

@@ -114,7 +114,14 @@ export const plan_roam = (
       : Object.freeze({ kind: 'stay', reason: 'already at the inner ring' })
   }
   if (assessment.groups === 0 || assessment.trivial) {
-    const want = Math.max(current + stepBlocks, target_distance(level, world))
+    // Creep toward the dial's band by at most one step instead of jumping straight to it. A world
+    // join drops a character at the map centre ~20_000 blocks in, and the old `Math.max` teleported
+    // the leader to the band in ONE silent `travel_to` leg while the party it leads was left at the
+    // old spot. Stepping out one bounded hop at a time lets the followers keep up and re-reads the
+    // window the party is passing through. Past the band there is nothing stronger to walk to, so
+    // hold (the inward case is the `overwhelming` branch above).
+    const band = target_distance(level, world)
+    const want = current < band ? Math.min(band, current + stepBlocks) : current
     const distance = clamp(want, MIN_ROAM_DISTANCE, MAX_ROAM_DISTANCE)
     return distance > current
       ? Object.freeze({
