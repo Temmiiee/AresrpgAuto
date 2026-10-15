@@ -188,8 +188,12 @@ export const leader_group_step = async (
     }
     try {
       await mover.travel_to(target.x, target.z)
-    } catch {
-      return idle
+    } catch (error) {
+      // A leg that cannot make progress must NOT skip the checks below: returning here left an
+      // already-staged group parked forever (the reach test and the stage timeout both ran only on
+      // the success path, so the rendezvous never engaged and never abandoned). Fall through so the
+      // leader either engages the moment it can reach, or times out and re-plans.
+      log_warn('party', `staging leg paused: ${error instanceof Error ? error.message : String(error)}`)
     }
     // Everyone in position AND the leader can prove its own leg: fight now. This is tested BEFORE the
     // timeout so a follower that arrives in the same pass the window elapses still gets its fight

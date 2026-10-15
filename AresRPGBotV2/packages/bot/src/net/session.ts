@@ -664,20 +664,6 @@ export const play_loop = async (
       if (await run_chore(rt, false)) return idle_sleep_ms
     }
 
-    // Leader roams BEFORE group step to find a good zone for the next fight
-    // Use very small step (100 blocks) when grouping so followers can keep up within the staging timeout
-    if (group_mode && is_leader && toggles.roam) {
-      const roamed = await roamer.roam_once(mover, effectiveLevel, 100)
-      if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
-      if (
-        roamed.kind === 'roamed' ||
-        roamed.kind === 'joined' ||
-        roamed.kind === 'traveling' ||
-        roamed.kind === 'waiting'
-      )
-        return idle_sleep_ms
-    }
-
     if (group_mode) {
       const handled = is_leader
         ? await leader_group_step(ctx, mover, current, party_state)
@@ -685,6 +671,22 @@ export const play_loop = async (
           ? null
           : await follower_group_step(ctx, mover, current, party_state)
       if (handled !== null) return handled
+      // The group step found nothing to stage in the CURRENT window — only now does the leader
+      // roam, with a deliberately small step (100 blocks) so followers keep the rendezvous inside
+      // the staging timeout. This must run AFTER the group step, never before: a `waiting`/`roamed`
+      // return skipped the leader's `leader_group_step` travel_to AND its stage-timeout check for a
+      // whole pass, so an already-staged group sat parked (observed: 13:52 staging -> 14:53 engage).
+      if (is_leader && toggles.roam) {
+        const roamed = await roamer.roam_once(mover, effectiveLevel, 100)
+        if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
+        if (
+          roamed.kind === 'roamed' ||
+          roamed.kind === 'joined' ||
+          roamed.kind === 'traveling' ||
+          roamed.kind === 'waiting'
+        )
+          return idle_sleep_ms
+      }
     }
 
     // 3c. chores — a settled fight is the natural beat to harvest one node and craft one batch
@@ -828,7 +830,11 @@ export const play_loop = async (
 
   /** The party-wide progress digest: every DIGEST_INTERVAL_MS, send ONE Discord message with the
    *  fights, xp, loot, gathering and crafting the whole party accumulated since the last digest,
-   *  then start a fresh window. Seeded marks so the first digest measures from startup. */
+   *  then start a fresh window. Seeded marks so the first digest measures from startup.
+   *
+   *  The wait is aligned to the wall clock (top of the hour for the default 60m), NOT measured from
+   *  startup. A fixed `sleep(interval)` from boot meant every restart pushed the next ping a full
+   *  interval away — the operator restarted the bot several times and never saw an hourly digest. */
   const digest_loop = async (rts: readonly CharRuntime[]): Promise<void> => {
     if (config.digest_minutes <= 0) return
     for (const rt of rts) {
@@ -836,7 +842,8 @@ export const play_loop = async (
       if (c) digest_marks.set(rt.character.id, xp_snapshot(c))
     }
     while (!stopped) {
-      await sleep(DIGEST_INTERVAL_MS)
+      const into_window = Date.now() % DIGEST_INTERVAL_MS
+      await sleep(into_window === 0 ? DIGEST_INTERVAL_MS : DIGEST_INTERVAL_MS - into_window)
       if (stopped) break
       let total_xp = 0n
       const jobs: Record<string, bigint> = {}

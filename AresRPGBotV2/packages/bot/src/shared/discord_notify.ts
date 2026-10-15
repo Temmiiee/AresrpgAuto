@@ -1,7 +1,7 @@
 // Discord webhook reporting. Fire-and-forget by design: a notification failure must never abort
 // a farming run. A configured mention is prepended so the operator's phone actually buzzes.
 import { config } from '../config.ts'
-import { log_warn } from './logger.ts'
+import { log_info, log_warn } from './logger.ts'
 
 export type NotifyLevel = 'info' | 'success' | 'warning' | 'error'
 
@@ -30,6 +30,7 @@ const send = async (content: string, level: NotifyLevel): Promise<void> => {
       body: JSON.stringify(body),
     })
     if (!response.ok) log_warn('discord', `webhook answered ${response.status}`)
+    else log_info('discord', `notification sent successfully`)
   } catch (error) {
     log_warn('discord', `notification failed: ${error instanceof Error ? error.message : String(error)}`)
   }
