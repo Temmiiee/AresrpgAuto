@@ -189,6 +189,8 @@ type CharRuntime = {
   gather_cursor: number
   /** set right after an engage; engages are suppressed until the fight surfaces or the grace ends */
   awaiting_fight_ms: number | null
+  /** timestamp of last dungeon key craft attempt (rate limit) */
+  last_key_craft_attempt_ms: number | null
 }
 
 /** Human-readable one-liner for a chore role, logged at startup so it is obvious what each
@@ -425,6 +427,7 @@ export const play_loop = async (
       chore,
       gather_cursor: 0,
       awaiting_fight_ms: null,
+      last_key_craft_attempt_ms: null,
     })
   }
 
@@ -659,12 +662,6 @@ export const play_loop = async (
       if (await run_chore(rt, false)) return idle_sleep_ms
     }
 
-    // Dungeon: leader crafts keys (omori only) - do this regardless of group_mode
-    // so we craft keys even when party is in cooldown or not grouping.
-    if (is_leader && should_run_dungeons(current)) {
-      if (await maybe_craft_dungeon_key(ctx)) return idle_sleep_ms
-    }
-
     if (group_mode) {
       const handled = is_leader
         ? await leader_group_step(ctx, mover, current, party_state)
@@ -736,7 +733,7 @@ export const play_loop = async (
   /** Run this character's assigned chore; true when it acted. When `local_only`, a gather is capped
    *  to the party's neighbourhood so a follower never strands itself chasing a node across zones. */
   const run_chore = async (rt: CharRuntime, local_only = false): Promise<boolean> => {
-    const { ctx, mover, chore } = rt
+    const { ctx, mover, chore, character } = rt
     let acted = false
 
     // Which gathering job this pass should harvest, if any. `gather_all` rotates every job via a
@@ -766,6 +763,20 @@ export const play_loop = async (
         acted = true
       }
     }
+
+    // Leader (omori): also attempt dungeon key crafting during chore time, with a cooldown
+    // so normal job-leveling crafting runs first. Key crafting is a bonus, not the main loop.
+    const is_leader = character.id === party_state.leader_id
+    if (is_leader && should_run_dungeons(character) && toggles.craft) {
+      const KEY_CRAFT_COOLDOWN_MS = 60_000
+      const now = Date.now()
+      if ((now - (rt.last_key_craft_attempt_ms ?? 0)) >= KEY_CRAFT_COOLDOWN_MS) {
+        rt.last_key_craft_attempt_ms = now
+        log_info('dungeon', `${character.name}: attempting key craft`)
+        if (await maybe_craft_dungeon_key(ctx)) acted = true
+      }
+    }
+
     return acted
   }
 

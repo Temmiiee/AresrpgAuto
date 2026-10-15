@@ -80,6 +80,7 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
   for (const dk of DUNGEON_KEYS) {
     if (blacklist.has(dk.key)) continue
     const canCraft = can_craft_key(dk.key, inventory, unavailable)
+    log_info('dungeon', `${character.name}: can_craft_key ${dk.key} = ${canCraft}`)
     if (canCraft) {
       const detail = dungeon_key_detail(dk.key)!
       const plan = plan_recipe(character, detail, inventory, unavailable)
@@ -93,6 +94,17 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
         return true
       } else {
         log_warn('dungeon', `${character.name}: craft_once failed for ${dk.key}: ${result.outcome}`)
+      }
+    } else {
+      const detail = dungeon_key_detail(dk.key)
+      if (detail) {
+        for (const ing of detail.ingredients) {
+          const held = inventory.find((item) => item.item_type === ing.item_type && !unavailable.has(item.id))
+          const avail = held ? held.amount : 0
+          if (avail < ing.quantity) {
+            log_info('dungeon', `${character.name}: missing ${ing.item_type} for ${dk.key} (need ${ing.quantity}, have ${avail})`)
+          }
+        }
       }
     }
   }
