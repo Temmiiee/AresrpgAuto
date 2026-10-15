@@ -121,7 +121,11 @@ type Phase = 'idle' | 'outbound' | 'gathering' | 'inbound'
 
 export const create_cross_world_gatherer = (ctx: ActionContext, home: string): CrossWorldGatherer => {
   let phase: Phase = 'idle'
-  let last_trip_ms = 0
+  /** When the previous trip finished. Seeded at construction so a fresh boot does NOT detach on its
+   *  very first idle pass: `0` made `Date.now() - 0 >= interval` true immediately, so archero left
+   *  for yakutia seconds after every restart and the party fought the whole first interval at 3
+   *  seats. Seeding with `now` gives the party a full interval at home before the first trip. */
+  let last_trip_ms = Date.now()
   let arrived_ms = 0
   /** When the dwell clock started — i.e. when the character first stood on a zone to harvest. `0`
    *  while the trip is still walking to one, so the dwell never pays for the approach. */
