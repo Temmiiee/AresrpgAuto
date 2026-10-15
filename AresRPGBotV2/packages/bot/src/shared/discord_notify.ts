@@ -14,7 +14,10 @@ const COLOR: Record<NotifyLevel, number> = {
 
 const send = async (content: string, level: NotifyLevel): Promise<void> => {
   const webhook = config.discord_webhook_url
-  if (!webhook) return
+  if (!webhook) {
+    log_warn('discord', 'no webhook URL configured, skipping notification')
+    return
+  }
   const mention = config.discord_mention
   const body = {
     content: mention ? `${mention}\n${content}` : content,
