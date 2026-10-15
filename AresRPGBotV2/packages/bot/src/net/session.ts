@@ -290,6 +290,8 @@ export const play_loop = async (
       stopped = true
       log_error('session', `replaced by another login: ${status.reason}`)
       notify(`session replaced by another login (${status.reason}) — stopping`, 'error')
+      // Force exit after a short delay to allow notification to send
+      setTimeout(() => process.exit(1), 2000)
       return
     }
     if (status.kind === 'rejected') {
@@ -662,6 +664,19 @@ export const play_loop = async (
       if (await run_chore(rt, false)) return idle_sleep_ms
     }
 
+    // Leader roams BEFORE group step to find a good zone for the next fight
+    if (group_mode && is_leader && toggles.roam) {
+      const roamed = await roamer.roam_once(mover, effectiveLevel)
+      if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
+      if (
+        roamed.kind === 'roamed' ||
+        roamed.kind === 'joined' ||
+        roamed.kind === 'traveling' ||
+        roamed.kind === 'waiting'
+      )
+        return idle_sleep_ms
+    }
+
     if (group_mode) {
       const handled = is_leader
         ? await leader_group_step(ctx, mover, current, party_state)
@@ -689,7 +704,9 @@ export const play_loop = async (
         }
       }
 
-      if (toggles.roam) {
+      // Leader already roamed before group step. Followers already rallied.
+      // Solo play (no group): roam and engage.
+      if (!group_mode && toggles.roam) {
         const roamed = await roamer.roam_once(mover, effectiveLevel)
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
@@ -701,7 +718,7 @@ export const play_loop = async (
           return idle_sleep_ms
       }
 
-      // While grouping, the leader owns every engage — a solo fight would only block the rendezvous.
+      // Solo play: leader owns every engage
       if (!group_mode) {
         const engaged = await engage_once(ctx, mover)
         if (engaged.kind === 'engaged') {
