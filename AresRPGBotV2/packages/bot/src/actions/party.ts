@@ -27,6 +27,11 @@ import type { Mover } from './travel.ts'
  *  for a follower to hop its chain checkpoint (search_zone) across several zones at the speed law.
  *  Increased to 15 minutes to accommodate follower travel after leader roams. */
 const STAGE_TIMEOUT_MS = 900_000
+/** How long a rendezvous waits for a still-un-staged follower before writing it off as a straggler
+ *  and re-planning for the members that DID arrive. A follower that has simply not caught up (a
+ *  world-join drops it at the map centre, ~14k blocks and ~20 min out) would otherwise hold the
+ *  whole party idle for the full stage timeout, so no fight ever starts. */
+const STAGE_GRACE_MS = 90_000
 /** How long an active group fight may be invisible to the roster/indexer before we conclude it ended. */
 const ACTIVE_GRACE_MS = 60_000
 /** How far (in blocks) a gatherer may range from a pack and still call its specialty "available". */
@@ -38,6 +43,21 @@ const MAX_STAGE_FAILURES = 5
 const GROUP_COOLDOWN_MS = 60_000
 /** How close a follower parks to the leader between fights before it stops drifting (blocks). */
 const RALLY_STANDOFF = 256
+/** How often a stalled rendezvous dumps its per-member reachability, so a stuck wait is diagnosable
+ *  instead of a silent 15-minute park. */
+const STAGE_DIAG_MS = 30_000
+let last_stage_diag_ms = 0
+const stage_diag_due = (now: number): boolean => {
+  if (now - last_stage_diag_ms < STAGE_DIAG_MS) return false
+  last_stage_diag_ms = now
+  return true
+}
+const follower_diag_ms = new Map<string, number>()
+const follower_diag_due = (id: string, now: number): boolean => {
+  if (now - (follower_diag_ms.get(id) ?? 0) < STAGE_DIAG_MS) return false
+  follower_diag_ms.set(id, now)
+  return true
+}
 
 export type PartyPhase = 'idle' | 'staging' | 'active'
 
@@ -96,6 +116,11 @@ export type PartyState = {
   /** member ids temporarily OUT of the group (cross-world gathering). The rendezvous and the role
    *  assignment ignore them, so a detacher never strands the leader's `all_staged` check. */
   detached: Set<string>
+  /** member ids that could not reach the last rendezvous in time (e.g. a world-join spawns a
+   *  character at the map centre ~14k blocks out). Treated like `detached` — excluded from the
+   *  side's preview and its `all_staged` test — until the member stages again, so one straggler
+   *  cannot freeze the whole party for the full stage timeout. */
+  stragglers: Set<string>
 }
 
 export const create_party = (): PartyState => ({
@@ -115,6 +140,7 @@ export const create_party = (): PartyState => ({
   deferred_log_ms: new Map(),
   poses: new Map(),
   detached: new Set(),
+  stragglers: new Set(),
 })
 
 /** Clear the current rendezvous/fight. The excursion state (poses, need_since, etc.) is managed
@@ -128,6 +154,15 @@ export const reset_rendezvous = (party: PartyState): void => {
   party.staged_at_ms = 0
   party.active_since_ms = 0
   // excursion is cleared by finish_excursion when the relocation is done
+  // stragglers persist: a member written off as unreachable stays out of the remains of the
+  // rendezvous cycle until it actually stages again (mark_staged), so it is not re-tested every pass.
+}
+
+/** Record that a member has proven the current target's leg. Also clears any straggler write-off, so
+ *  a member that has finally caught up rejoins the side on the next rendezvous. */
+const mark_staged = (party: PartyState, id: string): void => {
+  party.staged.add(id)
+  party.stragglers.delete(id)
 }
 
 /** True while the active fight has not been visible long enough to conclude it is over. */
@@ -143,9 +178,9 @@ const fight_outstanding = (state: GameState, fight: string): boolean =>
   state.resolutions.some((row) => row.fight === fight && !row.settled) ||
   state.characters.some((character) => active_fight_of(character) === fight)
 
-const allies_of = (state: GameState, party: PartyState, leader_id: string): readonly CharacterRow[] =>
+export const allies_of = (state: GameState, party: PartyState, leader_id: string): readonly CharacterRow[] =>
   party.members
-    .filter((id) => id !== leader_id && !party.detached.has(id))
+    .filter((id) => id !== leader_id && !party.detached.has(id) && !party.stragglers.has(id))
     .flatMap((id) => {
       const row = state.characters.find((c) => c.id === id)
       return row ? [row] : []
@@ -195,10 +230,35 @@ export const leader_group_step = async (
       // leader either engages the moment it can reach, or times out and re-plans.
       log_warn('party', `staging leg paused: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // A follower that cannot get here in time must not hold the party hostage. After the grace,
+    // write off every still-un-staged follower, release the claim and re-plan for the members that
+    // ARE here — `allies_of` then drops it from the preview too, so the side is scored honestly at
+    // its real size. The straggler keeps walking in its own loop and rejoins the moment it stages.
+    const pending = party.members.filter(
+      (id) =>
+        id !== party.leader_id &&
+        !party.detached.has(id) &&
+        !party.stragglers.has(id) &&
+        !party.staged.has(id)
+    )
+    if (pending.length > 0 && Date.now() - party.staged_at_ms > STAGE_GRACE_MS) {
+      for (const id of pending) {
+        party.stragglers.add(id)
+        log_warn(
+          'party',
+          `${state.characters.find((c) => c.id === id)?.name ?? id}: wrote off as a straggler — engaging without it`
+        )
+      }
+      ctx.claims.release(target.claim_key, ctx.character_id)
+      reset_rendezvous(party)
+      return null
+    }
     // Everyone in position AND the leader can prove its own leg: fight now. This is tested BEFORE the
     // timeout so a follower that arrives in the same pass the window elapses still gets its fight
     // (the followers touch `staged` from their own concurrent pass, so the two checks race).
-    const followers = party.members.filter((id) => id !== party.leader_id && !party.detached.has(id))
+    const followers = party.members.filter(
+      (id) => id !== party.leader_id && !party.detached.has(id) && !party.stragglers.has(id)
+    )
     const all_staged = followers.length === 0 || followers.every((id) => party.staged.has(id))
     if (all_staged && mover.can_reach(target.x, target.z)) {
       const outcome = await engage_target(ctx, mover, target.candidate)
@@ -224,6 +284,19 @@ export const leader_group_step = async (
       return null
     }
     // Not everyone has arrived. Give up only once the whole window has elapsed.
+    if (stage_diag_due(Date.now())) {
+      const roster = party.members
+        .map((id) => {
+          const row = state.characters.find((c) => c.id === id)
+          const flag = id === party.leader_id ? 'leader' : party.staged.has(id) ? 'staged' : party.detached.has(id) ? 'detached' : 'PENDING'
+          return `${row?.name ?? id}:${flag}@${row?.world}:${row?.x},${row?.z}`
+        })
+        .join(' ')
+      log_warn(
+        'party',
+        `staging wait ${Math.round((Date.now() - party.staged_at_ms) / 1000)}s: target ${target.x},${target.z} leader_reach=${mover.can_reach(target.x, target.z)} anchor=${JSON.stringify(mover.anchor())} [${roster}]`
+      )
+    }
     if (Date.now() - party.staged_at_ms > STAGE_TIMEOUT_MS) {
       ctx.claims.release(target.claim_key, ctx.character_id)
       party.failures += 1
@@ -291,7 +364,7 @@ export const follower_group_step = async (
     if (character.world !== target.world) return null
     if (party.staged.has(character.id)) return idle
     if (mover.can_reach(target.x, target.z)) {
-      party.staged.add(character.id)
+      mark_staged(party, character.id)
       log_info('party', `${character.name}: staged for group ${target.candidate.group.index}`)
       return idle
     }
@@ -303,17 +376,22 @@ export const follower_group_step = async (
     try {
       await mover.travel_to(target.x, target.z)
       if (mover.can_reach(target.x, target.z)) {
-        party.staged.add(character.id)
+        mark_staged(party, character.id)
         log_info('party', `${character.name}: staged for group ${target.candidate.group.index}`)
         return idle
       }
       const after = mover.pose()
       if (after.x !== before.x || after.z !== before.z) await mover.ensure_zone(false)
-    } catch {
+    } catch (error) {
+      if (follower_diag_due(character.id, Date.now()))
+        log_warn(
+          'party',
+          `${character.name}: cannot reach ${target.x},${target.z} — ${error instanceof Error ? error.message : String(error)}; anchor=${JSON.stringify(mover.anchor())} pose=${JSON.stringify(mover.pose())}`
+        )
       return idle
     }
     if (mover.can_reach(target.x, target.z)) {
-      party.staged.add(character.id)
+      mark_staged(party, character.id)
       log_info('party', `${character.name}: staged for group ${target.candidate.group.index}`)
     }
     return idle
