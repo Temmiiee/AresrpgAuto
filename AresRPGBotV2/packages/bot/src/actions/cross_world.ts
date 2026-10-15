@@ -208,6 +208,14 @@ export const create_cross_world_gatherer = (ctx: ActionContext, home: string): C
     if (active_fight_of(character)) return skip('already in a fight')
     if (character.custody === 'fight') return skip('custody locked to a fight')
 
+    if (phase === 'idle' && (character.world ?? null) !== home) {
+      // A restart lands us mid-trip: the character is on-chain in the far world while our phase
+      // machine is fresh. Route it home BEFORE the cool-down, else `idle` + `cooling down` would
+      // park it abroad indefinitely (observed: archero stuck in yakutia, party at 3 seats).
+      phase = 'inbound'
+      log_info('cross_world', `${character.name}: resuming an interrupted trip — returning to ${home}`)
+    }
+
     if (phase === 'idle') {
       set_detached(party, false)
       if (config.cross_world_interval_ms === 0) return skip('cross-world trips disabled')
