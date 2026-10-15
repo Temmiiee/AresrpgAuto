@@ -30,8 +30,10 @@ const STAGE_TIMEOUT_MS = 900_000
 /** How long a rendezvous waits for a still-un-staged follower before writing it off as a straggler
  *  and re-planning for the members that DID arrive. A follower that has simply not caught up (a
  *  world-join drops it at the map centre, ~14k blocks and ~20 min out) would otherwise hold the
- *  whole party idle for the full stage timeout, so no fight ever starts. */
-const STAGE_GRACE_MS = 90_000
+ *  whole party idle for the full stage timeout, so no fight ever starts. Measured from the moment the
+ *  LEADER is itself in position (`in_position_at_ms`), not from the rendezvous being planned, and
+ *  sized to cover the one blocking leg a follower needs to walk in from the rendezvous point. */
+const STAGE_GRACE_MS = 120_000
 /** How long an active group fight may be invisible to the roster/indexer before we conclude it ended. */
 const ACTIVE_GRACE_MS = 60_000
 /** How far (in blocks) a gatherer may range from a pack and still call its specialty "available". */
@@ -91,6 +93,11 @@ export type PartyState = {
   staged: Set<string>
   /** when the current rendezvous began (ms since epoch) */
   staged_at_ms: number
+  /** when the LEADER first proved it could reach the target (ms since epoch), or 0 while it is still
+   *  travelling there. The straggler grace is measured from HERE, not from `staged_at_ms`: the
+   *  leader's own multi-minute walk to the group must not count against followers that are walking
+   *  the same distance beside it. */
+  in_position_at_ms: number
   /** when the active group fight was opened (ms since epoch); covers roster/indexer lag */
   active_since_ms: number
   /** consecutive rendezvous failures, feeding the cooldown below */
@@ -138,6 +145,7 @@ export const create_party = (): PartyState => ({
   target: null,
   staged: new Set(),
   staged_at_ms: 0,
+  in_position_at_ms: 0,
   active_since_ms: 0,
   failures: 0,
   retry_after_ms: 0,
@@ -159,6 +167,7 @@ export const reset_rendezvous = (party: PartyState): void => {
   party.target = null
   party.staged = new Set()
   party.staged_at_ms = 0
+  party.in_position_at_ms = 0
   party.active_since_ms = 0
   // excursion is cleared by finish_excursion when the relocation is done
   // stragglers persist: a member written off as unreachable stays out of the remains of the
@@ -241,6 +250,25 @@ export const regroup_step = (
   })
 }
 
+/** A point at most `max_blocks` from `from` on the line to `to` (the target itself when it is
+ *  closer). A single `travel_to` leg BLOCKS until it arrives, so committing a character to a
+ *  13_000-block leg toward a peer's snapshot position means it cannot re-plan for ~20 minutes —
+ *  meanwhile the peer walks the other way and the two cross, stranding each side where the other
+ *  used to be. Walking one bounded hop and re-reading the peer's live pose next pass converges them
+ *  instead. */
+export const hop_toward = (
+  from: Readonly<{ x: number; z: number }>,
+  to: Readonly<{ x: number; z: number }>,
+  max_blocks: number
+): Readonly<{ x: number; z: number }> => {
+  const dx = to.x - from.x
+  const dz = to.z - from.z
+  const distance = Math.hypot(dx, dz)
+  if (distance <= max_blocks) return Object.freeze({ x: to.x, z: to.z })
+  const scale = max_blocks / distance
+  return Object.freeze({ x: Math.round(from.x + dx * scale), z: Math.round(from.z + dz * scale) })
+}
+
 /** Join every follower seat in ONE transaction on the leader's kiosk. The joins land before any
  *  seat readies, so the fight cannot start without the party. */
 export const join_followers = async (ctx: ActionContext, followers: readonly string[], fight: string): Promise<number> => {
@@ -285,6 +313,16 @@ export const leader_group_step = async (
       // leader either engages the moment it can reach, or times out and re-plans.
       log_warn('party', `staging leg paused: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // Start the straggler clock only once the LEADER is itself in position. Its walk to the group can
+    // take minutes (a `travel_to` leg blocks), and counting that against the followers — who are
+    // walking the same distance from the same rendezvous point — wrote them all off the instant the
+    // leader arrived. Reset while the leader is still out of reach, so the window measures how long
+    // the followers have had to close a gap the leader already closed.
+    if (mover.can_reach(target.x, target.z)) {
+      if (party.in_position_at_ms === 0) party.in_position_at_ms = Date.now()
+    } else {
+      party.in_position_at_ms = 0
+    }
     // A follower that cannot get here in time must not hold the party hostage. After the grace,
     // write off every still-un-staged follower, release the claim and re-plan for the members that
     // ARE here — `allies_of` then drops it from the preview too, so the side is scored honestly at
@@ -296,7 +334,11 @@ export const leader_group_step = async (
         !party.stragglers.has(id) &&
         !party.staged.has(id)
     )
-    if (pending.length > 0 && Date.now() - party.staged_at_ms > STAGE_GRACE_MS) {
+    if (
+      pending.length > 0 &&
+      party.in_position_at_ms !== 0 &&
+      Date.now() - party.in_position_at_ms > STAGE_GRACE_MS
+    ) {
       for (const id of pending) {
         party.stragglers.add(id)
         log_warn(
@@ -476,10 +518,15 @@ export const rally_to_leader = async (mover: Mover, leader: CharacterRow): Promi
   if (leader.x === undefined || leader.z === undefined) return false
   const pose = mover.pose()
   if (Math.max(Math.abs(leader.x - pose.x), Math.abs(leader.z - pose.z)) <= RALLY_STANDOFF) return false
+  // One bounded hop toward the leader's CURRENT pose, not a full leg to a snapshot. A leg blocks
+  // until it arrives, so rallying to a leader that is itself walking home commits the follower to
+  // ~20 minutes toward where the leader WAS — the two cross and each ends up stranded where the
+  // other started. A hop re-reads the leader's pose every pass and closes the gap from both sides.
+  const hop = hop_toward(pose, { x: leader.x, z: leader.z }, PARTY_RADIUS)
   try {
     // Only STREAM presence toward the leader here; the chain checkpoint is re-anchored by the
     // rendezvous (ensure_zone) when the leader actually opens a fight, so a rally costs no gas.
-    await mover.travel_to(leader.x, leader.z)
+    await mover.travel_to(hop.x, hop.z)
     return true
   } catch {
     return false

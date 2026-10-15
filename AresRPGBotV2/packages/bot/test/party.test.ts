@@ -4,6 +4,7 @@ import {
   allies_of,
   create_party,
   follower_group_step,
+  hop_toward,
   leader_group_step,
   party_attempting,
   party_center,
@@ -163,9 +164,10 @@ describe('party stragglers', () => {
   it('writes off a follower that cannot stage within the grace and re-plans', async () => {
     const party = staging_party()
     party.members = ['leader', 'follower']
-    party.staged_at_ms = Date.now() - 100_000
+    // the leader is in position (it can reach) but the follower has had the grace and is still absent
+    party.in_position_at_ms = Date.now() - 200_000
     const { ctx, released } = ctx_claims([{ id: 'follower', name: 'follower' }])
-    const handled = await leader_group_step(ctx, mover_reaching(false), leader(), party)
+    const handled = await leader_group_step(ctx, mover_reaching(true), leader(), party)
     expect(handled).toBeNull()
     expect(party.stragglers.has('follower')).toBe(true)
     expect(party.phase).toBe('idle')
@@ -175,11 +177,26 @@ describe('party stragglers', () => {
   it('keeps waiting for a follower before the grace elapses', async () => {
     const party = staging_party()
     party.members = ['leader', 'follower']
+    party.in_position_at_ms = Date.now() - 5_000
+    const { ctx, released } = ctx_claims([{ id: 'follower', name: 'follower' }])
+    const handled = await leader_group_step(ctx, mover_reaching(true), leader(), party)
+    expect(handled).not.toBeNull()
+    expect(party.stragglers.size).toBe(0)
+    expect(party.phase).toBe('staging')
+    expect(released.length).toBe(0)
+  })
+
+  it('does not start the grace clock until the leader itself can reach the target', async () => {
+    const party = staging_party()
+    party.members = ['leader', 'follower']
+    // the rendezvous is ancient, but the leader is still walking (cannot reach yet): the followers
+    // are walking the same leg and must not be written off for it
+    party.staged_at_ms = Date.now() - 200_000
     const { ctx, released } = ctx_claims([{ id: 'follower', name: 'follower' }])
     const handled = await leader_group_step(ctx, mover_reaching(false), leader(), party)
     expect(handled).not.toBeNull()
     expect(party.stragglers.size).toBe(0)
-    expect(party.phase).toBe('staging')
+    expect(party.in_position_at_ms).toBe(0)
     expect(released.length).toBe(0)
   })
 
@@ -237,5 +254,25 @@ describe('party_center / regroup_step', () => {
     expect(step!.x).toBe(50_000 + PARTY_RADIUS)
     expect(step!.z).toBe(50_000)
     expect(step!.offset).toBe(3 * PARTY_RADIUS)
+  })
+})
+
+describe('hop_toward', () => {
+  it('returns the target itself when it is within the hop', () => {
+    expect(hop_toward({ x: 0, z: 0 }, { x: 100, z: 0 }, PARTY_RADIUS)).toEqual({ x: 100, z: 0 })
+  })
+
+  it('caps a long leg on the line to the target', () => {
+    // 10_000 blocks out, one 2_000 hop: the point is 2_000 along, NOT the target — so the caller can
+    // re-read the peer's live pose next pass instead of blocking for the whole walk.
+    expect(hop_toward({ x: 0, z: 0 }, { x: 10_000, z: 0 }, PARTY_RADIUS)).toEqual({
+      x: PARTY_RADIUS,
+      z: 0,
+    })
+  })
+
+  it('caps a diagonal hop by true distance, not per axis', () => {
+    const hop = hop_toward({ x: 0, z: 0 }, { x: 3_000, z: 4_000 }, 2_000)
+    expect(Math.round(Math.hypot(hop.x, hop.z))).toBe(2_000)
   })
 })

@@ -49,6 +49,7 @@ import { close_pending, drive_fight, engage_once, handle_fight_packet, settle_pe
 import {
   create_party,
   follower_group_step,
+  hop_toward,
   join_followers,
   leader_group_step,
   party_attempting,
@@ -600,12 +601,16 @@ export const play_loop = async (
     if (group_mode && is_leader && !current.dungeon_run) {
       const regroup = regroup_step(party_state, mover.pose())
       if (regroup) {
+        // One bounded hop toward the party, not a full leg: a full leg blocks for the whole walk, and
+        // the followers (rallying toward the leader's moving pose) would cross past it. Hopping lets
+        // both sides re-read each other each pass and meet in the middle.
+        const hop = hop_toward(mover.pose(), { x: regroup.x, z: regroup.z }, PARTY_RADIUS)
         log_warn(
           'party',
-          `${character.name}: regrouping — ${Math.round(regroup.offset)} blocks from the party centre, walking back to ${regroup.x},${regroup.z}`
+          `${character.name}: regrouping — ${Math.round(regroup.offset)} blocks from the party centre, walking back to ${hop.x},${hop.z}`
         )
         try {
-          await mover.travel_to(regroup.x, regroup.z)
+          await mover.travel_to(hop.x, hop.z)
         } catch (error) {
           log_warn('party', `regroup leg paused: ${error instanceof Error ? error.message : String(error)}`)
         }
