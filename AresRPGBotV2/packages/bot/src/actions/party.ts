@@ -45,6 +45,13 @@ export const PARTY_GATHER_RADIUS = 1_024
  *  walk logs nothing — while the followers are left behind and written off as stragglers. Bigger
  *  than a zone (512), far smaller than the roam band (≤20_000), so a rendezvous stays a short hop. */
 export const PARTY_RADIUS = 2_000
+/** Dead-band (blocks) beyond PARTY_RADIUS. `regroup_step` walks the leader to a point exactly ON the
+ *  radius circle, so a leader already a hair outside it would be handed a sub-block "correction"
+ *  that `travel_to` cannot perform — and because the regroup gate returns before the engage/roam
+ *  step, that no-op looped forever (observed: omori parked at ~2000 blocks, spamming once per 3s
+ *  pass for 30+ minutes, never fighting or roaming). Only regroup when the excess is a real,
+ *  walkable distance; a few dozen blocks of slack never matters next to a 2_000-block radius. */
+export const REGROUP_MIN_STEP = 64
 /** Consecutive failed rendezvous before the party stops grouping for a while. */
 const MAX_STAGE_FAILURES = 5
 /** How long to stay in solo mode after repeated rendezvous failures. Reduced to 60s so the party
@@ -246,6 +253,22 @@ export const party_center = (
   return Object.freeze({ x: median(xs), z: median(zs) })
 }
 
+/** The leader's live streamed pose (its position right now), falling back to its chain row and then
+ *  to null. The roster row only moves on an action door, so it lags the leader by a whole travel leg;
+ *  every "where is the leader" consumer — the followers' rally, the rejoin gate, the engage preview —
+ *  must read the live pose or the party chases where the leader WAS. */
+export const leader_live_pose = (
+  party: PartyState,
+  state: GameState
+): Readonly<{ x: number; z: number }> | null => {
+  if (party.leader_id === null) return null
+  const live = party.poses.get(party.leader_id)
+  if (live) return live
+  const row = state.characters.find((c) => c.id === party.leader_id)
+  if (!row || row.x === undefined || row.z === undefined) return null
+  return Object.freeze({ x: row.x, z: row.z })
+}
+
 /** A follower further than this from the leader has been left behind — a world-join drops it at the
  *  map centre (~14k blocks out) and a leader that roamed before the keep-together gate existed left
  *  its party behind. Wide enough that ordinary rallying never trips it (PARTY_RADIUS is 2_000, the
@@ -264,8 +287,8 @@ export const needs_rejoin = (
 ): boolean => {
   if (party.leader_id === null || character_id === party.leader_id) return false
   if (party.detached.has(character_id)) return false
-  const leader = state.characters.find((c) => c.id === party.leader_id)
-  if (!leader || leader.x === undefined || leader.z === undefined) return false
+  const leader = leader_live_pose(party, state)
+  if (!leader) return false
   return Math.max(Math.abs(leader.x - pose.x), Math.abs(leader.z - pose.z)) > REJOIN_RADIUS
 }
 
@@ -274,8 +297,10 @@ export const log_rejoin_due = (id: string, now: number): boolean => follower_dia
 
 /** Where the leader must walk to rejoin the party, or null when it is already close enough. The
  *  target is the point exactly `PARTY_RADIUS` from the centre on the line to the leader — walking to
- *  the centre itself would cross the inbound followers and overshoot past them. `offset` is the
- *  current stray distance (for the log). Callers own the walk itself. */
+ *  the centre itself would cross the inbound followers and overshoot past them. A dead-band of
+ *  `REGROUP_MIN_STEP` beyond the radius means a leader already at the boundary is left alone instead
+ *  of being handed an unrunnable sub-block correction. `offset` is the current stray distance (for
+ *  the log). Callers own the walk itself. */
 export const regroup_step = (
   party: PartyState,
   pose: Readonly<{ x: number; z: number }>
@@ -284,7 +309,7 @@ export const regroup_step = (
   const dx = pose.x - centre.x
   const dz = pose.z - centre.z
   const offset = Math.hypot(dx, dz)
-  if (offset <= PARTY_RADIUS) return null
+  if (offset <= PARTY_RADIUS + REGROUP_MIN_STEP) return null
   const scale = (offset - PARTY_RADIUS) / offset
   return Object.freeze({
     x: Math.round(pose.x - dx * scale),
@@ -515,7 +540,18 @@ export const follower_group_step = async (
     const target = party.target
     if (!target) return null
     // In another world: fall through to the normal roam path so we re-home; the rendezvous retries.
-    if (character.world !== target.world) return null
+    // Compare against the mover's anchor world too, not just the roster row — a row that has not
+    // been pushed yet must not read as a world mismatch and send the follower wandering instead of
+    // staging.
+    const world = character.world ?? mover.anchor()?.world ?? target.world
+    if (world !== target.world) {
+      if (follower_diag_due(character.id, Date.now()))
+        log_warn(
+          'party',
+          `${character.name}: rendezvous is in ${target.world} but I am in ${world} — standing by to re-home`
+        )
+      return null
+    }
     if (party.staged.has(character.id)) return idle
     if (mover.can_reach(target.x, target.z)) {
       mark_staged(party, character.id)
@@ -563,12 +599,16 @@ export const follower_group_step = async (
   return null
 }
 
-/** A follower's idle move: drift toward the leader's checkpoint so the side stays a side between
+/** A follower's idle move: drift toward the leader's LIVE pose so the side stays a side between
  *  fights. A follower that roams to its own band strands the next rendezvous and pays a multi-minute
  *  re-convergence; rallying keeps the whole party within a zone or two, so the next engage is cheap.
- *  Returns true when it actually travelled. */
-export const rally_to_leader = async (mover: Mover, leader: CharacterRow): Promise<boolean> => {
-  if (leader.x === undefined || leader.z === undefined) return false
+ *  Returns true when it actually travelled. Callers pass the live pose (see `leader_live_pose`), not
+ *  the lagging chain row: rallying to the row parks the follower where the leader last acted and
+ *  opens the ~PARTY_RADIUS split that triggered the regroup lock. */
+export const rally_to_leader = async (
+  mover: Mover,
+  leader: Readonly<{ x: number; z: number }>
+): Promise<boolean> => {
   const pose = mover.pose()
   if (Math.max(Math.abs(leader.x - pose.x), Math.abs(leader.z - pose.z)) <= RALLY_STANDOFF) return false
   // One bounded hop toward the leader's CURRENT pose, not a full leg to a snapshot. A leg blocks

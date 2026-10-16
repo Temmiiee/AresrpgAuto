@@ -10,6 +10,7 @@ import {
   party_attempting,
   party_center,
   PARTY_RADIUS,
+  REGROUP_MIN_STEP,
   REJOIN_RADIUS,
   regroup_step,
   reset_rendezvous,
@@ -257,6 +258,16 @@ describe('party_center / regroup_step', () => {
     expect(step!.x).toBe(50_000 + PARTY_RADIUS)
     expect(step!.z).toBe(50_000)
     expect(step!.offset).toBe(3 * PARTY_RADIUS)
+  })
+
+  it('leaves a leader a hair outside PARTY_RADIUS alone (no sub-block correction loop)', () => {
+    const party = party_with_poses()
+    party.poses.set('a', { x: 50_000, z: 50_000 })
+    // The 30-minute stall: the leader sat exactly on the boundary, was handed a sub-block "walk back"
+    // that travel_to could not perform, and the regroup gate returned before engage/roam every pass.
+    expect(regroup_step(party, { x: 50_000 + PARTY_RADIUS + 1, z: 50_000 })).toBeNull()
+    expect(regroup_step(party, { x: 50_000 + PARTY_RADIUS + REGROUP_MIN_STEP - 1, z: 50_000 })).toBeNull()
+    expect(regroup_step(party, { x: 50_000 + PARTY_RADIUS + REGROUP_MIN_STEP + 1, z: 50_000 })).not.toBeNull()
   })
 })
 

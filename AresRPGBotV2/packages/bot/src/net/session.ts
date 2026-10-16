@@ -52,6 +52,7 @@ import {
   hop_toward,
   join_followers,
   leader_group_step,
+  leader_live_pose,
   log_rejoin_due,
   needs_rejoin,
   party_attempting,
@@ -414,6 +415,7 @@ export const play_loop = async (
       fight_runtimes,
       claims,
       party_state,
+      dungeon_blacklist: new Map<string, number>(),
     }
 
     const mover = create_mover(ctx)
@@ -630,10 +632,13 @@ export const play_loop = async (
         // the followers (rallying toward the leader's moving pose) would cross past it. Hopping lets
         // both sides re-read each other each pass and meet in the middle.
         const hop = hop_toward(mover.pose(), { x: regroup.x, z: regroup.z }, PARTY_RADIUS)
-        log_warn(
-          'party',
-          `${character.name}: regrouping — ${Math.round(regroup.offset)} blocks from the party centre, walking back to ${hop.x},${hop.z}`
-        )
+        // Throttled: a long walk back re-runs this once per idle pass, and unthrottled it buried the
+        // operator log under hundreds of identical lines.
+        if (log_rejoin_due(character.id, Date.now()))
+          log_warn(
+            'party',
+            `${character.name}: regrouping — ${Math.round(regroup.offset)} blocks from the party centre, walking back to ${hop.x},${hop.z}`
+          )
         try {
           await mover.travel_to(hop.x, hop.z)
         } catch (error) {
@@ -761,15 +766,15 @@ export const play_loop = async (
     // the leader instead of only the reported pose. Runs after the group step so an in-flight
     // rendezvous still owns the pass.
     if (needs_rejoin(party_state, game_state, current.id, mover.pose())) {
-      const leader = game_state.characters.find((c) => c.id === party_state.leader_id)
-      if (leader) {
+      const leader_pose = leader_live_pose(party_state, game_state)
+      if (leader_pose) {
         if (log_rejoin_due(current.id, Date.now())) {
           const pose = mover.pose()
-          const away = Math.round(Math.max(Math.abs((leader.x ?? pose.x) - pose.x), Math.abs((leader.z ?? pose.z) - pose.z)))
+          const away = Math.round(Math.max(Math.abs(leader_pose.x - pose.x), Math.abs(leader_pose.z - pose.z)))
           log_warn('party', `${character.name}: ${away} blocks from the leader — walking home before any chore`)
         }
         const before = mover.pose()
-        await rally_to_leader(mover, leader)
+        await rally_to_leader(mover, leader_pose)
         const after = mover.pose()
         if (after.x !== before.x || after.z !== before.z) {
           try {
@@ -793,9 +798,18 @@ export const play_loop = async (
       // While the party is grouping, a follower does NOT roam to its own band — it rallies to the
       // leader and holds, so the next rendezvous is a short hop instead of a fresh convergence.
       if (group_mode && character.id !== party_state.leader_id) {
-        const leader = game_state.characters.find((c) => c.id === party_state.leader_id)
-        if (leader) {
-          await rally_to_leader(mover, leader)
+        const leader_row = game_state.characters.find((c) => c.id === party_state.leader_id)
+        const leader_pose = leader_live_pose(party_state, game_state)
+        // Rally only while the leader is in this member's world. A member in another world (a
+        // cross-world trip, a fresh world-join) cannot walk to a pose in a different world, so it
+        // falls through to its own chore instead of burning the pass on an impossible leg.
+        const same_world =
+          leader_row === undefined ||
+          leader_row.world === undefined ||
+          current.world === undefined ||
+          leader_row.world === current.world
+        if (leader_pose && same_world) {
+          await rally_to_leader(mover, leader_pose)
           return idle_sleep_ms
         }
       }

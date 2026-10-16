@@ -14,7 +14,7 @@ import { dungeon_city, dungeon_rooms, worlds_by_id } from '../content/catalog.ts
 import { log_debug, log_info, log_warn } from '../shared/logger.ts'
 import { active_fight_of, select_character, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
-import { DUNGEON_KEYS, held_dungeon_key, should_run_dungeons } from './dungeon.ts'
+import { DUNGEON_KEYS, DUNGEON_PARK_MS, key_parked, park_dungeon_key, should_run_dungeons } from './dungeon.ts'
 import { safe_travel_to } from './roam.ts'
 import { score_group, mob_inputs, type MobGroupRow } from './fight_preview.ts'
 import type { Mover } from './travel.ts'
@@ -138,19 +138,8 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     if (character.world !== world.world)
       return outcome('skipped', `in ${character.world ?? 'no world'}; ${dk.dungeon} portal is in ${world.world}`)
 
-    // Preview room 1 BEFORE walking/burning a key. If we can't win the first room, don't enter.
-    const first_room = dungeon_rooms(dk.dungeon)[0]
-    if (first_room) {
-      const fake_group = room_to_mob_group(first_room)
-      const allies = dungeon_allies(character)
-      const preview = score_group(character, fake_group, allies)
-      const MIN_WIN_RATE = 0.8
-      if (preview.win_rate < MIN_WIN_RATE) {
-        log_warn('dungeon', `${dk.dungeon} room 1: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% < ${MIN_WIN_RATE * 100}% -- skipping entry`)
-        return outcome('skipped', `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% too low for entry`)
-      }
-      log_info('dungeon', `${dk.dungeon} room 1 entry preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, turns=${preview.turns.toFixed(1)}`)
-    }
+    // Room 1 is previewed by run_once before this is ever called (it parks the key on a low win
+    // rate), so re-screening here only doubles the fight sim.
 
     if (Date.now() - last_enter_ms < ENTER_GRACE_MS) return outcome('waiting', 'recent enter; waiting for the roster')
     if (!(await safe_travel_to(mover, city.x, city.z))) return outcome('traveling', `walking to the ${city.city} portal`)
@@ -227,9 +216,11 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     const inventory = state.inventory
     const unavailable = unavailable_item_ids(state)
 
-    // Session-persistent blacklist of dungeon keys we've previewed as unwinnable.
-    // Stored on the context so it survives across passes.
-    const blacklist = (ctx as any).dungeon_blacklist ??= new Set<string>()
+    // Shared parked-key map from the context (the crafter reads the same one). A key whose first
+    // room previews as unwinnable is PARKED for a while, not blacklisted for the whole session:
+    // the first-room win rate tracks the party's current HP/levels, so a momentary low read must
+    // not permanently write off every dungeon.
+    const blacklist = ctx.dungeon_blacklist
 
     let i = 0
     let result: DungeonOutcome | null = null
@@ -237,8 +228,8 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       const dk = DUNGEON_KEYS[i]
       const dungeonName = dk.dungeon
       const keyName = dk.key
-      // Skip blacklisted keys
-      if (blacklist.has(keyName)) {
+      // Skip keys still parked from a recent failed preview.
+      if (key_parked(blacklist, keyName)) {
         i++
         continue
       }
@@ -258,14 +249,10 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
         const preview = score_group(character, fake_group, allies)
         const MIN_WIN_RATE = 0.8
         if (preview.win_rate < MIN_WIN_RATE) {
-          const msg = dungeonName + ' room 1: preview win_rate=' + (preview.win_rate * 100).toFixed(0) + '% < ' + (MIN_WIN_RATE * 100).toFixed(0) + '% -- blacklisting key, trying next dungeon'
-          log_warn('dungeon', msg)
-          // Blacklist this key so we don't retry it this session
-          blacklist.add(keyName)
-          // If we already entered this dungeon, abandon the run
-          if ((character.dungeon_run as { dungeon: string; room: number } | undefined)?.dungeon === dungeonName) {
-            await abandon(character, 'preview win_rate ' + (preview.win_rate * 100).toFixed(0) + '% too low')
-          }
+          const pct = (preview.win_rate * 100).toFixed(0)
+          log_warn('dungeon', `${dungeonName} room 1: preview win_rate=${pct}% < 80% -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min, trying next dungeon`)
+          // Park this key (expiring) so the crafter skips it while the party cannot clear it.
+          park_dungeon_key(blacklist, keyName)
           shouldEnter = false
         } else {
           const msg2 = dungeonName + ' room 1 entry preview: win_rate=' + (preview.win_rate * 100).toFixed(0) + '%, turns=' + preview.turns.toFixed(1)

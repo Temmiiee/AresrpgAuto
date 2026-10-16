@@ -1,5 +1,5 @@
 // Dungeon content projection — the runner reads rooms and the city portal straight from the seed.
-import { DUNGEON_KEYS, dungeon_key_detail, held_dungeon_key, should_run_dungeons } from '../src/actions/dungeon.ts'
+import { DUNGEON_KEYS, DUNGEON_PARK_MS, dungeon_key_detail, held_dungeon_key, key_parked, park_dungeon_key, should_run_dungeons } from '../src/actions/dungeon.ts'
 import { dungeon_city, dungeon_rooms, worlds_by_id } from '../src/content/catalog.ts'
 
 describe('dungeon content projection', () => {
@@ -40,9 +40,21 @@ describe('dungeon key helpers', () => {
   })
 
   it('reports a held key only when the inventory row is free', () => {
-    const inventory = [{ id: 'k1', item_type: 'key_of_gilded_lorito', amount: 1, kiosk: 'k' }] as never
-    expect(held_dungeon_key(inventory, new Set())).toBe('key_of_gilded_lorito')
-    expect(held_dungeon_key(inventory, new Set(['k1']))).toBeNull()
+    const inventory = [{ id: 'k1', item_type: 'key_of_gilded_lorito', amount: 1, kiosk: 'k' }]
+    expect(held_dungeon_key(inventory as never, new Set())).toBe('key_of_gilded_lorito')
+    // `unavailable` is a set of ITEM ids, not item types.
+    expect(held_dungeon_key(inventory as never, new Set(['k1']))).toBeNull()
+  })
+
+  it('parks a key only until its retry window elapses, then re-screens it', () => {
+    const parked = new Map<string, number>()
+    const now = 1_000_000
+    expect(key_parked(parked, 'key_of_ivory_rampart', now)).toBe(false)
+    park_dungeon_key(parked, 'key_of_ivory_rampart', now)
+    expect(key_parked(parked, 'key_of_ivory_rampart', now)).toBe(true)
+    // Still parked one tick before the window closes; free once it has elapsed.
+    expect(key_parked(parked, 'key_of_ivory_rampart', now + DUNGEON_PARK_MS - 1)).toBe(true)
+    expect(key_parked(parked, 'key_of_ivory_rampart', now + DUNGEON_PARK_MS)).toBe(false)
   })
 
   it('runs dungeons as the leader only', () => {

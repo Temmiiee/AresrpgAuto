@@ -70,6 +70,10 @@ export type ActionContext = Readonly<{
   claims: GroupClaims
   /** shared party state for dungeon/group coordination */
   party_state: PartyState
+  /** session-scoped parked dungeon keys: key -> retry-after epoch ms. Shared by the dungeon runner
+   *  (which parks a key whose first room previews as unwinnable) and the key crafter (which skips a
+   *  parked key), so the two never disagree about which keys are worth committing to. */
+  dungeon_blacklist: Map<string, number>
 }>
 
 /** The wire custody pair for a character: the kiosk holding it plus its personal cap identity. */

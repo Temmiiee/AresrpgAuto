@@ -23,6 +23,29 @@ export interface DungeonKeyConfig {
  *  negative case ("still missing X") is logged only when it CHANGES, not every pass. */
 const key_craftability = new Map<string, boolean>()
 
+/** How long a dungeon whose first room previews as unwinnable stays parked before we re-screen it.
+ *  The first-room win rate depends on the party's CURRENT HP and job levels, so a momentary low-HP
+ *  read (a fight that just ended) must not write a dungeon off for the whole process — the previous
+ *  permanent blacklist did exactly that and no dungeon was ever entered. */
+export const DUNGEON_PARK_MS = 30 * 60_000
+
+/** True while a dungeon key is parked (previewed as unwinnable within the last `DUNGEON_PARK_MS`). */
+export const key_parked = (
+  blacklist: ReadonlyMap<string, number>,
+  key: string,
+  now = Date.now()
+): boolean => (blacklist.get(key) ?? 0) > now
+
+/** Park a key until `now + DUNGEON_PARK_MS`, so the crafter does not spend materials on a dungeon
+ *  the party cannot yet clear. */
+export const park_dungeon_key = (
+  blacklist: Map<string, number>,
+  key: string,
+  now = Date.now()
+): void => {
+  blacklist.set(key, now + DUNGEON_PARK_MS)
+}
+
 export const DUNGEON_KEYS: readonly DungeonKeyConfig[] = Object.freeze([
   {
     key: 'key_of_gilded_lorito',
@@ -97,11 +120,11 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
   if (!character) return false
   const inventory = state.inventory
   const unavailable = unavailable_item_ids(state)
-  // Shared blacklist from dungeon runner (keys previewed as unwinnable)
-  const blacklist = (ctx as any).dungeon_blacklist ?? new Set<string>()
+  // Shared parked-key map from the dungeon runner (keys whose preview reads unwinnable right now).
+  const blacklist = ctx.dungeon_blacklist
 
   for (const dk of DUNGEON_KEYS) {
-    if (blacklist.has(dk.key)) continue
+    if (key_parked(blacklist, dk.key)) continue
     const canCraft = can_craft_key(dk.key, inventory, unavailable)
     // This runs on every chore beat (rate-limited), so the negative case is logged only when a key's
     // craftability CHANGES. Logging "can_craft_key … = false / missing …" every beat flooded the
