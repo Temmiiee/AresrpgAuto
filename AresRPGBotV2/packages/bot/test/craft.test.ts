@@ -1,7 +1,7 @@
 // craft tests – the recipe planner owns craftability; a plan is built only from held facts.
 import { item_is_stackable, job_xp_for_level } from '@aresrpg/immutable'
 
-import { craft_once, craft_gather_demand, plan_recipe, drive_craft } from '../src/actions/craft.ts'
+import { craft_once, craft_gather_demand, plan_recipe, drive_craft, select_craft_target } from '../src/actions/craft.ts'
 import { rank_gather_candidates } from '../src/actions/gather.ts'
 import { gatherable_demand, items_by_type, recipe_detail, recipes_by_output } from '../src/content/catalog.ts'
 
@@ -184,5 +184,61 @@ describe('rank_gather_candidates', () => {
   it('keeps the shipped tier order when nothing is demanded', () => {
     const ranked = rank_gather_candidates([pack('low', 1), pack('high', 4)], new Map(), { x: 0, z: 0 })
     expect(ranked.map((row) => row.pack.item_type)).toEqual(['high', 'low'])
+  })
+})
+
+// The gap this closes: a trade whose recipes are built from intermediates (FARMER flour, MINER
+// quartz_powder, HERBALIST green_mushroom_powder) never progressed, because the rotation only lists
+// the crafting jobs and nothing ever made the intervening refinement. The planner must now walk the
+// chain and craft the missing prerequisite first.
+describe('select_craft_target prerequisites', () => {
+  const ctx_for = (jobs: Record<string, number>, inventory: readonly (readonly [string, number])[]): any => {
+    const state = {
+      characters: [
+        {
+          id: 'c',
+          jobs: Object.fromEntries(
+            Object.entries(jobs).map(([job, level]) => [job, String(job_xp_for_level(level) ?? 0)])
+          ),
+          equipment: [],
+        },
+      ],
+      inventory: inventory.map(([item_type, amount], index) => ({
+        id: `i${index}`,
+        item_type,
+        amount,
+        category: 'resource',
+      })),
+      listings: [],
+    }
+    return { state: () => state, character_id: 'c' }
+  }
+
+  it('refines an intermediate instead of reporting nothing craftable', () => {
+    // No trade recipe can fire from raw staples alone, but their chains resolve to these leaves.
+    const plan = select_craft_target(ctx_for({}, [['green_mushroom', 10], ['water', 10], ['quartz', 10]]))
+    expect(plan).not.toBeNull()
+    expect(['FARMER', 'HERBALIST', 'MINER']).toContain(plan!.job)
+  })
+
+  it('walks the chain: the powder first, then the intermediate that eats it', () => {
+    const powder = select_craft_target(ctx_for({}, [['green_mushroom', 10], ['water', 10]]))
+    expect(powder?.output_type).toBe('green_mushroom_powder')
+    // Once the refinement is held, the very next step is the ALCHEMIST intermediate built from it.
+    const lacquer = select_craft_target(
+      ctx_for({}, [
+        ['green_mushroom', 10],
+        ['water', 10],
+        ['green_mushroom_powder', 10],
+        ['tree_resin', 10],
+      ])
+    )
+    expect(lacquer?.output_type).toBe('mushroom_lacquer')
+  })
+
+  it('still crafts a directly affordable trade recipe first', () => {
+    const plan = select_craft_target(ctx_for({}, [['gnawed_branch', 3], ['salvaged_scrap', 2]]))
+    expect(plan?.output_type).toBe('old_hoe')
+    expect(plan?.job).toBe('HANDYMAN')
   })
 })

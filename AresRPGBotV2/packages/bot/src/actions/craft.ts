@@ -130,10 +130,53 @@ const better_recipe =
     return 0
   }
 
+/** The level this character holds in one job (0 falls back to level 1, matching {@link plan_recipe}). */
+const job_level_of = (character: CharacterRow, job: string): number =>
+  job_level_from_xp(Number(character.jobs?.[job] ?? '0'))
+
+/** The next recipe to craft so a blocked `detail` climbs one step closer to craftable.
+ *
+ *  `plan_recipe` only proposes what the inventory already holds, so a trade whose recipes are built
+ *  from INTERMEDIATES — a FARMER's wheat_flour, a MINER's quartz_powder, a HERBALIST's
+ *  green_mushroom_powder — falls through the rotation forever, and so does every trade that eats
+ *  them (JEWELER, BAKER). Those intermediates are authored recipes of the GATHERING jobs, which the
+ *  rotation deliberately does not list, so nothing ever made them. This walks `detail`'s missing
+ *  ingredients and, recursively, their own missing ingredients, returning the deepest recipe the
+ *  character can craft RIGHT NOW (refinements included). It is demand-driven: a refinement is only
+ *  proposed because a level-eligible trade recipe is missing it. Cycle-guarded by output type, so an
+ *  authored loop returns null instead of recursing forever. */
+const craft_prerequisite = (
+  character: CharacterRow,
+  detail: RecipeDetail,
+  inventory: readonly ItemRow[],
+  unavailable: ReadonlySet<string>,
+  seen: ReadonlySet<string>
+): RecipeDetail | null => {
+  for (const ingredient of detail.ingredients) {
+    if (held(inventory, ingredient.item_type, unavailable)) continue
+    const recipe = recipes_by_output[ingredient.item_type]
+    if (!recipe) continue
+    const sub = recipe_detail(recipe)
+    if (seen.has(sub.output_type)) continue
+    const level = job_level_of(character, sub.job)
+    if (level < craft_required_level(sub.ingredients.length)) continue
+    if (craft_xp_at_level(sub.ingredients.length, level) <= 0) continue
+    // The intermediate itself is craftable now: that is the step to take.
+    if (plan_recipe(character, sub, inventory, unavailable)) return sub
+    // Otherwise look for the step that unblocks it.
+    const deeper = craft_prerequisite(character, sub, inventory, unavailable, new Set([...seen, sub.output_type]))
+    if (deeper) return deeper
+  }
+  return null
+}
+
 /** The best recipe the character can craft right now. The character rotates through every crafting
  *  job (least-trained first); within a job the highest-XP affordable recipe wins, with ties broken by
  *  output value so a dungeon key beats an old tool and an upgrade beats a duplicate at the same XP.
- *  Returns null when no ingredient set is held for any trade. */
+ *  When a level-eligible recipe is blocked on a missing intermediate, its deepest missing prerequisite
+ *  (a refinement or another intermediate) is crafted first, so the trades are not starved of the
+ *  flour/powder/weave their recipes are built from. Returns null when no ingredient set is held for
+ *  any trade and no prerequisite stands between it and one. */
 export const select_craft_target = (ctx: ActionContext): CraftPlan | null => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
@@ -147,6 +190,22 @@ export const select_craft_target = (ctx: ActionContext): CraftPlan | null => {
     for (const detail of recipes) {
       const plan = plan_recipe(character, detail, inventory, unavailable)
       if (plan) return plan
+      // A level-gated recipe cannot drive a refinement: this character will not craft the trade
+      // recipe even once the input is held.
+      const level = job_level_of(character, detail.job)
+      if (level < craft_required_level(detail.ingredients.length)) continue
+      if (craft_xp_at_level(detail.ingredients.length, level) <= 0) continue
+      const prerequisite = craft_prerequisite(
+        character,
+        detail,
+        inventory,
+        unavailable,
+        new Set([detail.output_type])
+      )
+      if (prerequisite) {
+        const preplan = plan_recipe(character, prerequisite, inventory, unavailable)
+        if (preplan) return preplan
+      }
     }
   }
   return null
