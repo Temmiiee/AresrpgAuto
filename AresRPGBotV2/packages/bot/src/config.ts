@@ -115,6 +115,9 @@ export type BotConfig = Readonly<{
   party_size: number
   /** per-character chore assignment (gather a single job / rotate all crafting jobs / none) */
   chore_plan: ChorePlan
+  /** how long a character may go with no chore before its pass runs one BEFORE staging another
+   *  fight (ms), so gathering/crafting never sits idle behind a wall of engages; 0 disables the floor */
+  chore_interval_ms: number
   /** the character name that leads the party into a shared fight */
   leader_name: string
   /** minutes between party-wide Discord progress digests (0 disables them) */
@@ -156,6 +159,7 @@ export const config: BotConfig = Object.freeze({
   state_dir: process.env.BOT_STATE_DIR ?? '.state',
   party_size: Math.min(Math.max(env_int(process.env.BOT_PARTY_SIZE) ?? 4, 1), 4),
   chore_plan: parse_chore_plan(process.env.BOT_CHORE_PLAN),
+  chore_interval_ms: Math.max(env_int(process.env.BOT_CHORE_INTERVAL_MS) ?? 5 * 60_000, 0),
   leader_name: process.env.BOT_LEADER ?? 'omori',
   digest_minutes: Math.max(0, env_int(process.env.BOT_DIGEST_MINUTES) ?? 60),
   cross_world_gatherer: (process.env.BOT_CROSS_WORLD_GATHERER ?? 'archero').toLowerCase(),

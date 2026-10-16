@@ -208,7 +208,16 @@ type CharRuntime = {
   awaiting_fight_ms: number | null
   /** timestamp of last dungeon key craft attempt (rate limit) */
   last_key_craft_attempt_ms: number | null
+  /** last time this character's chore genuinely acted (gathered or crafted); the forced window reads it */
+  last_chore_ms: number
 }
+
+/** The forced-chore floor: once this character has gone a full interval with NO chore, its pass runs
+ *  the chore BEFORE it stages another fight, so gathering/crafting keeps pace behind a wall of engages
+ *  instead of only on the settle beat. Stamped only when a chore genuinely acts, so an empty beat does
+ *  not reset it. Disabled when `BOT_CHORE_INTERVAL_MS` is 0. */
+const chore_due = (rt: CharRuntime): boolean =>
+  config.chore_interval_ms > 0 && Date.now() - rt.last_chore_ms >= config.chore_interval_ms
 
 /** Human-readable one-liner for a chore role, logged at startup so it is obvious what each
  *  character will do with its non-combat time. */
@@ -450,6 +459,7 @@ export const play_loop = async (
       gather_cursor: 0,
       awaiting_fight_ms: null,
       last_key_craft_attempt_ms: null,
+      last_chore_ms: Date.now(),
     })
   }
 
@@ -744,7 +754,7 @@ export const play_loop = async (
       }
     }
 
-    if (group_mode && is_leader && rt.chore_pending) {
+    if (group_mode && is_leader && (rt.chore_pending || chore_due(rt))) {
       rt.chore_pending = false
       // Bounded to the party's neighbourhood: an unbounded chore hands the leader the demanded node
       // the crafting rotation owes, which may be zones away, and walks it there alone in one silent
@@ -809,8 +819,9 @@ export const play_loop = async (
       return idle_sleep_ms
     }
 
-    // 3c. chores — a settled fight is the natural beat to harvest one node and craft one batch
-    if (rt.chore_pending) {
+    // 3c. chores — a settled fight is the natural beat to harvest one node and craft one batch; a
+    // character that has since blown the forced window runs one too, so no engage cadence starves it.
+    if (rt.chore_pending || chore_due(rt)) {
       rt.chore_pending = false
       if (await run_chore(rt, group_mode)) return idle_sleep_ms
     }
@@ -940,6 +951,9 @@ export const play_loop = async (
       }
     }
 
+    // Only a chore that genuinely did something pushes the forced window out; an empty beat keeps it
+    // due, so a blocked pass retries instead of silently resetting the floor.
+    if (acted) rt.last_chore_ms = Date.now()
     return acted
   }
 
