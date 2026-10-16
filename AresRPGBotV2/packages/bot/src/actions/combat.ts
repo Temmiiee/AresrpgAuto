@@ -138,13 +138,24 @@ const drive_placement = async (
 
   const cell = place_cell(contract, seat)
   if (cell !== null) {
+    // The checkpoint trails an accepted place; re-sending it aborts on chain. Once the place is
+    // accepted, hold until the checkpoint reflects it (the streamed cell becoming a start cell
+    // clears `place_cell`, and `fighter.ready` ends placement).
+    if (ctx.fight_runtimes.placement_sent(contract.id, seat, 'place'))
+      return { kind: 'waiting_turn', detail: 'placed; awaiting the checkpoint' }
     const placed = await ctx.sdk.fight.place({ fight: contract.id, fighter_idx: BigInt(seat), cell })
+    ctx.fight_runtimes.mark_placement_sent(contract.id, seat, 'place')
     ctx.ledger.append({ kind: 'fight_place', digest: placed.digest, detail: { fight: contract.id, seat } })
     log_info('combat', `placed seat ${seat} at ${cell} in ${contract.id}`)
     return { kind: 'placed', detail: String(cell) }
   }
 
+  // Same guard for `ready`: the observed `combat::ready` abort 1706 was a seat re-readying a beat
+  // after its accepted ready, before the checkpoint showed `fighter.ready`.
+  if (ctx.fight_runtimes.placement_sent(contract.id, seat, 'ready'))
+    return { kind: 'waiting_turn', detail: 'readied; awaiting the checkpoint' }
   const readied = await ctx.sdk.fight.ready({ fight: contract.id, fighter_idx: BigInt(seat) })
+  ctx.fight_runtimes.mark_placement_sent(contract.id, seat, 'ready')
   ctx.ledger.append({
     kind: 'fight_ready',
     digest: readied.digest,
