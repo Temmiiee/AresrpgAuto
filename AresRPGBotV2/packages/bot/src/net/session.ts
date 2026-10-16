@@ -50,7 +50,7 @@ import {
   create_party,
   follower_group_step,
   hop_toward,
-  join_followers,
+  join_dungeon_followers,
   leader_group_step,
   leader_live_pose,
   log_rejoin_due,
@@ -72,7 +72,7 @@ import {
 } from '../actions/excursion.ts'
 import { safe_travel_to } from '../actions/roam.ts'
 import { maybe_craft_dungeon_key, DUNGEON_KEYS, should_run_dungeons } from '../actions/dungeon.ts'
-import { create_dungeon_runner, type DungeonRunner } from '../actions/dungeon_run.ts'
+import { create_dungeon_runner, follower_dungeon_step, type DungeonRunner } from '../actions/dungeon_run.ts'
 import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions/cross_world.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, type ActionContext } from '../actions/context.ts'
@@ -156,6 +156,10 @@ const ENGAGE_GRACE_MS = 45_000
 const WORLD_FALLBACK = 'nauvis'
 /** How many settled fights between console progress digests. */
 const SUMMARY_EVERY_FIGHTS = 10
+/** How many craft batches one chore beat submits (while affordable). Crafting XP scales with the
+ *  batch, and one batch per settled fight left every crafting job far behind the gatherers; the loop
+ *  stops the moment nothing is affordable, so it never blocks the pass on an empty inventory. */
+const CRAFT_BATCHES_PER_CHORE = 3
 /** How often the party-wide Discord digest is sent (configurable; 0 disables). */
 const DIGEST_INTERVAL_MS = config.digest_minutes * 60_000
 /** How far (in blocks) a party member may wander for a node while the party is grouping. Two zones is
@@ -218,6 +222,8 @@ const describe_chore = (chore: ChoreRole): string => {
       return `gather all (${GATHERING_JOBS.join('/')})`
     case 'gather_craft':
       return `gather ${chore.job} + rotate crafts`
+    case 'gather_all_craft':
+      return `gather all (${GATHERING_JOBS.join('/')}) + rotate crafts`
     case 'none':
       return 'none'
   }
@@ -618,6 +624,14 @@ export const play_loop = async (
     const group_mode = toggles.group && party_attempting(party_state)
     const is_leader = character.id === party_state.leader_id
 
+    // 3b-bis. group dungeon: when the leader has committed the party to a run, every key-holder must
+    // ENTER it before the dungeon door will accept its join. A follower walks to the portal and burns
+    // its own key here — before the routed steps below can send it off gathering. The step also gives
+    // up a run the leader is no longer driving, so a follower never sits rooted at a portal.
+    if (toggles.group && !is_leader) {
+      if (await follower_dungeon_step(ctx, mover)) return idle_sleep_ms
+    }
+
     // 3c. keep the party together. Every activity below can hand the LEADER a far target — the
     // recipe-driven chore's demanded node, a dungeon city, an excursion zone, a roam band — and each
     // walks it there in ONE silent `travel_to` leg (a healthy multi-minute walk logs nothing while
@@ -658,12 +672,20 @@ export const play_loop = async (
       if (dungeon !== null) {
         if (dungeon.kind !== 'skipped' && dungeon.kind !== 'waiting')
           log_info('session', `${character.name}: dungeon ${dungeon.kind} — ${dungeon.detail}`)
-        // If a room fight was started, join all followers to it immediately.
+        // The room fight was started: join every follower that has ENTERED the run. A dungeon room
+        // refuses the ordinary join (its door policy), so each seat goes through the dungeon door; a
+        // member that never entered is skipped (the door would abort).
         if (dungeon.kind === 'started' && dungeon.fight_id) {
-          const followers = party_state.members.filter((id) => id !== party_state.leader_id && !party_state.detached.has(id))
+          const dungeon_name = current.dungeon_run?.dungeon ?? party_state.dungeon?.dungeon ?? null
+          const followers = party_state.members.filter((id) => {
+            if (id === party_state.leader_id || party_state.detached.has(id)) return false
+            const row = game_state.characters.find((c) => c.id === id)
+            if (!row?.dungeon_run) return false
+            return dungeon_name === null || row.dungeon_run.dungeon === dungeon_name
+          })
           if (followers.length > 0) {
             try {
-              await join_followers(ctx, followers, dungeon.fight_id)
+              await join_dungeon_followers(ctx, followers, dungeon.fight_id)
             } catch (error) {
               log_warn('party', `dungeon join failed: ${error instanceof Error ? error.message : String(error)}`)
             }
@@ -863,12 +885,12 @@ export const play_loop = async (
     const { ctx, mover, chore, character } = rt
     let acted = false
 
-    // Which gathering job this pass should harvest, if any. `gather_all` rotates every job via a
-    // per-character cursor; `gather` and `gather_craft` target their one assigned job.
+    // Which gathering job this pass should harvest, if any. `gather_all` and `gather_all_craft`
+    // rotate every job via a per-character cursor; `gather` and `gather_craft` target their one job.
     const gather_job =
       chore.kind === 'gather' || chore.kind === 'gather_craft'
         ? chore.job
-        : chore.kind === 'gather_all'
+        : chore.kind === 'gather_all' || chore.kind === 'gather_all_craft'
           ? GATHERING_JOBS[rt.gather_cursor % GATHERING_JOBS.length]
           : undefined
 
@@ -887,10 +909,10 @@ export const play_loop = async (
         acted = true
       }
       // Advance the rotation so the all-resource gatherer sweeps FARMER → HERBALIST → MINER.
-      if (chore.kind === 'gather_all') rt.gather_cursor = (rt.gather_cursor + 1) % GATHERING_JOBS.length
+      if (chore.kind === 'gather_all' || chore.kind === 'gather_all_craft') rt.gather_cursor = (rt.gather_cursor + 1) % GATHERING_JOBS.length
     }
     const is_leader = character.id === party_state.leader_id
-    const crafts = (chore.kind === 'craft' || chore.kind === 'gather_craft') && toggles.craft
+    const crafts = (chore.kind === 'craft' || chore.kind === 'gather_craft' || chore.kind === 'gather_all_craft') && toggles.craft
 
     // Leader (omori): the DUNGEON KEY comes FIRST. A key and an old tool can share the same
     // ingredient count — the same crafting XP — but only the key unlocks a farmable run, and the
@@ -909,8 +931,9 @@ export const play_loop = async (
     }
 
     if (crafts && !key_crafted) {
-      const crafted = await drive_craft(ctx)
-      if (crafted.success) {
+      for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
+        const crafted = await drive_craft(ctx)
+        if (!crafted.success) break
         rt.stats = record_craft(rt.stats, crafted.output_type, crafted.successes)
         digest_stats = record_craft(digest_stats, crafted.output_type, crafted.successes)
         acted = true

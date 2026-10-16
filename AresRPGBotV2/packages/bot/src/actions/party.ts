@@ -87,6 +87,21 @@ export type PartyTarget = Readonly<{
   z: number
 }>
 
+/** A committed group dungeon run. The leader sets it when the party holds at least two keys of the
+ *  dungeon; every member that holds a key enters the run (burning its own key) and then joins each
+ *  room fight through the dungeon door. Cleared when the leader's run ends. */
+export type PartyDungeon = Readonly<{
+  dungeon: string
+  world: string
+  city: string
+  x: number
+  z: number
+  /** members the leader expects to enter (key-holders when it committed) */
+  seats: number
+  /** when the leader committed (ms since epoch); bounds how long it waits for the enterers */
+  committed_ms: number
+}>
+
 export type PartyState = {
   /** the character id the party fights behind (its group opens the fight) */
   leader_id: string | null
@@ -146,6 +161,9 @@ export type PartyState = {
    *  side's preview and its `all_staged` test — until the member stages again, so one straggler
    *  cannot freeze the whole party for the full stage timeout. */
   stragglers: Set<string>
+
+  /** the party's active group dungeon run, or null (set and cleared by the leader's dungeon runner) */
+  dungeon: PartyDungeon | null
 }
 
 export const create_party = (): PartyState => ({
@@ -168,6 +186,7 @@ export const create_party = (): PartyState => ({
   poses: new Map(),
   detached: new Set(),
   stragglers: new Set(),
+  dungeon: null,
 })
 
 /** Clear the current rendezvous/fight. The excursion state (poses, need_since, etc.) is managed
@@ -353,6 +372,34 @@ export const join_followers = async (ctx: ActionContext, followers: readonly str
   ctx.ledger.append({ kind: 'fight_join_group', digest: receipt.digest, detail: { fight, members: followers } })
   log_info('party', `joined ${followers.length} partner(s) to ${fight}`)
   return followers.length
+}
+
+/** Join the followers that have ALREADY ENTERED the run to a dungeon room fight. The dungeon door is
+ *  per-character and refuses the ordinary join, so each seat is its own `join_dungeon_room`. A member
+ *  that never entered is skipped — its run is absent and the door would abort. */
+export const join_dungeon_followers = async (
+  ctx: ActionContext,
+  followers: readonly string[],
+  fight: string
+): Promise<number> => {
+  if (followers.length === 0) return 0
+  const state = ctx.state()
+  const joined: string[] = []
+  for (const id of followers) {
+    const character = select_character(state, id)
+    if (!character) continue
+    try {
+      await ctx.sdk.dungeon.join_fight({ fight, character_id: id, custody: custody_of(character) })
+      joined.push(id)
+    } catch (error) {
+      log_warn('party', `dungeon seat join failed for ${id}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  if (joined.length > 0) {
+    ctx.ledger.append({ kind: 'fight_join_group', detail: { fight, members: joined, dungeon: true } })
+    log_info('party', `joined ${joined.length} partner(s) to dungeon room ${fight}`)
+  }
+  return joined.length
 }
 
 /** The leader's pass: plan a rendezvous when idle, then engage + join once every follower can reach
