@@ -52,6 +52,11 @@ export type Mover = Readonly<{
   pose: () => Pose
   /** re-read the character row; a fresh checkpoint snaps the reported pose onto it */
   sync: (character: CharacterRow) => void
+  /** Adopt the checkpoint a ROOTING door (a gather) just wrote: the chain records the current pose
+   *  at `now + duration`, and travel is refused until then. Without this the mover keeps its
+   *  pre-harvest bank and over-estimates how far it may go, proving a leg the chain rejects
+   *  (`world::prove_move`, ETravelTooFar 305). Later-dated only: a root never shortens the bank. */
+  note_rooted: (duration_ms: number) => void
   /** true once the chain clock can already prove the leg from the anchor to the target */
   can_reach: (to_x: number, to_z: number) => boolean
   /** stream presence toward a target at the legal speed, then stop (does NOT prove the leg) */
@@ -219,6 +224,23 @@ export const create_mover = (ctx: ActionContext): Mover => {
     return can_reach(to_x, to_z)
   }
 
+  const note_rooted = (duration_ms: number): void => {
+    // The checkpoint the chain writes for a rooting door is `now + duration`; estimating it from the
+    // live chain clock (rather than the lagging roster) is what keeps `can_reach` honest. A later
+    // timestamp only ever makes the bank look SMALLER, the safe direction.
+    const chain = chain_now(ctx.state().chain_clock, Date.now())
+    const at_ms = (chain ?? Date.now()) + duration_ms
+    if (anchor && at_ms <= anchor.at_ms) return
+    anchor = Object.freeze({
+      world: anchor?.world ?? ctx.world,
+      x: pose.x,
+      z: pose.z,
+      at_ms,
+      pet: pet_now,
+    })
+    anchor_local_ms = Date.now()
+  }
+
   const ensure_zone = async (refresh: boolean): Promise<void> => {
     const character = ctx.state().characters.find(({ id }) => id === ctx.character_id)
     if (!character) return
@@ -257,6 +279,7 @@ export const create_mover = (ctx: ActionContext): Mover => {
     anchor: () => anchor,
     pose: () => pose,
     sync,
+    note_rooted,
     can_reach,
     travel_to,
     prove_ready,

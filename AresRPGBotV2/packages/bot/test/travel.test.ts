@@ -86,6 +86,28 @@ describe('mover anchor sync', () => {
     expect(mover.anchor()?.z).toBe(600)
     expect(mover.pose().x).toBe(500)
   })
+
+  it('refuses travel while a harvested root is pending (ETravelTooFar 305)', () => {
+    const now = Date.now()
+    const mover = create_mover(ctx_for(live_chain()))
+    mover.sync(character({ at_ms: now }))
+    expect(mover.can_reach(100, 200)).toBe(true)
+    // A gather writes the checkpoint at `now + harvest`, so for that window the chain refuses even
+    // a zero-length leg. The mover must mirror it instead of over-travelling.
+    mover.note_rooted(12_000)
+    expect((mover.anchor()?.at_ms ?? 0) > Date.now()).toBe(true)
+    expect(mover.can_reach(100, 200)).toBe(false)
+  })
+
+  it('never pulls the anchor backward with an older root', () => {
+    const now = Date.now()
+    const mover = create_mover(ctx_for(live_chain()))
+    mover.sync(character({ at_ms: now }))
+    mover.sync(character({ x: 300, z: 400, at_ms: now }))
+    mover.note_rooted(0)
+    expect(mover.anchor()?.x).toBe(300)
+    expect(mover.anchor()?.z).toBe(400)
+  })
 })
 
 describe('chain clock integrality', () => {

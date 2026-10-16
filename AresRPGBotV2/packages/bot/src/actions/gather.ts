@@ -5,7 +5,7 @@
 // tier, protector, and rare link are authored facts the seed already holds, merged by the content
 // projection. A gather can only be composed with those, so they are read here, never guessed.
 import { zone_of, type CharacterRow, type ItemRow } from '@aresrpg/protocol'
-import { job_level_from_xp } from '@aresrpg/immutable'
+import { gather_time_ms, job_level_from_xp } from '@aresrpg/immutable'
 
 import { gatherable_of, tool_category_of_job, tier_unlock_level, type Gatherable, type GatheringJob } from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
@@ -177,6 +177,12 @@ export const gather_once = async (
     },
   })
   log_info('gather', `${target.pack.item_type} ×${receipt.quantity} at ${zx}:${zz}`)
+
+  // The harvest ROOTS the character on chain for `gather_time` beyond now, so the checkpoint the
+  // next leg proves against is future-dated. Tell the mover, or it keeps the pre-harvest bank and
+  // the following search_zone/gather refuses with `world::prove_move` (ETravelTooFar 305).
+  const job_level = job_level_from_xp(Number(jobs[target.gatherable.job] ?? 0))
+  mover.note_rooted(gather_time_ms(job_level))
 
   if (!receipt.ambushed) return Object.freeze({ kind: 'gathered', item_type: target.pack.item_type, quantity: receipt.quantity, protector: null })
 
