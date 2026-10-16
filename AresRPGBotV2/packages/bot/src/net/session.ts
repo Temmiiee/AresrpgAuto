@@ -524,6 +524,7 @@ export const play_loop = async (
   }
 
   // ── per-character decision pass ─────────────────────────────────────
+  const pass_diag = new Map<string, string>()
   const run_pass = async (rt: CharRuntime): Promise<number> => {
     const { ctx, mover, roamer, character } = rt
 
@@ -533,9 +534,27 @@ export const play_loop = async (
 
     mover.sync(current)
 
-    // Track the latest streamed pose for excursion reach checks.
-    if (current.x !== undefined && current.z !== undefined)
-      party_state.poses.set(character.id, { x: current.x, z: current.z })
+    // Verbose trace (BOT_DEBUG=1): log whenever the pose, anchor or roster row changes, so a pose
+    // that snaps backward can be attributed to whoever moved it (sync vs a travel leg).
+    {
+      const a = mover.anchor()
+      const p = mover.pose()
+      const sig = `pose=${p.x},${p.z} anchor=${a ? `${a.x},${a.z}@${a.at_ms}` : 'null'} row=${current.x},${current.z}@${current.at_ms}`
+      if (pass_diag.get(character.id) !== sig) {
+        pass_diag.set(character.id, sig)
+        log_debug('pass', `${character.name}: ${sig}`)
+      }
+    }
+
+    // Track the LIVE streamed pose, NOT the chain checkpoint the roster row reports. The push lags
+    // the chain by minutes and a row only moves on an action door, so a follower that is merely
+    // RALLYING keeps reporting the spot it last searched. Every consumer of this map asks "where is
+    // this character now" — `party_center` (the engage preview's pose, the rendezvous target, the
+    // leader's keep-together geometry) and the excursion reach check — so a frozen row made the
+    // preview screen the same mob groups no matter how far the party walked (observed: identical
+    // win rates at every zone for hours, and a percentile cap that never let the party engage).
+    const live_pose = mover.pose()
+    party_state.poses.set(character.id, { x: live_pose.x, z: live_pose.z })
 
     // 1. reconcile any ended fight (settle loot, then close the fight object)
     log_debug(

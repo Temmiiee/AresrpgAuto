@@ -73,6 +73,19 @@ describe('mover anchor sync', () => {
     mover.sync(character({ at_ms: now - 60_000 }))
     expect(mover.can_reach(100, 200)).toBe(true)
   })
+
+  it('refuses a late row that still names the checkpoint the bot just left', () => {
+    // The roster push lags the chain by minutes. After the bot proves a leg itself, a straggling
+    // push carrying the OLD position must not snap the pose back — that re-plans and re-walks the
+    // same leg forever (the 74:95 <-> 78:95 ping-pong).
+    const now = Date.now()
+    const mover = create_mover(ctx_for(live_chain()))
+    mover.sync(character({ x: 500, z: 600, at_ms: now }))
+    mover.sync(character({ x: 100, z: 200, at_ms: now - 60_000 }))
+    expect(mover.anchor()?.x).toBe(500)
+    expect(mover.anchor()?.z).toBe(600)
+    expect(mover.pose().x).toBe(500)
+  })
 })
 
 describe('chain clock integrality', () => {

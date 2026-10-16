@@ -173,6 +173,7 @@ export const create_mover = (ctx: ActionContext): Mover => {
     // (the caller treats it as a pause and resumes from the streamed pose next pass), but a wall
     // deadline also bounds a chain clock that never lets a step through.
     const total = Math.abs(to_x - pose.x) + Math.abs(to_z - pose.z)
+    const leg_from = Object.freeze({ x: pose.x, z: pose.z })
     const deadline = Date.now() + step_min_ms(false) * Math.min(total, MAX_LEG_STEPS) * 4 + 30_000
     let steps = 0
     // Wall instant of the last block actually streamed. The gate below is shut on most polls (a step
@@ -202,6 +203,10 @@ export const create_mover = (ctx: ActionContext): Mover => {
       steps += 1
       last_step_ms = Date.now()
       report()
+    }
+    if (total >= 128) {
+      const who = ctx.state().characters.find((c) => c.id === ctx.character_id)?.name ?? ctx.character_id.slice(0, 8)
+      log_info('travel', `${who}: walked ${leg_from.x},${leg_from.z} -> ${to_x},${to_z} (${steps} blocks)`)
     }
   }
 
