@@ -119,14 +119,37 @@ export const create_mover = (ctx: ActionContext): Mover => {
     // a one-pass self-heal — while never adopting a worse future value.
     const chain = chain_now(ctx.state().chain_clock, Date.now())
     const ahead_of_chain = (at_ms: number): boolean => chain !== null && at_ms > chain + ANCHOR_FUTURE_SLACK_MS
+    const previous = anchor
     const moved =
-      anchor === null || anchor.world !== next.world || anchor.x !== next.x || anchor.z !== next.z
-    const newer = anchor !== null && anchor.at_ms < next.at_ms && !ahead_of_chain(next.at_ms)
-    const healed = anchor !== null && ahead_of_chain(anchor.at_ms) && next.at_ms < anchor.at_ms
+      previous === null || previous.world !== next.world || previous.x !== next.x || previous.z !== next.z
+    const newer = previous !== null && previous.at_ms < next.at_ms && !ahead_of_chain(next.at_ms)
+    const healed = previous !== null && ahead_of_chain(previous.at_ms) && next.at_ms < previous.at_ms
+    // A row whose checkpoint PREDATES the one already held must never move the pose backward. The
+    // roster push lags the chain by minutes, so after the bot proves a leg ITSELF (search_zone via
+    // `ensure_zone`) the next push can still carry the position it just left. Adopting that snapshot
+    // resets the pose to where the walk began, `advance` re-plans the SAME leg, and the character
+    // ping-pongs between two zones forever (observed: omori 74:95 <-> 78:95 on the roster cadence
+    // while the hourly digest read 0 fights / 0 gathers / 0 crafts for hours). A genuine external
+    // move carries a NEWER checkpoint and is still adopted; the poisoned-future self-heal still wins.
+    const stale =
+      previous !== null && previous.world === next.world && next.at_ms < previous.at_ms && !healed
+    if (stale) {
+      if (previous.x !== next.x || previous.z !== next.z)
+        log_info(
+          'travel',
+          `${character.name}: ignoring a stale checkpoint ${next.x},${next.z}@${next.at_ms} (holding ${previous.x},${previous.z}@${previous.at_ms})`
+        )
+      return
+    }
     if (!(moved || newer || healed)) return
     anchor = next
     anchor_local_ms = Date.now()
     pose = anchor_pose(next)
+    if (previous !== null && (previous.x !== next.x || previous.z !== next.z))
+      log_info(
+        'travel',
+        `${character.name}: checkpoint ${previous.x},${previous.z}@${previous.at_ms} -> ${next.x},${next.z}@${next.at_ms}`
+      )
   }
 
   const can_reach = (to_x: number, to_z: number): boolean => {
@@ -195,6 +218,10 @@ export const create_mover = (ctx: ActionContext): Mover => {
     const character = ctx.state().characters.find(({ id }) => id === ctx.character_id)
     if (!character) return
     const { zx, zz } = zone_of(pose.x, pose.z)
+    // The instant this leg is provable is the best local estimate of the checkpoint the chain is
+    // about to record (the tx executes a beat later, so this under-estimates by that beat — the
+    // safe direction: the travel bank can never look larger than it truly is).
+    const proven_at_ms = effective_now()
     await ctx.sdk.character.search_zone({
       character_id: ctx.character_id,
       world: character.world ?? ctx.world,
@@ -204,6 +231,21 @@ export const create_mover = (ctx: ActionContext): Mover => {
       custody: custody_of(character),
     })
     log_info('travel', `zone ${character.world ?? ctx.world}:${zx}:${zz} searched at ${pose.x},${pose.z}`)
+    // The door just moved the chain checkpoint onto our pose, so the mover is anchored HERE now.
+    // Without this the anchor keeps the position (and clock) the walk STARTED from: a stale anchor
+    // accrues travel time forever (so `can_reach` covers every leg), and a re-pushed roster row
+    // naming the old checkpoint looks newer than it is and snaps the pose back — the ping-pong that
+    // made `advance` re-walk the same leg for hours.
+    if (proven_at_ms > 0) {
+      anchor = Object.freeze({
+        world: character.world ?? ctx.world,
+        x: pose.x,
+        z: pose.z,
+        at_ms: proven_at_ms,
+        pet: pet_now,
+      })
+      anchor_local_ms = Date.now()
+    }
   }
 
   return Object.freeze({
