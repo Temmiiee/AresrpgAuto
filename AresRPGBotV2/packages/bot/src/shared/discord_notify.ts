@@ -19,8 +19,14 @@ const send = async (content: string, level: NotifyLevel): Promise<void> => {
     return
   }
   const mention = config.discord_mention
+  // ONE visible block per notification. Posting the same text in BOTH `content` and an embed made
+  // every message render twice (the plain body and the coloured card), which the operator read as
+  // duplicate notifications. The embed carries the message; `content` carries only the ping.
   const body = {
-    content: mention ? `${mention}\n${content}` : content,
+    username: 'AresRPG Bot',
+    // Omit `content` entirely when there is no ping: an empty string is accepted by Discord today,
+    // but omitting it is the unambiguous "embed only" payload.
+    ...(mention ? { content: mention } : {}),
     embeds: [{ description: content, color: COLOR[level] }],
   }
   try {

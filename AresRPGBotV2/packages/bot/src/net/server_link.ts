@@ -16,7 +16,7 @@ import { parse_server_packet, type ClientPacket, type ServerPacket } from '@ares
 import type { Signer } from '@mysten/sui/cryptography'
 
 import { config } from '../config.ts'
-import { log_info, log_warn } from '../shared/logger.ts'
+import { log_debug, log_warn } from '../shared/logger.ts'
 
 const BACKOFF_START_MS = 1_000
 const BACKOFF_CAP_MS = 30_000
@@ -92,7 +92,7 @@ export const create_server_link = ({ address, signer, on_packet, on_status }: Se
   }
 
   const send = (target: WebSocket, packet: Readonly<ClientPacket>): void => {
-    if (!SILENT_PACKETS.has(packet.type)) log_info('ws', `→ ${packet.type}`)
+    if (!SILENT_PACKETS.has(packet.type)) log_debug('ws', `→ ${packet.type}`)
     target.send(JSON.stringify(packet))
   }
 
@@ -161,7 +161,7 @@ export const create_server_link = ({ address, signer, on_packet, on_status }: Se
       report(Object.freeze({ kind: 'accepted', address: packet.address }))
       start_latency()
     }
-    if (!SILENT_PACKETS.has(packet.type)) log_info('ws', `← ${packet.type}`)
+    if (!SILENT_PACKETS.has(packet.type)) log_debug('ws', `← ${packet.type}`)
     on_packet(packet)
   }
 

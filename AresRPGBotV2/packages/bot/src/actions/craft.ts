@@ -106,18 +106,46 @@ const rotation_order = (character: CharacterRow): readonly string[] => {
   )
 }
 
+/** True when a recipe output is a dungeon key — the one output whose whole point is a farmable run. */
+const is_key_output = (output_type: string): boolean => items_by_type[output_type]?.category === 'key'
+
+/** Value of a recipe's output, best first, used ONLY to break an XP tie: a dungeon key, then an
+ *  output the party does not already hold (crafting a duplicate tool is pure waste), then the
+ *  higher-level item (a level-10 tool is a real upgrade over a level-1 one at the same XP). */
+const output_value = (detail: RecipeDetail, holds: (item_type: string) => boolean): readonly number[] =>
+  Object.freeze([
+    is_key_output(detail.output_type) ? 1 : 0,
+    holds(detail.output_type) ? 0 : 1,
+    items_by_type[detail.output_type]?.level ?? 0,
+  ])
+
+/** Best recipe first: XP desc (more ingredient slots grant more XP), then {@link output_value}. */
+const better_recipe =
+  (holds: (item_type: string) => boolean) =>
+  (left: RecipeDetail, right: RecipeDetail): number => {
+    if (left.craft_xp !== right.craft_xp) return right.craft_xp - left.craft_xp
+    const a = output_value(left, holds)
+    const b = output_value(right, holds)
+    for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return b[i]! - a[i]!
+    return 0
+  }
+
 /** The best recipe the character can craft right now. The character rotates through every crafting
- *  job (least-trained first); within a job the highest-XP affordable recipe wins. Returns null when
- *  no ingredient set is held for any trade. */
+ *  job (least-trained first); within a job the highest-XP affordable recipe wins, with ties broken by
+ *  output value so a dungeon key beats an old tool and an upgrade beats a duplicate at the same XP.
+ *  Returns null when no ingredient set is held for any trade. */
 export const select_craft_target = (ctx: ActionContext): CraftPlan | null => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
   if (!character) return null
   const unavailable = unavailable_item_ids(state)
+  const inventory = state.inventory
+  const holds = (item_type: string): boolean =>
+    inventory.some((row) => row.item_type === item_type && !unavailable.has(row.id))
   for (const job of rotation_order(character)) {
-    const recipes = [...job_recipes(job)].sort((left, right) => right.craft_xp - left.craft_xp)
+    const recipes = [...job_recipes(job)].sort(better_recipe(holds))
     for (const detail of recipes) {
-      const plan = plan_recipe(character, detail, state.inventory, unavailable)
+      const plan = plan_recipe(character, detail, inventory, unavailable)
       if (plan) return plan
     }
   }

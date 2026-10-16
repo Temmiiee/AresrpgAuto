@@ -146,7 +146,10 @@ export const config: BotConfig = Object.freeze({
     group: env_flag(process.env.BOT_GROUP, true),
     cross_world: env_flag(process.env.BOT_CROSS_WORLD, true),
   }),
-  idle_sleep_ms: env_int(process.env.BOT_IDLE_SLEEP_MS) ?? 5_000,
+  // The idle beat is pure overhead stacked on top of each pass's blocking work (a staging leg, a
+  // follower rally): it delays the next rendezvous/regroup check, never a transaction. 3s keeps the
+  // loop responsive without meaningfully raising the pass rate over a five-second beat.
+  idle_sleep_ms: env_int(process.env.BOT_IDLE_SLEEP_MS) ?? 3_000,
   state_dir: process.env.BOT_STATE_DIR ?? '.state',
   party_size: Math.min(Math.max(env_int(process.env.BOT_PARTY_SIZE) ?? 4, 1), 4),
   chore_plan: parse_chore_plan(process.env.BOT_CHORE_PLAN),

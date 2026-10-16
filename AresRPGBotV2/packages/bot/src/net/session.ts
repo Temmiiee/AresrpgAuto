@@ -140,10 +140,13 @@ export const create_session = (
 
 // ── play loop ────────────────────────────────────────────────────────
 
-/** How long to wait between passes while a fight is mid-resolution (a mob is acting). */
-const FIGHT_POLL_MS = 1_000
+/** How long to wait between passes while a fight is mid-resolution (a mob is acting). The poll is a
+ *  local checkpoint read, not a transaction, so a sub-second beat just lets us take our turn the
+ *  instant the mob's resolves instead of up to a second later — the single biggest inter-turn
+ *  latency we control. */
+const FIGHT_POLL_MS = 400
 /** How long to wait after a settlement batch before re-reading the resolutions feed. */
-const SETTLE_POLL_MS = 2_000
+const SETTLE_POLL_MS = 1_000
 /** How long to wait before retrying a settlement that did not complete. */
 const SETTLE_RETRY_MS = 15_000
 /** After an engage, how long to wait for the roster to reflect the new fight before re-screening. */
@@ -872,25 +875,31 @@ export const play_loop = async (
       // Advance the rotation so the all-resource gatherer sweeps FARMER → HERBALIST → MINER.
       if (chore.kind === 'gather_all') rt.gather_cursor = (rt.gather_cursor + 1) % GATHERING_JOBS.length
     }
-    if ((chore.kind === 'craft' || chore.kind === 'gather_craft') && toggles.craft) {
+    const is_leader = character.id === party_state.leader_id
+    const crafts = (chore.kind === 'craft' || chore.kind === 'gather_craft') && toggles.craft
+
+    // Leader (omori): the DUNGEON KEY comes FIRST. A key and an old tool can share the same
+    // ingredient count — the same crafting XP — but only the key unlocks a farmable run, and the
+    // rotation would otherwise spend the shared materials on the tool. When a key is affordable it
+    // owns this pass's crafting; the rotation resumes whenever no key can be made. Rate-limited so a
+    // key that keeps failing cannot starve the rotation.
+    let key_crafted = false
+    if (crafts && is_leader && should_run_dungeons(character)) {
+      const KEY_CRAFT_COOLDOWN_MS = 60_000
+      const now = Date.now()
+      if ((now - (rt.last_key_craft_attempt_ms ?? 0)) >= KEY_CRAFT_COOLDOWN_MS) {
+        rt.last_key_craft_attempt_ms = now
+        key_crafted = await maybe_craft_dungeon_key(ctx)
+        if (key_crafted) acted = true
+      }
+    }
+
+    if (crafts && !key_crafted) {
       const crafted = await drive_craft(ctx)
       if (crafted.success) {
         rt.stats = record_craft(rt.stats, crafted.output_type, crafted.successes)
         digest_stats = record_craft(digest_stats, crafted.output_type, crafted.successes)
         acted = true
-      }
-    }
-
-    // Leader (omori): also attempt dungeon key crafting during chore time, with a cooldown
-    // so normal job-leveling crafting runs first. Key crafting is a bonus, not the main loop.
-    const is_leader = character.id === party_state.leader_id
-    if (is_leader && should_run_dungeons(character) && toggles.craft) {
-      const KEY_CRAFT_COOLDOWN_MS = 60_000
-      const now = Date.now()
-      if ((now - (rt.last_key_craft_attempt_ms ?? 0)) >= KEY_CRAFT_COOLDOWN_MS) {
-        rt.last_key_craft_attempt_ms = now
-        log_info('dungeon', `${character.name}: attempting key craft`)
-        if (await maybe_craft_dungeon_key(ctx)) acted = true
       }
     }
 
@@ -938,10 +947,19 @@ export const play_loop = async (
       const c = game_state.characters.find((x) => x.id === rt.character.id)
       if (c) digest_marks.set(rt.character.id, xp_snapshot(c))
     }
+    let last_fired_ms = 0
     while (!stopped) {
-      const into_window = Date.now() % DIGEST_INTERVAL_MS
-      await sleep(into_window === 0 ? DIGEST_INTERVAL_MS : DIGEST_INTERVAL_MS - into_window)
+      // Sleep to the NEXT wall-clock boundary. This used to compute `into_window` and sleep the
+      // remainder, which DOUBLE-FIRED whenever the timer woke a few ms early: `into_window` was then
+      // still ~a full interval, so the loop slept the last few ms and sent a SECOND digest with empty
+      // deltas (the marks had just been advanced). The operator saw two notifications every hour, one
+      // of them empty. Anchoring to an absolute boundary and refusing to fire the same one twice makes
+      // an early (or late) timer harmless.
+      const boundary = (Math.floor(Date.now() / DIGEST_INTERVAL_MS) + 1) * DIGEST_INTERVAL_MS
+      await sleep(Math.max(1, boundary - Date.now()))
       if (stopped) break
+      if (boundary <= last_fired_ms) continue
+      last_fired_ms = boundary
       let total_xp = 0n
       const jobs: Record<string, bigint> = {}
       for (const rt of rts) {

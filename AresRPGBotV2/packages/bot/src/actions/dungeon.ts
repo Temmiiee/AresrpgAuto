@@ -19,6 +19,10 @@ export interface DungeonKeyConfig {
   difficulty: number
 }
 
+/** Last logged craftability per key. `maybe_craft_dungeon_key` runs on every chore beat, so the
+ *  negative case ("still missing X") is logged only when it CHANGES, not every pass. */
+const key_craftability = new Map<string, boolean>()
+
 export const DUNGEON_KEYS: readonly DungeonKeyConfig[] = Object.freeze([
   {
     key: 'key_of_gilded_lorito',
@@ -67,6 +71,25 @@ export const can_craft_key = (key: string, inventory: readonly ItemRow[], unavai
   return true
 }
 
+/** A one-line "what this key still needs" summary, for the operator log. */
+const describe_key_gap = (
+  key: string,
+  inventory: readonly ItemRow[],
+  unavailable: ReadonlySet<string>
+): string => {
+  const detail = dungeon_key_detail(key)
+  if (!detail) return `${key}: no recipe`
+  const missing = detail.ingredients
+    .map((ing) => {
+      const held = inventory.find((item) => item.item_type === ing.item_type && !unavailable.has(item.id))
+      return { item_type: ing.item_type, have: held?.amount ?? 0, need: ing.quantity }
+    })
+    .filter((row) => row.have < row.need)
+    .map((row) => `${row.item_type} ${row.have}/${row.need}`)
+    .join(', ')
+  return missing ? `${key} needs ${missing}` : `${key}: ready`
+}
+
 /** Plan and craft a dungeon key if ingredients are available. Returns true if crafted. */
 export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boolean> => {
   const state = ctx.state()
@@ -80,33 +103,33 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
   for (const dk of DUNGEON_KEYS) {
     if (blacklist.has(dk.key)) continue
     const canCraft = can_craft_key(dk.key, inventory, unavailable)
-    log_info('dungeon', `${character.name}: can_craft_key ${dk.key} = ${canCraft}`)
-    if (canCraft) {
-      const detail = dungeon_key_detail(dk.key)!
-      const plan = plan_recipe(character, detail, inventory, unavailable)
-      if (!plan) {
-        log_warn('dungeon', `${character.name}: plan_recipe failed for ${dk.key}`)
-        return false
-      }
-      const result = await craft_once(ctx, plan)
-      if (result.success) {
-        log_info('dungeon', `crafted ${dk.key} for ${dk.dungeon}`)
-        return true
-      } else {
-        log_warn('dungeon', `${character.name}: craft_once failed for ${dk.key}: ${result.outcome}`)
-      }
-    } else {
-      const detail = dungeon_key_detail(dk.key)
-      if (detail) {
-        for (const ing of detail.ingredients) {
-          const held = inventory.find((item) => item.item_type === ing.item_type && !unavailable.has(item.id))
-          const avail = held ? held.amount : 0
-          if (avail < ing.quantity) {
-            log_info('dungeon', `${character.name}: missing ${ing.item_type} for ${dk.key} (need ${ing.quantity}, have ${avail})`)
-          }
-        }
-      }
+    // This runs on every chore beat (rate-limited), so the negative case is logged only when a key's
+    // craftability CHANGES. Logging "can_craft_key … = false / missing …" every beat flooded the
+    // operator log with hundreds of identical lines an hour and buried the real events.
+    if (key_craftability.get(dk.key) !== canCraft) {
+      key_craftability.set(dk.key, canCraft)
+      log_info(
+        'dungeon',
+        canCraft
+          ? `${character.name}: can craft ${dk.key}`
+          : `${character.name}: ${describe_key_gap(dk.key, inventory, unavailable)}`
+      )
     }
+    if (!canCraft) continue
+    const detail = dungeon_key_detail(dk.key)
+    if (!detail) continue
+    const plan = plan_recipe(character, detail, inventory, unavailable)
+    if (!plan) {
+      log_warn('dungeon', `${character.name}: plan_recipe failed for ${dk.key}`)
+      return false
+    }
+    log_info('dungeon', `${character.name}: attempting key craft ${dk.key}`)
+    const result = await craft_once(ctx, plan)
+    if (result.success) {
+      log_info('dungeon', `crafted ${dk.key} for ${dk.dungeon}`)
+      return true
+    }
+    log_warn('dungeon', `${character.name}: craft_once failed for ${dk.key}: ${result.outcome}`)
   }
   return false
 }

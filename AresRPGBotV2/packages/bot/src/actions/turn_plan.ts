@@ -20,7 +20,7 @@ import {
   type HydratedFightCheckpoint,
 } from '@aresrpg/fight'
 
-import { log_info, log_debug } from '../shared/logger.ts'
+import { log_debug } from '../shared/logger.ts'
 
 import type { BotSdk } from '../auth/sdk_client.ts'
 
@@ -107,7 +107,7 @@ const next_action_party = (
       if (!is_heal_spell(name)) continue
       const targets = spell_target_cells(cp, actor, name).targetable
       if (targets.includes(hurt_ally.ally.cell)) {
-        log_info('combat', `seat ${seat} (${party_role}): HEAL ${name} on ally at ${hurt_ally.ally.cell} (HP ${hurt_ally.hp})`)
+        log_debug('combat', `seat ${seat} (${party_role}): HEAL ${name} on ally at ${hurt_ally.ally.cell} (HP ${hurt_ally.hp})`)
         return { type: 'cast', fighter_idx: actor, spell: name, target_cell: hurt_ally.ally.cell }
       }
     }
@@ -118,7 +118,7 @@ const next_action_party = (
   if (strike !== undefined) {
     const target_fighter = enemies.find((f) => f.cell === strike)
     const hp = fighter_hp(target_fighter!)
-    log_info('combat', `seat ${seat} (${party_role}): STRIKE enemy at ${strike} (HP ${hp})`)
+    log_debug('combat', `seat ${seat} (${party_role}): STRIKE enemy at ${strike} (HP ${hp})`)
     return { type: 'strike', fighter_idx: actor, target_cell: strike }
   }
 
@@ -131,7 +131,7 @@ const next_action_party = (
       if (!is_damage_spell(name)) continue
       const targets = spell_target_cells(cp, actor, name).targetable
       if (targets.includes(enemy.cell)) {
-        log_info('combat', `seat ${seat} (${party_role}): CAST ${name} on enemy at ${enemy.cell} (HP ${enemy.hp})`)
+        log_debug('combat', `seat ${seat} (${party_role}): CAST ${name} on enemy at ${enemy.cell} (HP ${enemy.hp})`)
         return { type: 'cast', fighter_idx: actor, spell: name, target_cell: enemy.cell }
       }
     }
