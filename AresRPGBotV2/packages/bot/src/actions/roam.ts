@@ -104,7 +104,11 @@ export const plan_roam = (
   pose: Readonly<{ x: number; z: number }>,
   world: SeedWorld,
   assessment: WindowAssessment,
-  stepBlocks: number = STEP_BLOCKS
+  stepBlocks: number = STEP_BLOCKS,
+  /** The fight preview found at least one group the party can reliably win HERE. When false the
+   *  window pays by the chain's XP table but nothing in it is actually beatable, so holding is a
+   *  deadlock: the whole party sits still while the preview keeps failing to certify a target. */
+  viable: boolean = true
 ): RoamPlan => {
   const current = distance_at(pose)
   if (assessment.overwhelming) {
@@ -131,6 +135,18 @@ export const plan_roam = (
         })
       : Object.freeze({ kind: 'stay', reason: 'at the strongest distance the world offers' })
   }
+  if (!viable) {
+    // The window pays by the XP table but the preview cannot certify ANY group in it (observed: six
+    // 6-mob packs at 0-60% win while the party needed 80%). Staying put then means never fighting —
+    // the group step finds no target, the roam holds, and the pass falls through to a chore. Step
+    // INWARD one leg toward weaker prey: the group that is merely hard becomes the group that is
+    // winnable, and the pass that would have idled becomes a fight. Bounded so a party already at
+    // the inner ring simply holds there instead of oscillating.
+    const distance = clamp(current - stepBlocks, MIN_ROAM_DISTANCE, MAX_ROAM_DISTANCE)
+    return distance < current
+      ? Object.freeze({ kind: 'advance', distance, reason: 'no winnable group' })
+      : Object.freeze({ kind: 'stay', reason: 'already at the inner ring' })
+  }
   return Object.freeze({ kind: 'stay', reason: 'worthwhile groups in the window' })
 }
 
@@ -142,7 +158,7 @@ export type RoamOutcome = Readonly<{
 const outcome = (kind: RoamOutcome['kind'], detail: string): RoamOutcome => Object.freeze({ kind, detail })
 
 export type Roamer = Readonly<{
-  roam_once: (mover: Mover, level?: number, stepBlocks?: number) => Promise<RoamOutcome>
+  roam_once: (mover: Mover, level?: number, stepBlocks?: number, viable?: boolean) => Promise<RoamOutcome>
 }>
 
 export const create_roamer = (ctx: ActionContext): Roamer => {
@@ -198,7 +214,7 @@ export const create_roamer = (ctx: ActionContext): Roamer => {
     return outcome('roamed', `${target.zx}:${target.zz}`)
   }
 
-  const roam_once = async (mover: Mover, level?: number, stepBlocks?: number): Promise<RoamOutcome> => {
+  const roam_once = async (mover: Mover, level?: number, stepBlocks?: number, viable = true): Promise<RoamOutcome> => {
     const state = ctx.state()
     const character = select_character(state, ctx.character_id)
     if (!character) return outcome('skipped', 'character not in roster yet')
@@ -230,11 +246,11 @@ export const create_roamer = (ctx: ActionContext): Roamer => {
     const assessment = assess_window(effectiveLevel, nearby)
     // Use smaller steps when grouping so followers can keep up
     const step = stepBlocks ?? STEP_BLOCKS
-    const plan = plan_roam(effectiveLevel, pose, fight_world, assessment, step)
+    const plan = plan_roam(effectiveLevel, pose, fight_world, assessment, step, viable)
     if (plan.kind === 'stay') {
       // Log the live level match once per distinct window, so it is visible whether the prey we
       // hold at is actually high enough for the character (and never spams every pass).
-      const signature = `${effectiveLevel}:${assessment.groups}:${assessment.highest_level}:${assessment.best_total_level}`
+      const signature = `${effectiveLevel}:${assessment.groups}:${assessment.highest_level}:${assessment.best_total_level}:${viable}`
       if (signature !== last_window) {
         last_window = signature
         log_info(

@@ -6,11 +6,14 @@ import {
   follower_group_step,
   hop_toward,
   leader_group_step,
+  needs_rejoin,
   party_attempting,
   party_center,
   PARTY_RADIUS,
+  REJOIN_RADIUS,
   regroup_step,
   reset_rendezvous,
+  window_viable,
 } from '../src/actions/party.ts'
 import type { PartyState } from '../src/actions/party.ts'
 
@@ -254,6 +257,50 @@ describe('party_center / regroup_step', () => {
     expect(step!.x).toBe(50_000 + PARTY_RADIUS)
     expect(step!.z).toBe(50_000)
     expect(step!.offset).toBe(3 * PARTY_RADIUS)
+  })
+})
+
+describe('rejoin gate', () => {
+  const party = (): PartyState => {
+    const p = create_party()
+    p.leader_id = 'leader'
+    p.members = ['leader', 'follower']
+    return p
+  }
+  const state = (x: number, z: number) =>
+    ({ characters: [{ id: 'leader', x, z }], resolutions: [] }) as never
+
+  it('flags a follower left far from the leader', () => {
+    expect(needs_rejoin(party(), state(50_000, 50_000), 'follower', { x: 50_000 + REJOIN_RADIUS + 1, z: 50_000 })).toBe(true)
+  })
+
+  it('does not flag a follower already beside the leader', () => {
+    expect(needs_rejoin(party(), state(50_000, 50_000), 'follower', { x: 50_500, z: 50_500 })).toBe(false)
+  })
+
+  it('never flags the leader or a detached member', () => {
+    const p = party()
+    expect(needs_rejoin(p, state(50_000, 50_000), 'leader', { x: 0, z: 0 })).toBe(false)
+    p.detached.add('follower')
+    expect(needs_rejoin(p, state(50_000, 50_000), 'follower', { x: 0, z: 0 })).toBe(false)
+  })
+})
+
+describe('window viability', () => {
+  it('holds before the leader has ever screened the window', () => {
+    expect(window_viable(create_party())).toBe(true)
+  })
+
+  it('keeps holding while the verdict is fresh (a short HP dip may still resolve)', () => {
+    const p = create_party()
+    p.no_viable_since_ms = Date.now() - 5_000
+    expect(window_viable(p)).toBe(true)
+  })
+
+  it('moves on once the window has been unwinnable past the retreat delay', () => {
+    const p = create_party()
+    p.no_viable_since_ms = Date.now() - 120_000
+    expect(window_viable(p)).toBe(false)
   })
 })
 

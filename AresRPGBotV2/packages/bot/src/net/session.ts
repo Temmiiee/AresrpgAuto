@@ -52,11 +52,14 @@ import {
   hop_toward,
   join_followers,
   leader_group_step,
+  log_rejoin_due,
+  needs_rejoin,
   party_attempting,
   PARTY_RADIUS,
   rally_to_leader,
   regroup_step,
   reset_rendezvous,
+  window_viable,
   type PartyState,
 } from '../actions/party.ts'
 import {
@@ -715,7 +718,7 @@ export const play_loop = async (
       // check for a whole pass, so an already-staged group sat parked (observed: 13:52 staging ->
       // 14:53 engage).
       if (is_leader && toggles.roam) {
-        const roamed = await roamer.roam_once(mover, effectiveLevel, PARTY_RADIUS)
+        const roamed = await roamer.roam_once(mover, effectiveLevel, PARTY_RADIUS, window_viable(party_state))
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
           roamed.kind === 'roamed' ||
@@ -725,6 +728,36 @@ export const play_loop = async (
         )
           return idle_sleep_ms
       }
+    }
+
+    // 3d. rejoin gate. A follower left far behind (a world-join drop, or a leader that strayed before
+    // the keep-together gate existed) must walk home BEFORE it does any chore: a gather/craft
+    // re-anchors its chain checkpoint where it stands, so the member keeps spending its travel budget
+    // on the wrong place and never closes the gap — which is how one sat at the world centre for hours
+    // while the party fought at three seats. Every hop also re-anchors (`search_zone`) at the streamed
+    // pose, exactly like the rendezvous staging leg, so the on-chain checkpoint genuinely hops toward
+    // the leader instead of only the reported pose. Runs after the group step so an in-flight
+    // rendezvous still owns the pass.
+    if (needs_rejoin(party_state, game_state, current.id, mover.pose())) {
+      const leader = game_state.characters.find((c) => c.id === party_state.leader_id)
+      if (leader) {
+        if (log_rejoin_due(current.id, Date.now())) {
+          const pose = mover.pose()
+          const away = Math.round(Math.max(Math.abs((leader.x ?? pose.x) - pose.x), Math.abs((leader.z ?? pose.z) - pose.z)))
+          log_warn('party', `${character.name}: ${away} blocks from the leader — walking home before any chore`)
+        }
+        const before = mover.pose()
+        await rally_to_leader(mover, leader)
+        const after = mover.pose()
+        if (after.x !== before.x || after.z !== before.z) {
+          try {
+            await mover.ensure_zone(false)
+          } catch (error) {
+            log_warn('party', `${character.name}: could not re-anchor while walking home: ${error instanceof Error ? error.message : String(error)}`)
+          }
+        }
+      }
+      return idle_sleep_ms
     }
 
     // 3c. chores — a settled fight is the natural beat to harvest one node and craft one batch

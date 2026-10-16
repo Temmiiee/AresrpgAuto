@@ -86,4 +86,26 @@ describe('roam plan_roam', () => {
     expect(plan.kind).toBe('advance')
     if (plan.kind === 'advance') expect(plan.distance).toBeLessThan(20_400)
   })
+
+  // The deadlock the party hit live: the window paid by the XP table (mob levels high enough) but the
+  // fight preview could not certify ANY group, so the group step found nothing while the roam "held".
+  // The verdict must turn that hold into a step toward weaker prey.
+  const mid_ring = Object.freeze({ x: 58_000, z: 50_000 })
+
+  it('holds at a payable window while the preview still finds a winnable group', () => {
+    const plan = plan_roam(5, mid_ring, nauvis, assess_window(5, [group('bramble', 100)]), 2_500, true)
+    expect(plan.kind).toBe('stay')
+  })
+
+  it('steps inward when the window pays but nothing in it is winnable', () => {
+    const plan = plan_roam(5, mid_ring, nauvis, assess_window(5, [group('bramble', 100)]), 2_500, false)
+    expect(plan.kind).toBe('advance')
+    if (plan.kind === 'advance') expect(plan.distance).toBeLessThan(8_112)
+  })
+
+  it('does not oscillate below the inner ring when nothing is winnable', () => {
+    const inner = Object.freeze({ x: 50_000, z: 50_000 })
+    const plan = plan_roam(5, inner, nauvis, assess_window(5, [group('bramble', 100)]), 2_500, false)
+    expect(plan.kind).toBe('stay')
+  })
 })

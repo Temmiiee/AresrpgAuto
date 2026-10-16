@@ -245,19 +245,25 @@ export type EngageOutcome =
   | Readonly<{ kind: 'traveling'; detail: string }>
   | Readonly<{ kind: 'skipped'; detail: string }>
 
+/** What a screen of the live window found. `viable` is whether ANY group cleared MIN_WIN_RATE,
+ *  independent of the claims — the leader uses it to tell "the window is empty/exhausted" from "the
+ *  window pays by level but nothing in it is beatable", which is the signal to relocate. */
+export type EngageScreen = Readonly<{ candidate: GroupCandidate | null; viable: boolean; groups: number }>
+
 /** Screen the live mob groups in the tracked window with a local fight preview and CLAIM the best
  *  sure-win one — highest reward per committed turn among groups the twin wins reliably. `allies`
- *  is the party that will join the fight, so the preview scores the whole side. Returns null when
- *  nothing is sure-win; the caller owns releasing the claim if it never engages. */
+ *  is the party that will join the fight, so the preview scores the whole side. `candidate` is null
+ *  when nothing is sure-win (or every sure-win group is claimed); the caller owns releasing the claim
+ *  if it never engages. */
 export const pick_engage_target = (
   ctx: ActionContext,
   pose: Readonly<{ x: number; z: number }>,
   character: CharacterRow,
   allies: readonly CharacterRow[] = []
-): GroupCandidate | null => {
+): EngageScreen => {
   const state = ctx.state()
   const groups = select_window_mob_groups(state)
-  if (groups.length === 0) return null
+  if (groups.length === 0) return Object.freeze({ candidate: null, viable: false, groups: 0 })
   const scored = screen_groups(pose, groups, character, allies)
   for (const { candidate, score } of scored)
     log_info(
@@ -269,7 +275,11 @@ export const pick_engage_target = (
   const party_size = 1 + allies.length
   const ranked = viable_ranking(pose, scored, party_size)
   const winner = ranked.find(({ candidate }) => ctx.claims.claim(claim_key(candidate), ctx.character_id))
-  return winner ? winner.candidate : null
+  return Object.freeze({
+    candidate: winner ? winner.candidate : null,
+    viable: ranked.length > 0,
+    groups: groups.length,
+  })
 }
 
 /** Open an already-claimed group on chain (travel, prove the leg, engage). Releases the claim on
@@ -333,8 +343,8 @@ export const engage_once = async (ctx: ActionContext, mover: Mover): Promise<Eng
   // until custody returns to the kiosk.
   if (character.custody === 'fight') return { kind: 'skipped', detail: 'custody still locked to a fight' }
   const target = pick_engage_target(ctx, mover.pose(), character)
-  if (!target) return { kind: 'skipped', detail: 'no sure-win group available' }
-  return engage_target(ctx, mover, target)
+  if (!target.candidate) return { kind: 'skipped', detail: 'no sure-win group available' }
+  return engage_target(ctx, mover, target.candidate)
 }
 
 // ── post-fight settlement ────────────────────────────────────────────

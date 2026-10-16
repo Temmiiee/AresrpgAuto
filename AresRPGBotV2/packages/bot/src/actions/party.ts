@@ -104,6 +104,10 @@ export type PartyState = {
   failures: number
   /** while now < retry_after_ms the party plays solo instead of trying to rendezvous */
   retry_after_ms: number
+  /** when the leader last screened the window and found groups but NONE the party could reliably
+   *  win (ms since epoch), or 0 while a sure-win group is on offer. The roam reads it to relocate
+   *  toward weaker prey instead of holding at a window it can never fight. */
+  no_viable_since_ms: number
 
   // excursion (gathering relocation)
   /** the currently active whole-party gathering excursion, or null */
@@ -149,6 +153,7 @@ export const create_party = (): PartyState => ({
   active_since_ms: 0,
   failures: 0,
   retry_after_ms: 0,
+  no_viable_since_ms: 0,
   excursion: null,
   last_excursion_ms: 0,
   need_since: new Map(),
@@ -169,6 +174,7 @@ export const reset_rendezvous = (party: PartyState): void => {
   party.staged_at_ms = 0
   party.in_position_at_ms = 0
   party.active_since_ms = 0
+  party.no_viable_since_ms = 0
   // excursion is cleared by finish_excursion when the relocation is done
   // stragglers persist: a member written off as unreachable stays out of the remains of the
   // rendezvous cycle until it actually stages again (mark_staged), so it is not re-tested every pass.
@@ -188,6 +194,17 @@ const active_still_fresh = (party: PartyState): boolean =>
 /** True while the party should try to fight as a group (configured, has partners, not cooling down). */
 export const party_attempting = (party: PartyState): boolean =>
   party.leader_id !== null && party.members.length > 1 && Date.now() >= party.retry_after_ms
+
+/** How long the leader may hold at a window that has groups but none the preview can win before the
+ *  party relocates toward weaker prey. Long enough to sit out a short HP dip (the preview's win rate
+ *  tracks stored HP, which regenerates), short enough that a genuinely unwinnable window does not
+ *  park the whole party — which is what happened while the old bot idled for 42 minutes. */
+const NO_VIABLE_RETREAT_MS = 60_000
+
+/** True while the party should hold at the current window: no groups-but-none-winnable verdict, or
+ *  one young enough that the prey may simply need another moment of HP regen. */
+export const window_viable = (party: PartyState): boolean =>
+  party.no_viable_since_ms === 0 || Date.now() - party.no_viable_since_ms < NO_VIABLE_RETREAT_MS
 
 /** True while the group fight (or any of its seats) is still on chain. */
 const fight_outstanding = (state: GameState, fight: string): boolean =>
@@ -228,6 +245,32 @@ export const party_center = (
   }
   return Object.freeze({ x: median(xs), z: median(zs) })
 }
+
+/** A follower further than this from the leader has been left behind — a world-join drops it at the
+ *  map centre (~14k blocks out) and a leader that roamed before the keep-together gate existed left
+ *  its party behind. Wide enough that ordinary rallying never trips it (PARTY_RADIUS is 2_000, the
+ *  rendezvous a short hop), narrow enough that a genuinely stranded member is caught. */
+export const REJOIN_RADIUS = PARTY_RADIUS * 4
+/** True when this non-leader member is stranded far from the leader and must walk home BEFORE doing
+ *  any chore. Every gathering/crafting/search door action re-anchors the character's chain checkpoint
+ *  where it already stands, which RESETS the travel bank it needs to prove a leg back to the party —
+ *  observed as a member parked at the world centre for many hours while the party fought a seat
+ *  short. Suppressing chores while it is away lets the bank accumulate so it can actually return. */
+export const needs_rejoin = (
+  party: PartyState,
+  state: GameState,
+  character_id: string,
+  pose: Readonly<{ x: number; z: number }>
+): boolean => {
+  if (party.leader_id === null || character_id === party.leader_id) return false
+  if (party.detached.has(character_id)) return false
+  const leader = state.characters.find((c) => c.id === party.leader_id)
+  if (!leader || leader.x === undefined || leader.z === undefined) return false
+  return Math.max(Math.abs(leader.x - pose.x), Math.abs(leader.z - pose.z)) > REJOIN_RADIUS
+}
+
+/** Throttled so a long walk home does not spam the operator channel every pass. */
+export const log_rejoin_due = (id: string, now: number): boolean => follower_diag_due(id, now)
 
 /** Where the leader must walk to rejoin the party, or null when it is already close enough. The
  *  target is the point exactly `PARTY_RADIUS` from the centre on the line to the leader — walking to
@@ -426,8 +469,18 @@ export const leader_group_step = async (
   // gather there, so the group opens where the side already stands instead of thousands of blocks
   // behind it — which the leader would then walk to alone, stranding them. The leader is guaranteed
   // to be near that centre (the session's regroup gate above), so this stays a short hop.
-  const candidate = pick_engage_target(ctx, party_center(party, mover.pose()), character, allies)
-  if (!candidate) return null
+  const screen = pick_engage_target(ctx, party_center(party, mover.pose()), character, allies)
+  // Record whether the window could offer ANY sure-win group. A window that holds groups but no
+  // winnable one is a deadlock: the group step finds nothing, the roam would "hold" (the prey is
+  // high enough for the XP table), and the party idles. The leader timestamps it so the roam can
+  // step toward weaker prey instead.
+  if (!screen.viable && screen.groups > 0) {
+    if (party.no_viable_since_ms === 0) party.no_viable_since_ms = Date.now()
+  } else {
+    party.no_viable_since_ms = 0
+  }
+  if (!screen.candidate) return null
+  const candidate = screen.candidate
   party.phase = 'staging'
   party.fight = null
   party.staged = new Set()
