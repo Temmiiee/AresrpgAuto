@@ -9,7 +9,6 @@ import {
   character_checkpoint,
   live_mob_groups,
   live_resource_packs,
-  travel_proof_ready,
   type CharacterRow,
   type MobGroupRow,
   type ResourcePackRow,
@@ -72,27 +71,6 @@ export const unavailable_item_ids = (state: GameState): ReadonlySet<string> => {
 export const select_zone = (state: GameState, world: string, zx: number, zz: number): ZoneRow | null =>
   state.zones.find((zone) => zone.world === world && zone.zx === zx && zone.zz === zz) ?? null
 
-/** The mob groups still standing in one zone: the seed's population minus the consumed bits. */
-export const select_live_mob_groups = (state: GameState, world: string, zx: number, zz: number): readonly MobGroupRow[] => {
-  const spawns = state.zone_spawns[zone_key(world, zx, zz)]
-  const zone = select_zone(state, world, zx, zz)
-  if (!spawns || !zone) return Object.freeze([])
-  return live_mob_groups(spawns.mobs, zone)
-}
-
-/** The resource packs still standing in one zone, each carrying its remaining node count. */
-export const select_live_resource_packs = (
-  state: GameState,
-  world: string,
-  zx: number,
-  zz: number
-): readonly ResourcePackRow[] => {
-  const spawns = state.zone_spawns[zone_key(world, zx, zz)]
-  const zone = select_zone(state, world, zx, zz)
-  if (!spawns || !zone) return Object.freeze([])
-  return live_resource_packs(spawns.resources, zone)
-}
-
 /** Every live mob group across the tracked window, tagged with the zone it stands in. */
 export const select_window_mob_groups = (
   state: GameState
@@ -121,28 +99,6 @@ export const select_window_resource_packs = (
 
 /** The character's chain-proven checkpoint string, or null when it has no usable checkpoint. */
 export const checkpoint_of = (character: CharacterRow): string | null => character_checkpoint(character)
-
-/** The travel gate the chain twin (`world_map::travel_ok`) enforces: enough time has banked since
- *  the last proven checkpoint to cover the leg. The bot waits on this before acting at distance. */
-export const travel_ready = (
-  character: CharacterRow,
-  to_x: number,
-  to_z: number,
-  now_ms: number,
-  pet_now: boolean
-): boolean => {
-  if (character_checkpoint(character) === null) return false
-  return travel_proof_ready({
-    from_x: character.x!,
-    from_z: character.z!,
-    from_ms: character.at_ms ?? 0,
-    pet_at_start: character.pet ?? false,
-    to_x,
-    to_z,
-    now_ms,
-    pet_now,
-  })
-}
 
 /** The id of the fight the character is currently seated in, or null. */
 export const active_fight_of = (character: CharacterRow): string | null => character.active_fight?.id ?? null

@@ -1,10 +1,7 @@
 .aider*
 
-# Nested upstream clone of aresrpg/aresrpg (reference only — it has its own .git).
+# Local-only: nested clone of aresrpg/aresrpg (reference for sync_vendor --check; not tracked).
 aresrpg/
-
-# Previous bot tree, kept locally as a backup during the V2 migration.
-AresRPGBotOld/
 
 # Build / state artifacts.
 node_modules/

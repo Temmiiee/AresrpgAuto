@@ -304,10 +304,6 @@ export type ResourceZone = Readonly<{
   kind: 'biome' | 'city'
 }>
 
-/** A resource's world, or null when no world places it (tiers 7-11 have no world). */
-export const world_of_resource = (item_type: string): string | null =>
-  worlds.find((world) => world.resources.some((resource) => resource.item_type === item_type))?.world ?? null
-
 /** The nearest zone to `from` where `item_type` can spawn, scanning outward by Chebyshev ring and
  *  stopping at the first hit. `max_ring` bounds the search (each ring is one zone step = 32 blocks). */
 export const find_resource_zone = (

@@ -3,18 +3,26 @@
 Confirmed from the seed content, the on-chain game rules (`aresrpg/packages/move`), and the
 immutable mirrors the bot vendors. Everything below is derived, not guessed.
 
+> **Status (current build).** The default chore plan is `gather_craft` for every character
+> (`archero` uses `gather_all_craft`), so all four gather AND level the crafting trades. The
+> per-character split in §1 and the "someone else crafts for me" framing in §5 are the ORIGINAL
+> plan, kept only for the still-accurate game math; §6's excursion design is implemented in
+> `actions/excursion.ts` (leader-driven, `gather_needs`).
+
 ## 1. Jobs and ownership
 
-| character | job(s) | goal |
-|-----------|--------|------|
-| **omori** (leader) | FORGER, CARVER, TAILOR, JEWELER, TANNER, HANDYMAN, ALCHEMIST, BAKER | level **all crafting trades** |
-| **memorien** | FARMER | one gatherer per gathering job |
-| **llokan** | MINER | " |
-| **archero** | HERBALIST | " |
+| character | default chore (`BOT_CHORE_PLAN`) | goal |
+|-----------|----------------------------------|------|
+| **omori** (leader) | gather HERBALIST + rotate every crafting trade | level **every job** |
+| **memorien** | gather FARMER + rotate every crafting trade | " |
+| **llokan** | gather MINER + rotate every crafting trade | " |
+| **archero** | gather EVERY gathering job + rotate every crafting trade | " |
 
 - Gathering jobs: `FARMER`, `HERBALIST`, `MINER` (`immutable/identity.ts`).
 - Crafting trades: `FORGER, CARVER, TAILOR, JEWELER, TANNER, HANDYMAN, ALCHEMIST, BAKER`
   (`job_groups` minus `gathering`; the rotation already uses exactly this list in `craft.ts`).
+- Every character also fights for xp regardless of its chore; the default plan keeps every
+  gatherer leaf covered while all four level the crafting trades.
 - **One signer / one shared inventory.** The bot drives all four characters over a single
   WebSocket for one address, and `state.inventory` is the address's item pool — so a tool omori
   crafts is immediately equippable by archero. No item transfer is needed.

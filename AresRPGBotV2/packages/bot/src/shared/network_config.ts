@@ -15,11 +15,4 @@ const parse_network = (raw: string | undefined): SdkNetwork => {
 }
 
 export const NETWORK: SdkNetwork = parse_network(process.env.SUI_NETWORK)
-export const IS_MAINNET: boolean = NETWORK === 'mainnet'
 export const RPC_URL: string = process.env.SUI_RPC_URL ?? RPC_URLS[NETWORK]
-
-// An Enoki key is registered against a specific set of allowed networks, so the key that works on
-// testnet may be refused on mainnet. This is the seam to override it; enoki_auth.ts carries the
-// public default the real aresrpg.world client ships.
-export const ENOKI_API_KEY_OVERRIDE: string | undefined = process.env.ENOKI_API_KEY
-export const ENOKI_GOOGLE_CLIENT_ID_OVERRIDE: string | undefined = process.env.ENOKI_GOOGLE_CLIENT_ID

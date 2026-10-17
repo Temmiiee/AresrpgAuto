@@ -88,16 +88,3 @@ export const get_enoki_signer = async (on_login_url_ready?: (url: string) => voi
   console.log(`signed in as ${keypair.toSuiAddress()}`)
   return keypair
 }
-
-/** Read-only variant: returns the keypair ONLY when a usable session is already cached, never
- *  running the interactive login. Used by previews so they can show real state without blocking. */
-export const try_get_cached_signer = async (): Promise<Signer | null> => {
-  const flow = new EnokiFlow({ apiKey: ENOKI_API_KEY, store: create_file_store() })
-  const existing = await flow.getSession()
-  if (!existing) return null
-  try {
-    return await flow.getKeypair({ network: NETWORK })
-  } catch {
-    return null
-  }
-}

@@ -53,10 +53,15 @@ AresRPGBotV2/
           gather.ts         harvest one node
           craft.ts          plan_recipe / craft_once / drive_craft
           combat.ts         hydrate/drive/engage/settle fights (the fight driver)
+          equip.ts          auto-equip: score gear + allocate it across the party
           party.ts          the group-fight rendezvous shared by every character (PartyState)
           fight_preview.ts  local deterministic fight twin: screen_groups / viable_ranking
           turn_plan.ts      plan_turn / next_action / sim_commands
           fight_registry.ts live fight runtime registry, fed by the fight_state stream
+          dungeon.ts        dungeon key helpers (screen / park an entrant's key)
+          dungeon_run.ts    one group dungeon run: enter each room, join with each entrant's key
+          cross_world.ts    cross-world detach target picker
+          excursion.ts      event-driven relocation that keeps every gatherer fed
           play_stats.ts     per-character tallies + digest formatting
         state/
           store.ts          pure reducer: server packets -> GameState (the one projection)
@@ -77,9 +82,8 @@ AresRPGBotV2/
 ## Commands
 
 ```powershell
-# typecheck the bot (run tsc directly; the root `bun run typecheck` script misbehaves in PowerShell)
-cd packages/bot
-bun tsc --noEmit -p tsconfig.json
+# typecheck the bot (repo root; or `cd packages/bot && bun tsc --noEmit -p tsconfig.json`)
+bun run typecheck
 
 # tests
 cd packages/bot
@@ -141,14 +145,20 @@ For each character, in order:
    then engages and joins all partners in the same beat. While the party is grouping only the leader
    opens fights.
 3c. **chores** — run the assigned chore once (`run_chore`). A party member's gather is capped
-   (`PARTY_GATHER_RADIUS = 1024`) so it stays within a zone or two of the leader.
+   (`PARTY_GATHER_RADIUS = 1024`) so it stays within a zone or two of the leader. A forced chore
+   floor (`BOT_CHORE_INTERVAL_MS`, default 5 min) guarantees a chore runs before the next engage
+   even when fights never stop.
 4. **roam** — optionally drift toward worthwhile prey (`roam_once`).
 5. **engage** — screen live mob groups with the local twin and open the best sure-win group (solo
    path; suppressed while the party is grouping).
 6. **chores fallback** — gather one node and craft one batch when no fight is on offer.
 
-`flush_summary` logs a per-character digest every `SUMMARY_EVERY_FIGHTS = 10` settled fights. There
-is no periodic Discord ping; the only Discord message is the zkLogin sign-in link.
+Outside the per-character pass, a coalesced party-wide **auto-equip** run fires when a new equipment
+id appears (see `## Auto-equip` below), retrying every 8 s while any character is seated or stale.
+
+`flush_summary` logs a per-character digest every `SUMMARY_EVERY_FIGHTS = 10` settled fights. Discord
+gets a startup message, exactly ONE party-wide digest per `BOT_DIGEST_MINUTES` (hourly by default; 0
+disables it), a fatal-crash message, and the zkLogin sign-in link — no other chatter.
 
 ## Group fights (`actions/party.ts`)
 
@@ -182,6 +192,27 @@ A rendezvous that cannot form within `STAGE_TIMEOUT_MS` (300 s) is abandoned and
 `MAX_STAGE_FAILURES` (3) the party plays solo for `GROUP_COOLDOWN_MS` (5 min) before trying again.
 `ACTIVE_GRACE_MS` (60 s) covers the roster/indexer lag after an engage.
 
+
+## Auto-equip (`actions/equip.ts`)
+
+Every character wears the best gear it can legally wear, drawn from the party's ONE shared kiosk
+inventory and swapped in with a single PTB. There is no per-class equipment restriction on chain
+(`equipment.move` gates only slot, character level and duplicate relics), so "best for its class and
+stats" is a SCORING question:
+
+- **Score** uses the game's own item-budget unit `rune_unit_weights` (1 raw damage ≈ 20 primary
+  points, 1 AP = 100, 1 MP = 90, 1 range = 50, 1 crit = 30) applied to `item_stat_offset` (the raw
+  centered u16 signed offset, pet blocks scaled by `pet_power`). The four elemental stats are then
+  re-weighted by the character's **affinity**: its class kit blended 50/50 with whatever
+  STR/INT/CHA/AGI it has actually allocated (pure class affinity when nothing is allocated).
+- **Allocation** (`plan_loadout`) is party-wide and leader-first: one pass claims each item for at
+  most one character, so the shared kiosk never assigns the same item to two wearers. It never
+  equips above the character's level, never duplicates a relic type, and restricts the tool slot to
+  the category the character's chore needs.
+- **Triggers** — a newly-appearing equipment inventory id (startup, drop, craft, purchase) requests a
+  run; a coalesced party-wide runner then retries every `EQUIP_RETRY_MS` (8 s) while any character is
+  seated or stale. A character in a fight (`custody === 'fight'` or an `active_fight`) is skipped and
+  retried — the kiosk borrow aborts during fight custody.
 
 ## Traps that already cost time (do not re-learn these)
 
@@ -250,19 +281,31 @@ A rendezvous that cannot form within `STAGE_TIMEOUT_MS` (300 s) is abandoned and
 | var | default | meaning |
 | --- | --- | --- |
 | `SUI_NETWORK` | `mainnet` | `mainnet` or `testnet` |
+| `SUI_RPC_URL` | public fullnode | RPC endpoint override |
+| `ARES_SERVER_WS_URL` | `wss://server.aresrpg.world/` | realtime server |
+| `ARES_ORIGIN` | `https://aresrpg.world` | Origin header the handshake expects |
 | `DISCORD_WEBHOOK_URL` | – | notifications are silently skipped when unset |
 | `DISCORD_MENTION` | – | prepended so a phone buzzes |
+| `BOT_DIGEST_MINUTES` | `60` | minutes between party-wide digests (0 disables) |
+| `ENOKI_API_KEY` | public frontend key | network-scoped Enoki key override |
+| `ENOKI_GOOGLE_CLIENT_ID` | public frontend id | Google OAuth client override |
+| `ENOKI_LOGIN_PORT` | `5173` | local port the interactive sign-in page listens on |
+| `ENOKI_LOGIN_TIMEOUT_MS` | `1800000` | how long the sign-in page waits (30 min) |
 | `BOT_GATHER` / `BOT_FIGHT` / `BOT_ROAM` / `BOT_CRAFT` | all `true` | play toggles |
 | `BOT_GROUP` | `true` | fight as ONE party: the leader engages and every partner joins the same fight |
+| `BOT_CROSS_WORLD` | `true` | let the cross-world gatherer periodically detach |
 | `BOT_PARTY_SIZE` | `4` | characters driven at once (1..4), all on one socket |
 | `BOT_LEADER` | `omori` | character name that opens the party's shared fights |
-| `BOT_CHORE_PLAN` | default roster | JSON map of character name → `"craft"` / `"none"` / `"FARMER"` \| `"HERBALIST"` \| `"MINER"`; default is omori=craft, the other three each own one gathering job |
-| `BOT_IDLE_SLEEP_MS` | `5000` | idle decision-pass sleep |
+| `BOT_CHORE_PLAN` | default roster | JSON map of character name → `"craft"` / `"none"` / `"gather_all"` / `"gather_all_craft"` / `"FARMER"` \| `"HERBALIST"` \| `"MINER"` / `{"kind":"gather_craft","job":"…"}`; default is every character gathers AND crafts |
+| `BOT_CHORE_INTERVAL_MS` | `300000` | forced chore floor before an engage (0 disables) |
+| `BOT_CROSS_WORLD_GATHERER` | `archero` | character that detaches for cross-world gathering |
+| `BOT_CROSS_WORLD_WORLD` | – | explicit target world (unset = richest reachable) |
+| `BOT_CROSS_WORLD_INTERVAL_MS` | `1800000` | ms between cross-world trips (0 disables the cycle) |
+| `BOT_CROSS_WORLD_DWELL_MS` | `600000` | ms the detacher gathers per trip |
+| `BOT_IDLE_SLEEP_MS` | `3000` | idle decision-pass sleep |
 | `ARES_CHARACTER_ID` | – | pin one character; otherwise the whole roster is used |
 | `ARES_WORLD` | `nauvis` | fallback world |
 | `BOT_STATE_DIR` | `.state` | ledger + pending-transaction storage |
-| `ARES_SERVER_WS_URL` | `wss://server.aresrpg.world/` | realtime server |
-| `ARES_ORIGIN` | `https://aresrpg.world` | Origin header the handshake expects |
 
 ## Vendoring
 

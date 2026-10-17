@@ -11,7 +11,6 @@ import type { KioskOwnerCap } from '@mysten/kiosk'
 import { character_actions } from '../../../sdk/src/character_actions.ts'
 import { dungeon_actions } from '../../../sdk/src/dungeon.ts'
 import { fight_actions } from '../../../sdk/src/fight.ts'
-import { create_personal_kiosk_runner } from '../../../sdk/src/kiosk_runner.ts'
 import type { KioskCapLoader } from '../../../sdk/src/kiosk_runner.ts'
 import { NETWORK, RPC_URL } from '../shared/network_config.ts'
 import { create_durable_storage } from '../chain/storage.ts'
@@ -53,7 +52,3 @@ export const create_bot_sdk = (signer: Signer, { transaction_storage_path }: Bot
 }
 
 export type BotSdk = ReturnType<typeof create_bot_sdk>
-
-/** A serialized personal-kiosk runner for character creation (the one action that must mint the
- *  personal kiosk before any custody door can be used). */
-export const personal_kiosk_runner = (load: KioskCapLoader) => create_personal_kiosk_runner(load)
