@@ -100,6 +100,8 @@ export type BotConfig = Readonly<{
   google_client_id: string | undefined
   /** local port the interactive zkLogin capture server listens on */
   login_port: number
+  /** how long the interactive zkLogin capture server waits for the Google sign-in (ms) */
+  login_timeout_ms: number
   discord_webhook_url: string | undefined
   discord_mention: string | undefined
   /** target character (optional — discovered at runtime from the signer's roster when absent) */
@@ -140,6 +142,11 @@ export const config: BotConfig = Object.freeze({
   enoki_api_key: process.env.ENOKI_API_KEY,
   google_client_id: process.env.ENOKI_GOOGLE_CLIENT_ID,
   login_port: env_int(process.env.ENOKI_LOGIN_PORT) ?? 5173,
+  // The interactive zkLogin wait. The old 5 minutes is far too short for an operator who is away
+  // from the machine: the link lands in Discord, they open it on another device, and the window is
+  // already gone. 30 minutes (env-tunable) lets them reach it; the process still fails fast if nobody
+  // signs in, and the fatal path notifies Discord.
+  login_timeout_ms: Math.max(env_int(process.env.ENOKI_LOGIN_TIMEOUT_MS) ?? 30 * 60_000, 60_000),
   discord_webhook_url: process.env.DISCORD_WEBHOOK_URL,
   discord_mention: process.env.DISCORD_MENTION,
   character_id: process.env.ARES_CHARACTER_ID ?? null,

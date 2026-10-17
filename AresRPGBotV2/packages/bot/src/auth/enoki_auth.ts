@@ -18,6 +18,7 @@ const ENOKI_API_KEY = config.enoki_api_key ?? 'enoki_public_ff89078fe8efa82d3f14
 const GOOGLE_CLIENT_ID =
   config.google_client_id ?? '263863163058-qn6qhkjmdvmlj8f1n4r0kdi4e608usbo.apps.googleusercontent.com'
 const REDIRECT_URL = `http://localhost:${config.login_port}/enoki`
+const LOGIN_TIMEOUT_MINUTES = Math.max(1, Math.round(config.login_timeout_ms / 60_000))
 
 const CAPTURE_PAGE = `<!doctype html><html><body style="font-family:sans-serif;padding:2rem">
 <p id="s">Signing you in…</p>
@@ -50,12 +51,12 @@ const capture_login_hash = (login_url: string, on_login_url_ready?: (url: string
     })
     console.log('\nOpen this URL in your browser and sign in with the SAME Google account you use for aresrpg.world:\n')
     console.log(login_url)
-    console.log('\nWaiting for sign-in… (5 minutes)\n')
+    console.log(`\nWaiting for sign-in… (${LOGIN_TIMEOUT_MINUTES} minutes)\n`)
     on_login_url_ready?.(login_url)
     setTimeout(() => {
       void server.stop()
-      reject(new Error('Timed out waiting for sign-in (5 minutes)'))
-    }, 300_000)
+      reject(new Error(`Timed out waiting for sign-in (${LOGIN_TIMEOUT_MINUTES} minutes)`))
+    }, config.login_timeout_ms)
   })
 
 /** Returns a Signer usable directly as `SDK({ signer })` — the real zkLogin address. Reuses a
