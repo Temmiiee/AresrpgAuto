@@ -44,6 +44,9 @@ const held = (
   unavailable: ReadonlySet<string>
 ): ItemRow | undefined => inventory.find((item) => item.item_type === item_type && !unavailable.has(item.id))
 
+/** A shared empty set so the common "no extra exclusions" call allocates nothing. */
+const EMPTY_IDS: ReadonlySet<string> = Object.freeze(new Set<string>())
+
 /** How many attempts the held ingredients + the batch cap allow (0 = cannot craft). */
 const affordable_attempts = (
   detail: RecipeDetail,
@@ -177,11 +180,21 @@ const craft_prerequisite = (
  *  (a refinement or another intermediate) is crafted first, so the trades are not starved of the
  *  flour/powder/weave their recipes are built from. Returns null when no ingredient set is held for
  *  any trade and no prerequisite stands between it and one. */
-export const select_craft_target = (ctx: ActionContext): CraftPlan | null => {
+export const select_craft_target = (
+  ctx: ActionContext,
+  also_unavailable: ReadonlySet<string> = EMPTY_IDS
+): CraftPlan | null => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
   if (!character) return null
-  const unavailable = unavailable_item_ids(state)
+  // `also_unavailable` carries the stacks a craft ALREADY BURNED earlier in this same chore. The
+  // per-character state only advances when the server pushes the next projection, so a second batch
+  // planned against the pre-craft snapshot reuses ingredient ids the chain has already consumed and
+  // aborts `kiosk::borrow` (code 11). Excluding them makes the next batch pick a different recipe
+  // (or stop) instead of re-submitting a doomed one.
+  const base = unavailable_item_ids(state)
+  const unavailable: ReadonlySet<string> =
+    also_unavailable.size === 0 ? base : new Set([...base, ...also_unavailable])
   const inventory = state.inventory
   const holds = (item_type: string): boolean =>
     inventory.some((row) => row.item_type === item_type && !unavailable.has(row.id))
@@ -267,13 +280,15 @@ export type CraftResult = Readonly<{
   outcome: string
   output_type: string
   successes: number
+  /** the kiosk ids this batch consumed, so the caller can exclude them from the next batch's plan */
+  input_item_ids: readonly string[]
 }>
 
 /** Submit one craft batch. The plan already encodes the held ingredient ids + output stack. */
 export const craft_once = async (ctx: ActionContext, plan: CraftPlan): Promise<CraftResult> => {
   const character = select_character(ctx.state(), ctx.character_id)
   if (!character)
-    return { success: false, outcome: 'character_not_found', output_type: plan.output_type, successes: 0 }
+    return { success: false, outcome: 'character_not_found', output_type: plan.output_type, successes: 0, input_item_ids: [] }
   try {
     const receipt = await ctx.sdk.character.craft({
       character_id: ctx.character_id,
@@ -295,17 +310,27 @@ export const craft_once = async (ctx: ActionContext, plan: CraftPlan): Promise<C
       },
     })
     log_info('craft', `crafted ${plan.output_type} ${receipt.successes}/${receipt.attempts} (+${receipt.job_xp_gained} xp)`)
-    return { success: true, outcome: `crafted:${plan.output_type}`, output_type: plan.output_type, successes: receipt.successes }
+    return {
+      success: true,
+      outcome: `crafted:${plan.output_type}`,
+      output_type: plan.output_type,
+      successes: receipt.successes,
+      input_item_ids: plan.input_item_ids,
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     log_warn('craft', `craft ${plan.output_type} failed: ${msg}`)
-    return { success: false, outcome: `craft_error:${msg.slice(0, 60)}`, output_type: plan.output_type, successes: 0 }
+    return { success: false, outcome: `craft_error:${msg.slice(0, 60)}`, output_type: plan.output_type, successes: 0, input_item_ids: [] }
   }
 }
 
-/** Plan and submit the best available craft, or report that nothing is craftable. */
-export const drive_craft = async (ctx: ActionContext): Promise<CraftResult> => {
-  const plan = select_craft_target(ctx)
-  if (!plan) return { success: false, outcome: 'nothing_craftable', output_type: '', successes: 0 }
+/** Plan and submit the best available craft, or report that nothing is craftable. `also_unavailable`
+ *  excludes stacks an earlier batch in the same chore already burned (see {@link select_craft_target}). */
+export const drive_craft = async (
+  ctx: ActionContext,
+  also_unavailable: ReadonlySet<string> = EMPTY_IDS
+): Promise<CraftResult> => {
+  const plan = select_craft_target(ctx, also_unavailable)
+  if (!plan) return { success: false, outcome: 'nothing_craftable', output_type: '', successes: 0, input_item_ids: [] }
   return await craft_once(ctx, plan)
 }

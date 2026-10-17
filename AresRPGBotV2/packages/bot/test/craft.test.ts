@@ -241,4 +241,13 @@ describe('select_craft_target prerequisites', () => {
     expect(plan?.output_type).toBe('old_hoe')
     expect(plan?.job).toBe('HANDYMAN')
   })
+
+  it('drops a recipe whose stacks an earlier batch already burned this chore', () => {
+    // The projection lags the confirmed craft, so without the burned set a second batch reuses the
+    // same ingredient ids and aborts `kiosk::borrow`. Excluding them must fall through to nothing.
+    const ctx = ctx_for({}, [['gnawed_branch', 3], ['salvaged_scrap', 2]])
+    const plan = select_craft_target(ctx)
+    expect(plan?.output_type).toBe('old_hoe')
+    expect(select_craft_target(ctx, new Set(plan!.input_item_ids))).toBeNull()
+  })
 })

@@ -942,9 +942,15 @@ export const play_loop = async (
     }
 
     if (crafts && !key_crafted) {
+      // The projection behind the craft only advances on the next server push, so a second batch
+      // planned from the SAME snapshot reuses ingredient ids the chain has already consumed and aborts
+      // `kiosk::borrow` (code 11) — one wasted transaction per chore. Feeding each batch's burned ids
+      // forward makes the next batch pick a different recipe (or stop) instead.
+      const burned = new Set<string>()
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
-        const crafted = await drive_craft(ctx)
+        const crafted = await drive_craft(ctx, burned)
         if (!crafted.success) break
+        for (const id of crafted.input_item_ids) burned.add(id)
         rt.stats = record_craft(rt.stats, crafted.output_type, crafted.successes)
         digest_stats = record_craft(digest_stats, crafted.output_type, crafted.successes)
         acted = true
