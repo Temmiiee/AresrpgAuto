@@ -76,11 +76,12 @@ import { create_dungeon_runner, follower_dungeon_step, type DungeonRunner } from
 import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions/cross_world.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, type ActionContext } from '../actions/context.ts'
+import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
 import { active_fight_of, freshness, unavailable_item_ids } from '../state/selectors.ts'
 import { initial_game_state, reduce, type GameState } from '../state/store.ts'
-import { recipe_detail, recipes_by_output } from '../content/catalog.ts'
+import { recipe_detail, recipes_by_output, tool_category_of_job } from '../content/catalog.ts'
 import { plan_recipe, craft_gather_demand, craft_once } from '../actions/craft.ts'
-import { job_level_from_xp, job_slugs } from '@aresrpg/immutable'
+import { is_equipment_category, job_level_from_xp, job_slugs } from '@aresrpg/immutable'
 
 /** Fired when the socket connection is lost / expired. */
 export type SessionEvent =
@@ -152,6 +153,8 @@ const SETTLE_POLL_MS = 1_000
 const SETTLE_RETRY_MS = 15_000
 /** After an engage, how long to wait for the roster to reflect the new fight before re-screening. */
 const ENGAGE_GRACE_MS = 45_000
+/** How long to wait before re-checking auto-equip while a party member is seated in a fight. */
+const EQUIP_RETRY_MS = 8_000
 /** The world used when neither the character nor config names one. */
 const WORLD_FALLBACK = 'nauvis'
 /** How many settled fights between console progress digests. */
@@ -463,6 +466,68 @@ export const play_loop = async (
     })
   }
 
+  // ── auto-equip ──────────────────────────────────────────────────────
+  // Every character keeps the best gear it can actually wear. A check runs once the party is up, then
+  // again whenever NEW equipment lands in the shared kiosk (a mob drop, a craft, a purchase): the
+  // inventory carries worn and held items alike, so "an equipment id the party has never seen" is the
+  // drop signal. Runs are COALESCED — four parallel passes schedule at most one party-wide pass — and
+  // each character claims its picks so two never reach for the same item.
+  let seen_gear_ids = new Set<string>()
+  let equip_running = false
+  let equip_requested = false
+  const equip_targets = (): readonly EquipTarget[] =>
+    runtimes.map((rt) => ({
+      ctx: rt.ctx,
+      tool_category:
+        rt.chore.kind === 'gather' || rt.chore.kind === 'gather_craft'
+          ? tool_category_of_job(rt.chore.job)
+          : undefined,
+    }))
+  const run_auto_equip = async (): Promise<void> => {
+    if (equip_running) {
+      equip_requested = true
+      return
+    }
+    equip_running = true
+    try {
+      do {
+        equip_requested = false
+        let blocked = 0
+        try {
+          const report = await auto_equip_party(equip_targets())
+          blocked = report.blocked
+        } catch (error) {
+          log_warn('session', `auto-equip failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        // A character seated in a fight (or not yet fresh) is reported blocked; a drop that lands
+        // mid-fight is thus re-checked until the party is out, instead of being lost until restart.
+        if (blocked > 0 && !stopped) {
+          equip_requested = true
+          await sleep(EQUIP_RETRY_MS)
+        }
+      } while (equip_requested && !stopped)
+    } finally {
+      equip_running = false
+    }
+  }
+  const request_auto_equip = (): void => {
+    void run_auto_equip()
+  }
+  /** true once, on the first pass that sees an equipment id the party has never seen (boot, drop,
+   *  craft). The seen set is only advanced when something new appeared, so a removed id re-triggers
+   *  if it ever comes back. */
+  const take_gear_trigger = (state: GameState): boolean => {
+    let fresh = false
+    const next = new Set<string>()
+    for (const item of state.inventory) {
+      if (!is_equipment_category(item.category)) continue
+      next.add(item.id)
+      if (!seen_gear_ids.has(item.id)) fresh = true
+    }
+    if (fresh) seen_gear_ids = next
+    return fresh
+  }
+
   if (!config.discord_webhook_url)
     log_warn('session', 'DISCORD_WEBHOOK_URL is unset — notifications are disabled')
 
@@ -623,6 +688,10 @@ export const play_loop = async (
       log_warn('session', `${character.name}: holding — ${fresh.reason}`)
       return idle_sleep_ms
     }
+
+    // 3a. auto-equip. The first pass that meets a new equipment id gears the WHOLE party (coalesced),
+    // so a drop is equipped the moment it lands rather than at the next restart.
+    if (take_gear_trigger(game_state)) request_auto_equip()
 
     // 3b. group fight: while the party wants to fight as ONE side, a follower must not wander off to
     // a chore — that strands the rendezvous and forces a fresh multi-minute convergence. So the group
