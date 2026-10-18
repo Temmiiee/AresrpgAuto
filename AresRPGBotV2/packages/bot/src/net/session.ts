@@ -78,6 +78,7 @@ import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, type ActionContext } from '../actions/context.ts'
 import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
 import { gear_goal_outputs } from '../actions/gear.ts'
+import { compute_strategy, describe_strategy, type Strategy } from '../actions/strategy.ts'
 import { active_fight_of, freshness, unavailable_item_ids } from '../state/selectors.ts'
 import { initial_game_state, reduce, type GameState } from '../state/store.ts'
 import { recipe_detail, recipes_by_output, tool_category_of_job } from '../content/catalog.ts'
@@ -435,6 +436,7 @@ export const play_loop = async (
       claims,
       party_state,
       dungeon_blacklist: new Map<string, number>(),
+      strategy: () => strategy_ref,
     }
 
     const mover = create_mover(ctx)
@@ -514,6 +516,13 @@ export const play_loop = async (
   const request_auto_equip = (): void => {
     void run_auto_equip()
   }
+
+  // ── periodic strategy brain ─────────────────────────────────────────
+  // The whole-content plan (the global farm distance + the gear acquisition routes), recomputed by
+  // `strategy_loop` and read by the roam and the engage. One mutable ref shared by every character's
+  // ctx: `farm.distance` is where the party should stand, `wanted_mobs` biases the engage toward
+  // families whose loot carries a wanted upgrade.
+  let strategy_ref: Strategy | null = null
 
   // ── gear craft goals ────────────────────────────────────────────────
   // The craft planner's priority list: the best CRAFTABLE weapon/armour/accessory for each character at
@@ -860,7 +869,13 @@ export const play_loop = async (
       // check for a whole pass, so an already-staged group sat parked (observed: 13:52 staging ->
       // 14:53 engage).
       if (is_leader && toggles.roam) {
-        const roamed = await roamer.roam_once(mover, effectiveLevel, PARTY_RADIUS, window_viable(party_state))
+        const roamed = await roamer.roam_once(
+          mover,
+          effectiveLevel,
+          PARTY_RADIUS,
+          window_viable(party_state),
+          strategy_ref?.farm?.distance ?? null
+        )
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
           roamed.kind === 'roamed' ||
@@ -933,7 +948,13 @@ export const play_loop = async (
       // Leader already roamed before group step. Followers already rallied.
       // Solo play (no group): roam and engage with default step (2500 blocks).
       if (!group_mode && toggles.roam) {
-        const roamed = await roamer.roam_once(mover, effectiveLevel)
+        const roamed = await roamer.roam_once(
+          mover,
+          effectiveLevel,
+          undefined,
+          undefined,
+          strategy_ref?.farm?.distance ?? null
+        )
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
           roamed.kind === 'roamed' ||
@@ -994,7 +1015,10 @@ export const play_loop = async (
       // walks toward those (and the dungeon-key materials) instead of the tier ladder alone.
       const crafter = game_state.characters.find((c) => c.id === party_state.leader_id)
       const demand = crafter
-        ? craft_gather_demand(crafter, game_state.inventory, unavailable_item_ids(game_state), KEY_OUTPUTS)
+        ? craft_gather_demand(crafter, game_state.inventory, unavailable_item_ids(game_state), [
+            ...KEY_OUTPUTS,
+            ...current_gear_goals(),
+          ])
         : undefined
       const gathered = await gather_once(ctx, mover, gather_job, local_only ? PARTY_GATHER_RADIUS : undefined, demand)
       if (gathered.kind === 'gathered') {
@@ -1121,8 +1145,47 @@ export const play_loop = async (
     }
   }
 
-  // Launch all character loops in parallel. The shared socket requires no heartbeat task: the
-  // server pushes liveness packets continuously, so there is no periodic Discord ping any more.
-  // A party-wide progress digest is the one periodic message, and only when one is configured.
-  await Promise.all([...runtimes.map((rt) => run_character(rt)), digest_loop(runtimes)])
+  /** The periodic strategy brain. Every `BOT_STRATEGY_INTERVAL_MS` it re-derives, from the FULL seed
+   *  content and the current party, the global farm distance and the gear acquisition routes, logs the
+   *  verdict, and publishes it in `strategy_ref` for the roam (band) and the engage (wanted mobs). The
+   *  first pass runs immediately so the very first roam already has a target; a failed pass leaves the
+   *  previous plan in place rather than clearing it. */
+  const strategy_loop = async (rts: readonly CharRuntime[]): Promise<void> => {
+    if (!config.strategy) return
+    const party_rows = (): readonly CharacterRow[] =>
+      rts.flatMap((rt) => {
+        const row = game_state.characters.find((c) => c.id === rt.character.id)
+        return row ? [row] : []
+      })
+    while (!stopped) {
+      let ran = false
+      try {
+        const rows = party_rows()
+        if (rows.length > 0) {
+          const started_ms = Date.now()
+          const plan = compute_strategy(rows, game_state)
+          strategy_ref = plan
+          for (const line of describe_strategy(plan)) log_info('strategy', line)
+          log_info('strategy', `pass complete in ${Date.now() - started_ms}ms`)
+          ran = true
+        }
+      } catch (error) {
+        // A failed pass keeps the previous plan; back off a full interval rather than hot-looping.
+        ran = true
+        log_error('strategy', `strategy pass failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      if (stopped || config.strategy_interval_ms <= 0) break
+      // No roster yet (a startup race): retry soon instead of waiting a whole interval.
+      await sleep(ran ? config.strategy_interval_ms : Math.min(config.strategy_interval_ms, 5_000))
+    }
+  }
+
+  // Launch all character loops in parallel. The shared socket requires no heartbeat task: the server
+  // pushes liveness packets continuously, so there is no periodic Discord ping. A party-wide progress
+  // digest and the strategy pass are the only periodic work, each on its own schedule.
+  await Promise.all([
+    ...runtimes.map((rt) => run_character(rt)),
+    digest_loop(runtimes),
+    strategy_loop(runtimes),
+  ])
 }

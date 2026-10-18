@@ -223,9 +223,27 @@ below a character's level that beat what that character could wear today, and re
 types as a **priority list** the craft planner (`select_craft_target`) tries BEFORE the xp rotation —
 so the party mints what it will WEAR before spending the same materials on xp filler. Gear goals allow
 zero-XP crafts (a 2-slot weapon still beats fists at job level 100), the rotation remains the
-fallback, and an output already held un-equipped is dropped (auto-equip will place it). Gathering
-needs no change: `craft_gather_demand` already walks every level-eligible crafting recipe, so a goal's
-inputs are already demanded.
+fallback, and an output already held un-equipped is dropped (auto-equip will place it). A goal's
+inputs are demanded through `craft_gather_demand`'s `extra_outputs`, which the play loop fills with the
+goal outputs — pulled even when the craft pays no XP, because the goal is deliberate, not filler.
+
+## Strategy brain (`actions/strategy.ts`)
+
+Once every `BOT_STRATEGY_INTERVAL_MS` (30 min) the play loop runs ONE whole-content pass and publishes
+it in a shared ref. It reuses the SAME twin the engage uses (`fight_preview.score_mobs`), so it can
+never disagree with a live decision about what is winnable:
+
+- **Farm target** — for each zone-difficulty band it prefilters the roster to the families the chain
+  still pays XP for (the `highest*5 >= level*2` floor), simulates the best couple with a two-seed twin,
+  and picks the band whose likely group pays the most XP per committed turn for the whole party.
+  `plan_roam` takes it as an optional `targetBand`, so the roam creeps toward the brain's distance
+  instead of the median-family heuristic.
+- **Gear route** — `plan_gear_targets` annotates each craftable goal with `craft`/`drop` and the mob
+  types whose loot carries it. The wanted mobs become a soft tiebreak in `viable_ranking` (a group that
+  can drop an upgrade beats an equal-value group that cannot), and the goal outputs are folded into the
+  gather demand.
+- **Console only** — the pass logs its verdict; it never sends a Discord message. It is a coarse
+  RANKING, not certification: the live engage still hard-screens with all five seeds.
 
 ## Traps that already cost time (do not re-learn these)
 
@@ -315,6 +333,8 @@ inputs are already demanded.
 | `BOT_CROSS_WORLD_WORLD` | – | explicit target world (unset = richest reachable) |
 | `BOT_CROSS_WORLD_INTERVAL_MS` | `1800000` | ms between cross-world trips (0 disables the cycle) |
 | `BOT_CROSS_WORLD_DWELL_MS` | `600000` | ms the detacher gathers per trip |
+| `BOT_STRATEGY` | `true` | run the periodic whole-content strategy pass |
+| `BOT_STRATEGY_INTERVAL_MS` | `1800000` | ms between strategy passes (0 runs once) |
 | `BOT_IDLE_SLEEP_MS` | `3000` | idle decision-pass sleep |
 | `ARES_CHARACTER_ID` | – | pin one character; otherwise the whole roster is used |
 | `ARES_WORLD` | `nauvis` | fallback world |

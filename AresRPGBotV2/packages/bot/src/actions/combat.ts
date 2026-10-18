@@ -284,7 +284,10 @@ export const pick_engage_target = (
   // Claim the best sure-win group no other party member is already walking to. A group is a single
   // on-chain bit, so two characters engaging it would race and one would abort.
   const party_size = 1 + allies.length
-  const ranked = viable_ranking(pose, scored, party_size)
+  // The periodic strategy brain's soft preference: among equally valuable groups, favour one
+  // carrying a mob whose loot the party wants (a gear upgrade source). Undefined before the first
+  // strategy pass, in which case viable_ranking's default empty set changes nothing.
+  const ranked = viable_ranking(pose, scored, party_size, ctx.strategy?.()?.wanted_mobs)
   const winner = ranked.find(({ candidate }) => ctx.claims.claim(claim_key(candidate), ctx.character_id))
   return Object.freeze({
     candidate: winner ? winner.candidate : null,

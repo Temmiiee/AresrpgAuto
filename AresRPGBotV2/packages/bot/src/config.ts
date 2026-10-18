@@ -132,6 +132,10 @@ export type BotConfig = Readonly<{
   cross_world_interval_ms: number
   /** how long the detacher spends gathering in the target world before returning (ms) */
   cross_world_dwell_ms: number
+  /** run the periodic whole-content strategy brain (global farm targeting + gear acquisition) */
+  strategy: boolean
+  /** how long between strategy passes (ms); 0 disables the periodic recompute */
+  strategy_interval_ms: number
 }>
 
 export const config: BotConfig = Object.freeze({
@@ -173,4 +177,9 @@ export const config: BotConfig = Object.freeze({
   cross_world_world: process.env.BOT_CROSS_WORLD_WORLD ?? null,
   cross_world_interval_ms: Math.max(0, env_int(process.env.BOT_CROSS_WORLD_INTERVAL_MS) ?? 1_800_000),
   cross_world_dwell_ms: Math.max(0, env_int(process.env.BOT_CROSS_WORLD_DWELL_MS) ?? 600_000),
+  // The periodic "brain": for each zone band it simulates the couple of in-level families with the
+  // best authored XP through the same fight twin the engage uses, plus the all-item gear acquisition
+  // route. 30 minutes reacts to level/gear moves without hammering the shared loop with sim bursts.
+  strategy: env_flag(process.env.BOT_STRATEGY, true),
+  strategy_interval_ms: Math.max(0, env_int(process.env.BOT_STRATEGY_INTERVAL_MS) ?? 30 * 60_000),
 })

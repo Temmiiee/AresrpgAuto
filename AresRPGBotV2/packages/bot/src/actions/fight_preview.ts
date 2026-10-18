@@ -26,7 +26,7 @@ import { plan_turn, sim_commands } from './turn_plan.ts'
  *  certify a fight. */
 const PREVIEW_SEEDS: readonly bigint[] = Object.freeze([1n, 2n, 3n, 4n, 5n])
 /** A group is only engaged when the twin wins at least this share of seeds — "sure to win". */
-const MIN_WIN_RATE = 0.8
+export const MIN_WIN_RATE = 0.8
 /** A fight our planner cannot end within this many actor-turns costs more gas than it is worth;
  *  exceeding it counts as a loss. This is a ROUND budget: `run_once` scales it by the actor count
  *  so a four-player party gets the same number of rounds as a solo character, rather than being
@@ -184,15 +184,17 @@ const player_input = (character: CharacterRow, source: PlayerSource): FightPlaye
   return { character: character.id, owner: '0x0', team: 0n, ready: true, hp, source }
 }
 
-/** Score one group by replaying the fight across PREVIEW_SEEDS. A group that cannot be simulated
- *  scores non-viable rather than throwing the whole pass away. `allies` (a group fight's partners)
- *  join the replay so the win rate reflects the whole party, not just the leader. */
-export const score_group = (
+/** Score a set of mob inputs by replaying the fight across `seeds` with the SAME deterministic twin
+ *  the chain mirrors. A group that cannot be simulated scores non-viable rather than throwing the
+ *  whole pass away. `allies` (a group fight's partners) join the replay so the win rate reflects the
+ *  whole party, not just the leader. The periodic strategy brain synthesizes seed mobs and calls this
+ *  directly, so ONE twin owns both the live group choice and the whole-content analysis. */
+export const score_mobs = (
   character: CharacterRow,
-  group: MobGroupRow,
-  allies: readonly CharacterRow[] = []
+  mobs: readonly FightMobInput[],
+  allies: readonly CharacterRow[] = [],
+  seeds: readonly bigint[] = PREVIEW_SEEDS
 ): FightScore => {
-  const mobs = mob_inputs(group)
   if (mobs.length === 0) return ZERO_SCORE
   const members: readonly CharacterRow[] = [character, ...allies]
   const sourced = members.map((member) => Object.freeze({ member, source: player_source_of(member) }))
@@ -203,10 +205,10 @@ export const score_group = (
   )
   let runs: readonly SimRun[]
   try {
-    runs = PREVIEW_SEEDS.map((seed) => run_once(players, mobs, character.id, spells, seed))
+    runs = seeds.map((seed) => run_once(players, mobs, character.id, spells, seed))
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    log_warn('preview', `could not simulate group ${group.index}: ${detail}`)
+    log_warn('preview', `could not simulate a group: ${detail}`)
     return ZERO_SCORE
   }
   const wins = runs.filter((run) => run.won)
@@ -215,12 +217,19 @@ export const score_group = (
   const xp = average(wins.map((run) => run.xp))
   const loot = expected_loot_units(mobs)
   return Object.freeze({
-    win_rate: wins.length / runs.length,
+    win_rate: runs.length > 0 ? wins.length / runs.length : 0,
     turns,
     xp_per_turn: turns > 0 ? xp / turns : 0,
     loot_per_turn: turns > 0 ? loot / turns : 0,
   })
 }
+
+/** Score one live group: its members as mob inputs, then the same twin replay. */
+export const score_group = (
+  character: CharacterRow,
+  group: MobGroupRow,
+  allies: readonly CharacterRow[] = []
+): FightScore => score_mobs(character, mob_inputs(group), allies)
 
 const distance_to = (pose: Readonly<{ x: number; z: number }>, point: Readonly<{ x: number; z: number }>): number =>
   Math.hypot(pose.x - point.x, pose.z - point.z)
@@ -246,6 +255,21 @@ export const nearest_candidates = (
 ): readonly GroupCandidate[] =>
   [...candidates].sort((left, right) => distance_to(pose, left.group) - distance_to(pose, right.group)).slice(0, limit)
 
+/** A shared empty set so the common "no strategy preference" call allocates nothing. */
+const EMPTY_WANTED: ReadonlySet<string> = Object.freeze(new Set<string>())
+
+/** How many members of a group are mobs whose loot the periodic strategy currently wants. Helps a
+ *  group that can drop a wanted upgrade win a tie against an equally-valued group that cannot. */
+const wanted_hits = (
+  group: Readonly<{ members: readonly Readonly<{ mob_type: string }>[] }>,
+  wanted: ReadonlySet<string>
+): number => {
+  if (wanted.size === 0) return 0
+  let hits = 0
+  for (const member of group.members) if (wanted.has(member.mob_type)) hits += 1
+  return hits
+}
+
 /** The sure-win groups, best reward per turn first. Loot only breaks ties: there is no live price
  *  feed, and turning expected drop quantity into an additive "value" is exactly how a trivial
  *  high-drop fight outranks a hard, high-XP one (the Old bot's 1-xp lesson). Ties then fall to
@@ -254,11 +278,16 @@ export const nearest_candidates = (
  *  When `party_size > 1` (group fight), we bias toward LARGER mob groups because:
  *  - 4 players kill more mobs per round → fight ends in similar turns but yields more total drops
  *  - Monster drops are the bottleneck for crafting (HANDYMAN tools, etc.)
- *  The bias is a soft multiplier on loot_per_turn so XP still matters but drops count more. */
+ *  The bias is a soft multiplier on loot_per_turn so XP still matters but drops count more.
+ *
+ *  `wanted_mobs` (the periodic strategy's gear-drop set) is a FURTHER tiebreak below value: among
+ *  equally valuable groups, prefer one carrying a mob whose loot the party wants. Empty changes
+ *  nothing. */
 export const viable_ranking = (
   pose: Readonly<{ x: number; z: number }>,
   scored: readonly ScoredGroup[],
-  party_size: number = 1
+  party_size: number = 1,
+  wanted_mobs: ReadonlySet<string> = EMPTY_WANTED
 ): readonly ScoredGroup[] => {
   const loot_weight = party_size > 1 ? party_size * 0.5 : 0 // 1.0 for duo, 1.5 for trio, 2.0 for 4
   return scored
@@ -271,6 +300,8 @@ export const viable_ranking = (
         const right_val = right.score.xp_per_turn + right.score.loot_per_turn * loot_weight
         return (
           right_val - left_val ||
+          // Among equal value, prefer a group carrying a mob whose loot the strategy wants
+          wanted_hits(right.candidate.group, wanted_mobs) - wanted_hits(left.candidate.group, wanted_mobs) ||
           // Among equal value, prefer MORE mobs (more drops per fight)
           right_mobs - left_mobs ||
           left.score.turns - right.score.turns ||

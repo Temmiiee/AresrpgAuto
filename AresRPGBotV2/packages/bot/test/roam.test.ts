@@ -66,6 +66,14 @@ describe('roam plan_roam', () => {
     if (plan.kind === 'advance') expect(plan.distance).toBe(432 + 2_500)
   })
 
+  it('creeps one step toward the strategy band, not the heuristic band', () => {
+    // Level 5's heuristic band is the inner ring (2_500); the brain asks for 5_000. The bounded plan
+    // still steps out only one STEP_BLOCKS (2_500): 432 + 2_500 = 2_932, not a jump to 5_000.
+    const plan = plan_roam(5, thebes, nauvis, assess_window(5, [group('bramble', 0, 3)]), 2_500, true, 5_000)
+    expect(plan.kind).toBe('advance')
+    if (plan.kind === 'advance') expect(plan.distance).toBe(432 + 2_500)
+  })
+
   it('holds when the window already pays', () => {
     const plan = plan_roam(5, thebes, nauvis, assess_window(5, [group('bramble', 100)]))
     expect(plan.kind).toBe('stay')

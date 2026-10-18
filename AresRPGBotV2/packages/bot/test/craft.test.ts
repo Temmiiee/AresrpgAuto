@@ -156,6 +156,18 @@ describe('craft_gather_demand', () => {
     // the key chain needs amber (through amber_powder), so its leverage rises while it is demanded
     expect(with_keys.get('amber')!).toBeGreaterThan(without_keys.get('amber')!)
   })
+
+  it('folds a gear-goal recipe in even when its craft pays no xp', () => {
+    // FORGER 100 makes this 2-slot recipe four slots below capacity, so the retro floor zeroes its XP
+    // and the rotation's own note() skips it. A deliberate gear goal must still pull its leaves.
+    const gear = recipe_detail(recipes_by_output['lid_splitter']!)
+    const leaves = [...gatherable_demand(gear.output_type).keys()]
+    expect(leaves.length).toBeGreaterThan(0)
+    const omori = crafter({ FORGER: 100 })
+    const bare = craft_gather_demand(omori, [], new Set())
+    const with_gear = craft_gather_demand(omori, [], new Set(), ['lid_splitter'])
+    expect(leaves.some((leaf) => (with_gear.get(leaf) ?? 0) > (bare.get(leaf) ?? 0))).toBe(true)
+  })
 })
 
 describe('rank_gather_candidates', () => {

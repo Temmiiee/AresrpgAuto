@@ -47,6 +47,10 @@ export const create_group_claims = (): GroupClaims => {
   })
 }
 
+/** The engage-relevant view of the periodic strategy brain (set by the play loop). Kept to the one
+ *  field actions need so this module has no dependency on `strategy.ts`. */
+export type StrategyHint = Readonly<{ wanted_mobs: ReadonlySet<string> }>
+
 export type ActionContext = Readonly<{
   /** the shared SDK wired to this bot's signer + network */
   sdk: BotSdk
@@ -74,6 +78,8 @@ export type ActionContext = Readonly<{
    *  (which parks a key whose first room previews as unwinnable) and the key crafter (which skips a
    *  parked key), so the two never disagree about which keys are worth committing to. */
   dungeon_blacklist: Map<string, number>
+  /** the current periodic strategy brain's engage hint, or undefined before the first pass */
+  strategy?: () => StrategyHint | null
 }>
 
 /** The wire custody pair for a character: the kiosk holding it plus its personal cap identity. */

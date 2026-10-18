@@ -1,0 +1,310 @@
+// strategy – the periodic "brain". Once every BOT_STRATEGY_INTERVAL_MS the play loop re-derives, from
+// the FULL seed content and the live party, the two facts the local loop cannot see from where it
+// happens to stand:
+//
+//   1. WHERE to farm. The engage only screens the handful of groups in the live window, and the roam
+//      picks a distance from a median-family heuristic. This module scores, for each zone-difficulty
+//      band, the in-level families with the best authored XP using the SAME deterministic twin the
+//      chain mirrors (`fight_preview.score_mobs`), then aggregates the ones the party can reliably beat
+//      into the block distance whose likely group pays the most XP per committed turn for THIS party.
+//      A cheap prefilter picks only a couple of families per band, so the pass stays short enough to
+//      run on the shared play loop (the live engage still hard-certifies with all five seeds).
+//   2. WHAT to wear, and how to get it. For every character it names the best wearable per slot at its
+//      level (computed by `gear.ts`) and the acquisition route: `craft` when the seed has a recipe for
+//      it, `drop` otherwise, with the mob types whose loot carries it.
+//
+// Pure, read-only and best-effort: a scan that finds nothing winnable yields no plan (the roam keeps
+// its own heuristic) rather than a wrong one. No I/O, no timers, no chain.
+import { create_mob_snapshot, type FightMobInput } from '@aresrpg/fight'
+import type { CharacterRow } from '@aresrpg/protocol'
+
+import {
+  items_by_type,
+  mobs,
+  mobs_by_type,
+  recipes_by_output,
+  type SeedWorld,
+} from '../content/catalog.ts'
+import { mob_template_of } from '../content/fight_sources.ts'
+import {
+  fight_world_for_level,
+  mob_group_size_bounds,
+  mob_level_scalar_bounds,
+} from '../content/zone_map.ts'
+import type { GameState } from '../state/store.ts'
+
+import { MIN_WIN_RATE, score_mobs } from './fight_preview.ts'
+import { plan_gear_goals } from './gear.ts'
+
+/** How a wanted item is obtained: `craft` when the seed authors a recipe, `drop` when only loot. */
+export type GearRoute = 'craft' | 'drop'
+
+export type GearTarget = Readonly<{
+  character_id: string
+  character_name: string
+  slot: string
+  item_type: string
+  category: string
+  level: number
+  /** expected rune-weight score of the target (the auto-equip unit) */
+  score: number
+  /** how far it beats what the character could wear today */
+  gain: number
+  route: GearRoute
+  /** the mob types whose loot carries this item (the source of a `drop` route, a bonus of a craft) */
+  source_mobs: readonly string[]
+}>
+
+/** One (mob family, difficulty band) probed with the party twin. */
+export type FarmSample = Readonly<{
+  world: string
+  mob_type: string
+  role: string
+  /** the block distance from the world centre this band sits at */
+  distance: number
+  level_scalar: number
+  mob_level: number
+  group_size: number
+  win_rate: number
+  xp_per_turn: number
+  loot_per_turn: number
+}>
+
+export type FarmPlan = Readonly<{
+  world: string
+  /** the block distance from the world centre the party should farm at */
+  distance: number
+  level_scalar: number
+  mob_level: number
+  /** expected XP per committed turn at the chosen distance, weighted by family spawn rate */
+  xp_per_turn: number
+  /** the ranked evidence behind the choice (best XP/turn first) */
+  samples: readonly FarmSample[]
+}>
+
+export type Strategy = Readonly<{
+  computed_ms: number
+  farm: FarmPlan | null
+  gear: readonly GearTarget[]
+  /** mob types whose loot carries a wanted upgrade — the engage's soft preference */
+  wanted_mobs: ReadonlySet<string>
+}>
+
+/** Local seeds per sample. This is a coarse RANKING, not the engage's hard certification (which keeps
+ *  all five): two distinct boards are enough to drop a family that only wins by luck, at a third of
+ *  the cost. Two seeds make `win_rate` 0, 0.5 or 1, so the >= MIN_WIN_RATE gate only passes a
+ *  candidate that won BOTH boards. */
+const STRATEGY_SEEDS: readonly bigint[] = Object.freeze([1n, 2n])
+
+/** The zone-difficulty bands sampled, as block distances from the world centre. The scalar ramp is
+ *  flat past 20,000, so four bands span the whole farmable ring; the live roam refines from whatever
+ *  target this names in 2,500-block steps. */
+const SAMPLE_DISTANCES: readonly number[] = Object.freeze([5_000, 10_000, 15_000, 20_000])
+
+/** Fights simulated per band. A cheap authored-XP prefilter picks this many in-level families first,
+ *  so the pass is bounded by bands × candidates × seeds — never by the size of the mob roster. */
+const CANDIDATES_PER_DISTANCE = 2
+
+/** A scaled mob further above the party than this is not worth simulating (it cannot be beaten). */
+const LEVEL_CEIL_GAP = 20
+
+/** Cap the reported evidence so a digest line stays readable. */
+const MAX_SAMPLES = 12
+
+/** item_type -> the mob types whose loot table carries it. Built once at module load. */
+const LOOT_SOURCES: ReadonlyMap<string, readonly string[]> = (() => {
+  const by_item = new Map<string, string[]>()
+  for (const mob of mobs)
+    for (const drop of mob.loot) {
+      const bucket = by_item.get(drop.item_type)
+      if (bucket) bucket.push(mob.mob_type)
+      else by_item.set(drop.item_type, [mob.mob_type])
+    }
+  return by_item
+})()
+
+/** The scaled level a mob type reaches at a zone-level scalar, or null when the seed lacks it. */
+export const scaled_level = (mob_type: string, scalar: number): number | null => {
+  const template = mob_template_of(mob_type)
+  return template ? Number(create_mob_snapshot(template, BigInt(scalar)).level) : null
+}
+
+/** The best wearable per (character, slot) and the route to it, biggest gain first. Reuses the craft
+ *  goal scan (`gear.ts`) and annotates each goal with its acquisition route + loot sources. */
+export const plan_gear_targets = (
+  characters: readonly CharacterRow[],
+  state: GameState
+): readonly GearTarget[] =>
+  Object.freeze(
+    plan_gear_goals(characters, state).map((goal) =>
+      Object.freeze({
+        character_id: goal.character_id,
+        character_name: goal.character_name,
+        slot: goal.slot,
+        item_type: goal.output_type,
+        category: items_by_type[goal.output_type]?.category ?? '',
+        level: goal.level,
+        score: goal.score,
+        gain: goal.gain,
+        route: recipes_by_output[goal.output_type] ? ('craft' as const) : ('drop' as const),
+        source_mobs: LOOT_SOURCES.get(goal.output_type) ?? [],
+      })
+    )
+  )
+
+export type FarmOptions = Readonly<{
+  /** the world to scan; defaults to the fight world for the party's level */
+  world?: SeedWorld
+  /** the level the scan is tuned to; defaults to the leader's */
+  party_level?: number
+  /** the block distances to sample; defaults to the full ring */
+  distances?: readonly number[]
+}>
+
+/** Scan every mob family in the fight world across the difficulty bands and pick the distance whose
+ *  EXPECTED group pays the most XP per committed turn for the party (weighted by family spawn rate).
+ *  Returns null when no family at any band is both winnable and worth XP. */
+export const plan_farm = (
+  characters: readonly CharacterRow[],
+  options: FarmOptions = {}
+): FarmPlan | null => {
+  const leader = characters[0]
+  if (!leader) return null
+  const party_level = options.party_level ?? leader.level
+  const world = options.world ?? fight_world_for_level(party_level)
+  if (!world || world.mobs.length === 0) return null
+  const allies = characters.slice(1)
+  const distances = options.distances ?? SAMPLE_DISTANCES
+
+  const weight_of = (mob_type: string): number =>
+    Math.max(1, world.mobs.find((entry) => entry.mob_type === mob_type)?.weight_bp ?? 1)
+
+  const samples: FarmSample[] = []
+  for (const distance of distances) {
+    const [low, high] = mob_level_scalar_bounds(distance)
+    const scalar = Math.trunc((low + high) / 2)
+    const [size_low, size_high] = mob_group_size_bounds(distance)
+    const group_size = Math.max(1, Math.round((size_low + size_high) / 2))
+    // Cheap prefilter over the roster: only families the chain still pays XP for are considered (the
+    // same `highest*5 >= level*2` floor `assess_window` uses), and only the couple with the best
+    // authored XP per mob (fading as the family's scaled level parts from the party's) are actually
+    // simulated. Authored XP is a constant, so this costs nothing per band.
+    const candidates = world.mobs
+      .flatMap((entry) => {
+        const template = mob_template_of(entry.mob_type)
+        if (!template) return []
+        const mob_level = Number(create_mob_snapshot(template, BigInt(scalar)).level)
+        if (mob_level * 5 < party_level * 2) return []
+        if (mob_level > party_level + LEVEL_CEIL_GAP) return []
+        return [
+          {
+            entry,
+            template,
+            mob_level,
+            expected: Number(template.xp) / (1 + Math.abs(mob_level - party_level)),
+          },
+        ]
+      })
+      .sort((left, right) => right.expected - left.expected)
+      .slice(0, CANDIDATES_PER_DISTANCE)
+    for (const { entry, template, mob_level } of candidates) {
+      const mob_inputs: readonly FightMobInput[] = Array.from({ length: group_size }, () =>
+        Object.freeze({ team: 1n, template, scalar: BigInt(scalar) })
+      )
+      const score = score_mobs(leader, mob_inputs, allies, STRATEGY_SEEDS)
+      samples.push(
+        Object.freeze({
+          world: world.world,
+          mob_type: entry.mob_type,
+          role: mobs_by_type[entry.mob_type]?.role ?? 'normal',
+          distance,
+          level_scalar: scalar,
+          mob_level,
+          group_size,
+          win_rate: score.win_rate,
+          xp_per_turn: score.xp_per_turn,
+          loot_per_turn: score.loot_per_turn,
+        })
+      )
+    }
+  }
+
+  const viable = samples.filter((sample) => sample.win_rate >= MIN_WIN_RATE && sample.xp_per_turn > 0)
+  if (viable.length === 0) return null
+  viable.sort((left, right) => right.xp_per_turn - left.xp_per_turn)
+
+  // Expected value per distance: weight each family's sample by its spawn rate, so a distance is
+  // judged on the group it is LIKELY to spawn, not one lucky family. Ties break to the nearer band.
+  const by_distance = new Map<number, Readonly<{ weight: number; value: number }>>()
+  for (const sample of viable) {
+    const bucket = by_distance.get(sample.distance) ?? { weight: 0, value: 0 }
+    const weight = weight_of(sample.mob_type)
+    by_distance.set(
+      sample.distance,
+      Object.freeze({ weight: bucket.weight + weight, value: bucket.value + weight * sample.xp_per_turn })
+    )
+  }
+  let best_distance = viable[0]!.distance
+  let best_value = Number.NEGATIVE_INFINITY
+  for (const [distance, bucket] of by_distance) {
+    const value = bucket.value / bucket.weight
+    if (value > best_value || (value === best_value && distance < best_distance)) {
+      best_value = value
+      best_distance = distance
+    }
+  }
+  const best = viable.find((sample) => sample.distance === best_distance)!
+  return Object.freeze({
+    world: world.world,
+    distance: best_distance,
+    level_scalar: best.level_scalar,
+    mob_level: best.mob_level,
+    xp_per_turn: best_value,
+    samples: Object.freeze(viable.slice(0, MAX_SAMPLES)),
+  })
+}
+
+/** The whole periodic analysis: the farm plan and the gear targets, plus the engage hint derived from
+ *  the gear routes (the mobs whose loot carries a wanted upgrade). */
+export const compute_strategy = (
+  characters: readonly CharacterRow[],
+  state: GameState,
+  options: FarmOptions & Readonly<{ now_ms?: number }> = {}
+): Strategy => {
+  const gear = plan_gear_targets(characters, state)
+  const wanted_mobs = new Set<string>()
+  for (const target of gear) for (const mob_type of target.source_mobs) wanted_mobs.add(mob_type)
+  return Object.freeze({
+    computed_ms: options.now_ms ?? Date.now(),
+    farm: plan_farm(characters, options),
+    gear,
+    wanted_mobs,
+  })
+}
+
+/** A human-readable periodic report — the console trace of what the brain decided and why. */
+export const describe_strategy = (strategy: Strategy): readonly string[] => {
+  const lines: string[] = []
+  if (strategy.farm) {
+    const farm = strategy.farm
+    lines.push(
+      `farm ${farm.world} @${farm.distance} (scalar ${farm.level_scalar}, mob lvl ~${farm.mob_level}): ` +
+        `${Math.round(farm.xp_per_turn)} xp/turn expected`
+    )
+    const top = farm.samples.slice(0, 5).map(
+      (sample) =>
+        `${sample.mob_type}×${sample.group_size} lvl${sample.mob_level} ${Math.round(sample.win_rate * 100)}%/${Math.round(sample.xp_per_turn)}xp`
+    )
+    lines.push(`  best families: ${top.join(', ')}`)
+  } else {
+    lines.push('farm: no winnable, worthwhile family found in the fight world')
+  }
+  if (strategy.gear.length === 0) lines.push('gear: every character already fields its best craftable piece per slot')
+  for (const target of strategy.gear.slice(0, 6))
+    lines.push(
+      `gear ${target.character_name} ${target.slot}: ${target.item_type} (lvl ${target.level}, +${Math.round(target.gain)}) via ${target.route}` +
+        (target.source_mobs.length > 0 ? ` [drops: ${target.source_mobs.slice(0, 4).join(' ')}]` : '')
+    )
+  if (strategy.gear.length > 6) lines.push(`gear: +${strategy.gear.length - 6} more upgrade(s)`)
+  return Object.freeze(lines)
+}

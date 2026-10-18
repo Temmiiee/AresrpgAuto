@@ -291,7 +291,8 @@ const DEMAND_STOCK = 60
  *  its tier: wheat feeds the flour chain AND a dozen low-tier TAILOR/JEWELER recipes, so it must
  *  outrank the narrow wheat_barley beside it rather than lose to it on tier. A leaf drops out once
  *  its stock reaches {@link DEMAND_STOCK}. `extra_outputs` folds in recipes that are not part of the
- *  rotation but whose inputs the party must still stock: the dungeon keys. */
+ *  rotation but whose inputs the party must still stock: the dungeon keys AND the gear upgrade goals
+ *  (whose crafts may pay no XP, so they bypass the rotation's xp gate). */
 export const craft_gather_demand = (
   character: CharacterRow,
   inventory: readonly ItemRow[],
@@ -301,10 +302,12 @@ export const craft_gather_demand = (
   const jobs = character.jobs ?? {}
   /** leaf -> summed one-craft requirement over every eligible recipe that resolves to it. */
   const leverage = new Map<string, number>()
-  const note = (detail: RecipeDetail): void => {
+  const note = (detail: RecipeDetail, explicit = false): void => {
     const level = job_level_from_xp(Number(jobs[detail.job] ?? '0'))
     if (level < craft_required_level(detail.ingredients.length)) return
-    if (craft_xp_at_level(detail.ingredients.length, level) <= 0) return
+    // Deliberate goals (dungeon keys, gear upgrades) are worth gathering for even at a job level
+    // where the craft pays no XP — the rotation's xp gate must not hide their materials.
+    if (!explicit && craft_xp_at_level(detail.ingredients.length, level) <= 0) return
     for (const [item_type, quantity] of gatherable_demand(detail.output_type))
       leverage.set(item_type, (leverage.get(item_type) ?? 0) + quantity)
   }
@@ -312,7 +315,7 @@ export const craft_gather_demand = (
   for (const job of rotation_order(character)) for (const detail of job_recipes(job)) note(detail)
   for (const output_type of extra_outputs) {
     const recipe = recipes_by_output[output_type]
-    if (recipe) note(recipe_detail(recipe))
+    if (recipe) note(recipe_detail(recipe), true)
   }
 
   const demand = new Map<string, number>()
