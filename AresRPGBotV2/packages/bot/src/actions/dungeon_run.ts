@@ -214,9 +214,9 @@ const enter_run = async (
   }
 }
 
-/** Pick the first dungeon the party can field a GROUP for: at least MIN_GROUP_KEYS keys and a room-1
- *  preview that clears at the entrant seat count. Rooms are judged over DUNGEON_ROUNDS (a slow
- *  clear still clears), and a key whose room 1 is unwinnable is parked. */
+/** Pick the first dungeon the party can field a GROUP for: at least MIN_GROUP_KEYS keys and
+ *  EVERY room preview clears at the entrant seat count. Rooms are judged over DUNGEON_ROUNDS
+ *  (a slow clear still clears), and a key with ANY unwinnable room is parked. */
 const plan_group_dungeon = (
   ctx: ActionContext,
   character: CharacterRow
@@ -236,21 +236,32 @@ const plan_group_dungeon = (
     if (keys < MIN_GROUP_KEYS) continue
     const city = dungeon_city(world, dk.dungeon)
     if (!city) continue
-    const room0 = dungeon_rooms(dk.dungeon)[0]
-    if (!room0) continue
+    const all_rooms = dungeon_rooms(dk.dungeon)
+    if (all_rooms.length === 0) continue
     const seats = Math.min(keys, members.length)
     const allies = planning_allies(ctx, character, seats)
-    const preview = score_group(character, room_to_mob_group(room0), allies, { rounds: DUNGEON_ROUNDS })
-    if (preview.win_rate < MIN_WIN_RATE) {
-      const pct = (preview.win_rate * 100).toFixed(0)
-      log_warn(
+
+    // Preview EVERY room before committing any key. If any room is unwinnable, park the key.
+    let all_clear = true
+    for (let ri = 0; ri < all_rooms.length; ri++) {
+      const room = all_rooms[ri]
+      const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
+      if (preview.win_rate < MIN_WIN_RATE) {
+        const pct = (preview.win_rate * 100).toFixed(0)
+        log_warn(
+          'dungeon',
+          `${dk.dungeon} room ${ri + 1}: group preview win_rate=${pct}% (${describe_score(preview)}) < 80% (scored with ${allies.length + 1} of ${seats} seat(s)) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
+        )
+        park_dungeon_key(blacklist, dk.key)
+        all_clear = false
+        break
+      }
+      log_info(
         'dungeon',
-        `${dk.dungeon} room 1: group preview win_rate=${pct}% (${describe_score(preview)}) < 80% (scored with ${allies.length + 1} of ${seats} seat(s)) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
+        `${character.name}: ${dk.dungeon} room ${ri + 1} group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${seats}, scored=${allies.length + 1}, keys=${keys}`
       )
-      park_dungeon_key(blacklist, dk.key)
-      continue
     }
-    log_info('dungeon', `${character.name}: ${dk.dungeon} room 1 group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${seats}, scored=${allies.length + 1}, keys=${keys}`)
+    if (!all_clear) continue
     return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats })
   }
   return null
