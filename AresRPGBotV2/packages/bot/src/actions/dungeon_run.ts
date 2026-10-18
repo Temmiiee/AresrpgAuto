@@ -21,9 +21,10 @@ import { dungeon_city, dungeon_rooms, worlds_by_id } from '../content/catalog.ts
 import { log_debug, log_info, log_warn } from '../shared/logger.ts'
 import { active_fight_of, select_character, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
-import { DUNGEON_KEYS, DUNGEON_PARK_MS, key_parked, park_dungeon_key, should_run_dungeons } from './dungeon.ts'
+import { DUNGEON_KEYS, DUNGEON_PARK_MS, held_key_amount, key_parked, park_dungeon_key, should_run_dungeons } from './dungeon.ts'
 import { safe_travel_to } from './roam.ts'
 import { describe_score, DUNGEON_ROUNDS, score_group, type MobGroupRow } from './fight_preview.ts'
+import { plan_mastery_dungeon, is_mastery_dungeon } from './mastery.ts'
 import type { Mover } from './travel.ts'
 
 /** After a successful `enter`, wait this long for the roster to reveal `dungeon_run` before
@@ -110,16 +111,6 @@ const planning_allies = (
       return member ? [member] : []
     })
     .slice(0, Math.max(0, seats - 1))
-}
-
-/** The keys held for `key`, scanning every non-unavailable stack the party shares one kiosk for. */
-const held_key_amount = (ctx: ActionContext, key: string): number => {
-  const unavailable = unavailable_item_ids(ctx.state())
-  let total = 0
-  for (const item of ctx.state().inventory) {
-    if (item.item_type === key && !unavailable.has(item.id)) total += item.amount
-  }
-  return total
 }
 
 /** How many party members have entered `dungeon` and are sitting on `room` right now. */
@@ -216,7 +207,8 @@ const enter_run = async (
 
 /** Pick the first dungeon the party can field a GROUP for: at least MIN_GROUP_KEYS keys and
  *  EVERY room preview clears at the entrant seat count. Rooms are judged over DUNGEON_ROUNDS
- *  (a slow clear still clears), and a key with ANY unwinnable room is parked. */
+ *  (a slow clear still clears), and a key with ANY unwinnable room is parked.
+ *  Uses the MINIMUM seats that clears all rooms (saves keys). */
 const plan_group_dungeon = (
   ctx: ActionContext,
   character: CharacterRow
@@ -232,37 +224,57 @@ const plan_group_dungeon = (
 
   for (const dk of DUNGEON_KEYS) {
     if (key_parked(blacklist, dk.key)) continue
-    const keys = held_key_amount(ctx, dk.key)
+    const keys = held_key_amount(ctx.state().inventory, unavailable_item_ids(ctx.state()), dk.key)
     if (keys < MIN_GROUP_KEYS) continue
     const city = dungeon_city(world, dk.dungeon)
     if (!city) continue
     const all_rooms = dungeon_rooms(dk.dungeon)
     if (all_rooms.length === 0) continue
-    const seats = Math.min(keys, members.length)
-    const allies = planning_allies(ctx, character, seats)
 
-    // Preview EVERY room before committing any key. If any room is unwinnable, park the key.
-    let all_clear = true
+    // Find MINIMUM seats that clears ALL rooms (key efficiency).
+    const max_seats = Math.min(keys, members.length)
+    let chosen_seats = 0
+    for (let seats = MIN_GROUP_KEYS; seats <= max_seats; seats++) {
+      const allies = planning_allies(ctx, character, seats)
+      let all_clear = true
+      for (let ri = 0; ri < all_rooms.length; ri++) {
+        const room = all_rooms[ri]
+        const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
+        if (preview.win_rate < MIN_WIN_RATE) {
+          all_clear = false
+          break
+        }
+      }
+      if (all_clear) {
+        chosen_seats = seats
+        break
+      }
+    }
+    if (chosen_seats === 0) {
+      // No seat count works — park with the max-seat diagnostic.
+      const allies = planning_allies(ctx, character, max_seats)
+      const preview = score_group(character, room_to_mob_group(all_rooms[0]), allies, { rounds: DUNGEON_ROUNDS })
+      const pct = (preview.win_rate * 100).toFixed(0)
+      log_warn(
+        'dungeon',
+        `${dk.dungeon} room 1: group preview win_rate=${pct}% (${describe_score(preview)}) < 80% even at ${max_seats} seat(s) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
+      )
+      park_dungeon_key(blacklist, dk.key)
+      continue
+    }
+
+    // Log the full-room preview at the chosen seat count.
+    const allies = planning_allies(ctx, character, chosen_seats)
     for (let ri = 0; ri < all_rooms.length; ri++) {
       const room = all_rooms[ri]
       const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
-      if (preview.win_rate < MIN_WIN_RATE) {
-        const pct = (preview.win_rate * 100).toFixed(0)
-        log_warn(
-          'dungeon',
-          `${dk.dungeon} room ${ri + 1}: group preview win_rate=${pct}% (${describe_score(preview)}) < 80% (scored with ${allies.length + 1} of ${seats} seat(s)) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
-        )
-        park_dungeon_key(blacklist, dk.key)
-        all_clear = false
-        break
-      }
       log_info(
         'dungeon',
-        `${character.name}: ${dk.dungeon} room ${ri + 1} group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${seats}, scored=${allies.length + 1}, keys=${keys}`
+        `${character.name}: ${dk.dungeon} room ${ri + 1} group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${chosen_seats}, scored=${allies.length + 1}, keys=${keys}`
       )
     }
-    if (!all_clear) continue
-    return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats })
+    log_info('dungeon', `${character.name}: ${dk.dungeon} MINIMUM seats to clear all rooms = ${chosen_seats} (of ${max_seats} available)`)
+    return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats: chosen_seats })
   }
   return null
 }
@@ -304,7 +316,7 @@ export const follower_dungeon_step = async (ctx: ActionContext, mover: Mover): P
   if ((character.world ?? ctx.world) !== group.world) return false
   const dk = DUNGEON_KEYS.find((row) => row.dungeon === group.dungeon)
   if (!dk) return false
-  if (held_key_amount(ctx, dk.key) <= 0) return false
+  if (held_key_amount(ctx.state().inventory, unavailable_item_ids(ctx.state()), dk.key) <= 0) return false
   const result = await enter_run(ctx, mover, character, group.dungeon)
   return result !== null
 }
@@ -420,7 +432,17 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     }
 
     // Not committed: commit only when the party can field a group (>= MIN_GROUP_KEYS keys).
+    // FIRST: check for an active mastery dungeon quest — it takes priority.
     if (!ctx.party_state || ctx.party_state.members.length < MIN_GROUP_KEYS) return null
+    const mastery_plan = plan_mastery_dungeon(ctx, character)
+    if (mastery_plan) {
+      ctx.party_state.dungeon = Object.freeze({ ...mastery_plan, committed_ms: Date.now() })
+      log_info('dungeon', `${character.name}: committing the party to MASTERY ${mastery_plan.dungeon} (${mastery_plan.seats} seat(s))`)
+      const result = await enter_run(ctx, mover, character, mastery_plan.dungeon)
+      if (result?.kind === 'entered') entered_group = true
+      if (result === null) ctx.party_state.dungeon = null
+      return result
+    }
     const plan = plan_group_dungeon(ctx, character)
     if (!plan) return null
     ctx.party_state.dungeon = Object.freeze({ ...plan, committed_ms: Date.now() })

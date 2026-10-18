@@ -14,6 +14,8 @@ import {
   type FightStateRow,
   type ItemRow,
   type ListingRow,
+  type MasteryOfferRow,
+  type MasteryRow,
   type MobGroupRow,
   type ResourcePackRow,
   type ServerPacket,
@@ -62,6 +64,10 @@ export type GameState = Readonly<{
   last_error: Readonly<{ reason: string; id: number | null }> | null
   /** every packet folded so far — a cheap liveness counter for the CLIs */
   packets_seen: number
+  /** daily/epoch mastery dungeon quest (if active) */
+  mastery: MasteryRow | null
+  /** mastery shop offers */
+  mastery_offers: readonly MasteryOfferRow[]
 }>
 
 export const initial_game_state: GameState = Object.freeze({
@@ -83,6 +89,8 @@ export const initial_game_state: GameState = Object.freeze({
   online: null,
   last_error: null,
   packets_seen: 0,
+  mastery: null,
+  mastery_offers: Object.freeze([]),
 })
 
 export type StoreInput =
@@ -231,6 +239,13 @@ const reduce_packet = (state: GameState, packet: ServerPacket): GameState => {
       return {
         ...state,
         last_error: Object.freeze({ reason: packet.reason, id: packet.id ?? null }),
+        packets_seen: seen,
+      }
+    case 'packet/mastery':
+      return {
+        ...state,
+        mastery: packet.mastery,
+        mastery_offers: Object.freeze(packet.offers ?? []),
         packets_seen: seen,
       }
     default:

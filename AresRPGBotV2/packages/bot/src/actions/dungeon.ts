@@ -71,6 +71,15 @@ export const can_craft_key = (key: string, inventory: readonly ItemRow[], unavai
   return true
 }
 
+/** Total amount of `key` held across the shared inventory (excluding unavailable items). */
+export const held_key_amount = (inventory: readonly ItemRow[], unavailable: ReadonlySet<string>, key: string): number => {
+  let total = 0
+  for (const item of inventory) {
+    if (item.item_type === key && !unavailable.has(item.id)) total += item.amount
+  }
+  return total
+}
+
 /** A one-line "what this key still needs" summary, for the operator log. */
 const describe_key_gap = (
   key: string,
