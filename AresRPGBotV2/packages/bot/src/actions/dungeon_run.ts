@@ -23,7 +23,7 @@ import { active_fight_of, select_character, unavailable_item_ids } from '../stat
 import { custody_of, type ActionContext } from './context.ts'
 import { DUNGEON_KEYS, DUNGEON_PARK_MS, key_parked, park_dungeon_key, should_run_dungeons } from './dungeon.ts'
 import { safe_travel_to } from './roam.ts'
-import { score_group, mob_inputs, type MobGroupRow } from './fight_preview.ts'
+import { score_group, type MobGroupRow } from './fight_preview.ts'
 import type { Mover } from './travel.ts'
 
 /** After a successful `enter`, wait this long for the roster to reveal `dungeon_run` before
@@ -61,12 +61,21 @@ export type DungeonRunner = Readonly<{
   run_once: (mover: Mover) => Promise<DungeonOutcome | null>
 }>
 
-/** Build a fake MobGroupRow from a dungeon room's mob list for preview purposes. */
-const room_to_mob_group = (room: readonly { mob_type: string }[]): MobGroupRow => ({
+/** The dungeon board derives each seat's mob `level_scalar` as `mix(run_seed, seat) % 101` from the
+ *  chain's terminal `&Random` (see `move/sources/dungeon.move` + `move-math/sources/dungeon_data.move`)
+ *  — a genuine UNIFORM draw over [0, 100] that no client can predict, because the run's seed is drawn
+ *  at `enter` and never exposed to the client. Its EXPECTED value is the mean, 50, so a room preview
+ *  must score the mean difficulty; the old `50 + i` merely inflated every mob after the first and
+ *  systematically over-estimated how hard the room was, parking keys the party could actually clear.
+ *  Per-run variance is the game's own design and cannot be previewed away. */
+export const DUNGEON_EXPECTED_SCALAR = 50
+
+/** Build a previewable MobGroupRow from a dungeon room's authored mob list (expected difficulty). */
+export const room_to_mob_group = (room: readonly { mob_type: string }[]): MobGroupRow => ({
   index: 0,
   x: 0,
   z: 0,
-  members: room.map((row, i) => ({ mob_type: row.mob_type, level_scalar: 50 + i })),
+  members: room.map((row) => ({ mob_type: row.mob_type, level_scalar: DUNGEON_EXPECTED_SCALAR })),
 })
 
 /** Collect available allies for a dungeon fight: other party members in the same world, not in a fight. */
@@ -77,6 +86,30 @@ const dungeon_allies = (ctx: ActionContext, character: CharacterRow): readonly C
     .filter((id) => id !== character.id && !ctx.party_state?.detached.has(id))
     .map((id) => select_character(state, id))
     .filter((c): c is CharacterRow => c !== null && c.world === character.world && !active_fight_of(c) && c.custody !== 'fight')
+}
+
+/** The group a COMMIT is for: every non-detached member that will walk to the portal, capped to the
+ *  seats the run can field. Deliberately not the transiently-free subset `dungeon_allies` returns --
+ *  at commit time members are still travelling or mid-fight, so filtering on that single instant
+ *  previewed the dungeon with a shrunken (often leader-only) party, under-scored it and parked a key
+ *  the full group could clear. This preview only gates WHETHER to commit; `start_room` re-scores with
+ *  the members that actually entered, so an optimistic plan cannot smuggle an unwinnable room past
+ *  the honest check. */
+const planning_allies = (
+  ctx: ActionContext,
+  character: CharacterRow,
+  seats: number
+): readonly CharacterRow[] => {
+  const state = ctx.state()
+  const party = ctx.party_state
+  if (!party) return []
+  return party.members
+    .filter((id) => id !== character.id && !party.detached.has(id))
+    .flatMap((id) => {
+      const member = select_character(state, id)
+      return member ? [member] : []
+    })
+    .slice(0, Math.max(0, seats - 1))
 }
 
 /** The keys held for `key`, scanning every non-unavailable stack the party shares one kiosk for. */
@@ -205,18 +238,18 @@ const plan_group_dungeon = (
     const room0 = dungeon_rooms(dk.dungeon)[0]
     if (!room0) continue
     const seats = Math.min(keys, members.length)
-    const allies = dungeon_allies(ctx, character).slice(0, Math.max(0, seats - 1))
+    const allies = planning_allies(ctx, character, seats)
     const preview = score_group(character, room_to_mob_group(room0), allies)
     if (preview.win_rate < MIN_WIN_RATE) {
       const pct = (preview.win_rate * 100).toFixed(0)
       log_warn(
         'dungeon',
-        `${dk.dungeon} room 1: group preview win_rate=${pct}% < 80% at ${seats} seat(s) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
+        `${dk.dungeon} room 1: group preview win_rate=${pct}% < 80% (scored with ${allies.length + 1} of ${seats} seat(s)) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
       )
       park_dungeon_key(blacklist, dk.key)
       continue
     }
-    log_info('dungeon', `${character.name}: ${dk.dungeon} room 1 group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, seats=${seats}, keys=${keys}`)
+    log_info('dungeon', `${character.name}: ${dk.dungeon} room 1 group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, seats=${seats}, scored=${allies.length + 1}, keys=${keys}`)
     return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats })
   }
   return null
@@ -317,7 +350,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
   const run_once = async (mover: Mover): Promise<DungeonOutcome | null> => {
     const character = select_character(ctx.state(), ctx.character_id)
     if (!character) return null
-    if (!should_run_dungeons(character)) return null
+    if (!should_run_dungeons(character, ctx)) return null
     if (character.ambush) return null
     if (active_fight_of(character)) return null
     if (character.custody === 'fight') return outcome('skipped', 'custody locked to a fight')

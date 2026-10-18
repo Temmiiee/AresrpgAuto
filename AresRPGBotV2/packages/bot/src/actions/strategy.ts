@@ -16,12 +16,14 @@
 // Pure, read-only and best-effort: a scan that finds nothing winnable yields no plan (the roam keeps
 // its own heuristic) rather than a wrong one. No I/O, no timers, no chain.
 import { create_mob_snapshot, type FightMobInput } from '@aresrpg/fight'
+import { craft_required_level, job_level_from_xp } from '@aresrpg/immutable'
 import type { CharacterRow } from '@aresrpg/protocol'
 
 import {
   items_by_type,
-  mobs,
+  loot_sources_by_item,
   mobs_by_type,
+  recipe_detail,
   recipes_by_output,
   type SeedWorld,
 } from '../content/catalog.ts'
@@ -34,7 +36,7 @@ import {
 import type { GameState } from '../state/store.ts'
 
 import { MIN_WIN_RATE, score_mobs } from './fight_preview.ts'
-import { plan_gear_goals } from './gear.ts'
+import { gear_drop_candidates, plan_gear_goals } from './gear.ts'
 
 /** How a wanted item is obtained: `craft` when the seed authors a recipe, `drop` when only loot. */
 export type GearRoute = 'craft' | 'drop'
@@ -51,8 +53,24 @@ export type GearTarget = Readonly<{
   /** how far it beats what the character could wear today */
   gain: number
   route: GearRoute
+  /** the crafting trade that stamps it, or null for a loot-only target */
+  job: string | null
+  /** the job level the recipe requires (0 when there is no recipe, i.e. a drop) */
+  needed_level: number
+  /** the character's current level in {@link job} */
+  job_level: number
+  /** true when {@link job} is already high enough to craft the piece today */
+  ready: boolean
   /** the mob types whose loot carries this item (the source of a `drop` route, a bonus of a craft) */
   source_mobs: readonly string[]
+}>
+
+/** A trade the party must still LEVEL before a wanted piece becomes craftable — the gear goal's
+ *  answer to "what should we grind". `needed_level` is the recipe's ingredient-count gate. */
+export type GearTraining = Readonly<{
+  job: string
+  level: number
+  needed_level: number
 }>
 
 /** One (mob family, difficulty band) probed with the party twin. */
@@ -86,6 +104,8 @@ export type Strategy = Readonly<{
   computed_ms: number
   farm: FarmPlan | null
   gear: readonly GearTarget[]
+  /** trades to level so the wanted gear becomes craftable, in goal-gain order */
+  training: readonly GearTraining[]
   /** mob types whose loot carries a wanted upgrade — the engage's soft preference */
   wanted_mobs: ReadonlySet<string>
 }>
@@ -111,32 +131,59 @@ const LEVEL_CEIL_GAP = 20
 /** Cap the reported evidence so a digest line stays readable. */
 const MAX_SAMPLES = 12
 
-/** item_type -> the mob types whose loot table carries it. Built once at module load. */
-const LOOT_SOURCES: ReadonlyMap<string, readonly string[]> = (() => {
-  const by_item = new Map<string, string[]>()
-  for (const mob of mobs)
-    for (const drop of mob.loot) {
-      const bucket = by_item.get(drop.item_type)
-      if (bucket) bucket.push(mob.mob_type)
-      else by_item.set(drop.item_type, [mob.mob_type])
-    }
-  return by_item
-})()
-
 /** The scaled level a mob type reaches at a zone-level scalar, or null when the seed lacks it. */
 export const scaled_level = (mob_type: string, scalar: number): number | null => {
   const template = mob_template_of(mob_type)
   return template ? Number(create_mob_snapshot(template, BigInt(scalar)).level) : null
 }
 
-/** The best wearable per (character, slot) and the route to it, biggest gain first. Reuses the craft
- *  goal scan (`gear.ts`) and annotates each goal with its acquisition route + loot sources. */
+/** The best obtainable wearable per (character, slot) and HOW to get it, biggest gain first.
+ *
+ *  `craft` targets come from the craftable-goal scan (`gear.ts`) and carry the trade + job level the
+ *  craft planner will honour, so the brain can say "train JEWELER 1→10". `drop` targets are the pieces
+ *  the seed offers ONLY as loot (no recipe); they are named with the families that drop them. A
+ *  loot-only piece is reported only when it beats the best craftable one for the same slot — otherwise
+ *  the party would be told to farm a piece it can simply (and better) make. */
 export const plan_gear_targets = (
   characters: readonly CharacterRow[],
   state: GameState
-): readonly GearTarget[] =>
-  Object.freeze(
-    plan_gear_goals(characters, state).map((goal) =>
+): readonly GearTarget[] => {
+  const by_id = new Map(characters.map((character) => [character.id, character]))
+  const level_of = (character_id: string, job: string): number =>
+    job_level_from_xp(Number(by_id.get(character_id)?.jobs?.[job] ?? '0'))
+
+  const craft_targets = plan_gear_goals(characters, state).map((goal) => {
+    const recipe = recipes_by_output[goal.output_type]
+    const detail = recipe ? recipe_detail(recipe) : null
+    const job = detail?.job ?? goal.job
+    const needed_level = detail ? craft_required_level(detail.ingredients.length) : 0
+    const job_level = level_of(goal.character_id, job)
+    return Object.freeze({
+      character_id: goal.character_id,
+      character_name: goal.character_name,
+      slot: goal.slot,
+      item_type: goal.output_type,
+      category: items_by_type[goal.output_type]?.category ?? '',
+      level: goal.level,
+      score: goal.score,
+      gain: goal.gain,
+      route: 'craft' as const,
+      job: job as string | null,
+      needed_level,
+      job_level,
+      ready: job_level >= needed_level,
+      source_mobs: loot_sources_by_item.get(goal.output_type) ?? [],
+    })
+  })
+
+  const craft_gain = new Map<string, number>()
+  for (const target of craft_targets) craft_gain.set(`${target.character_id}\u0000${target.slot}`, target.gain)
+  const drop_targets = plan_gear_goals(characters, state, gear_drop_candidates)
+    .filter(
+      (goal) =>
+        goal.gain > (craft_gain.get(`${goal.character_id}\u0000${goal.slot}`) ?? Number.NEGATIVE_INFINITY)
+    )
+    .map((goal) =>
       Object.freeze({
         character_id: goal.character_id,
         character_name: goal.character_name,
@@ -146,11 +193,34 @@ export const plan_gear_targets = (
         level: goal.level,
         score: goal.score,
         gain: goal.gain,
-        route: recipes_by_output[goal.output_type] ? ('craft' as const) : ('drop' as const),
-        source_mobs: LOOT_SOURCES.get(goal.output_type) ?? [],
+        route: 'drop' as const,
+        job: null,
+        needed_level: 0,
+        job_level: 0,
+        ready: true,
+        source_mobs: loot_sources_by_item.get(goal.output_type) ?? [],
       })
     )
-  )
+
+  return Object.freeze([...craft_targets, ...drop_targets].sort((left, right) => right.gain - left.gain))
+}
+
+/** The trades the party must still level before its wanted gear is craftable, in goal-gain order.
+ *  `gear` is expected biggest-gain-first, so a job's FIRST appearance is its highest-value goal. */
+export const plan_training = (gear: readonly GearTarget[]): readonly GearTraining[] => {
+  const by_job = new Map<string, GearTraining>()
+  for (const target of gear) {
+    if (target.route !== 'craft' || target.ready || !target.job) continue
+    const job = target.job
+    const prev = by_job.get(job)
+    if (!prev || target.needed_level > prev.needed_level)
+      by_job.set(
+        job,
+        Object.freeze({ job, level: target.job_level, needed_level: target.needed_level })
+      )
+  }
+  return Object.freeze([...by_job.values()])
+}
 
 export type FarmOptions = Readonly<{
   /** the world to scan; defaults to the fight world for the party's level */
@@ -278,11 +348,11 @@ export const compute_strategy = (
     computed_ms: options.now_ms ?? Date.now(),
     farm: plan_farm(characters, options),
     gear,
+    training: plan_training(gear),
     wanted_mobs,
   })
 }
 
-/** A human-readable periodic report — the console trace of what the brain decided and why. */
 export const describe_strategy = (strategy: Strategy): readonly string[] => {
   const lines: string[] = []
   if (strategy.farm) {
@@ -299,12 +369,28 @@ export const describe_strategy = (strategy: Strategy): readonly string[] => {
   } else {
     lines.push('farm: no winnable, worthwhile family found in the fight world')
   }
-  if (strategy.gear.length === 0) lines.push('gear: every character already fields its best craftable piece per slot')
-  for (const target of strategy.gear.slice(0, 6))
+  if (strategy.training.length > 0)
     lines.push(
-      `gear ${target.character_name} ${target.slot}: ${target.item_type} (lvl ${target.level}, +${Math.round(target.gain)}) via ${target.route}` +
-        (target.source_mobs.length > 0 ? ` [drops: ${target.source_mobs.slice(0, 4).join(' ')}]` : '')
+      `jobs to train: ${strategy.training
+        .map((t) => `${t.job} ${t.level}→${t.needed_level}`)
+        .join(', ')}`
     )
+  if (strategy.gear.length === 0) lines.push('gear: every character already fields its best craftable piece per slot')
+  for (const target of strategy.gear.slice(0, 6)) {
+    const route = target.route === 'craft' ? 'craft' : 'drop'
+    const craft_text =
+      route === 'craft'
+        ? `craft ${target.ready ? 'ready' : `${target.job ?? '—'} ${target.job_level}→${target.needed_level}`}`
+        : `drop from ${target.source_mobs.slice(0, 3).join(' ') || 'unknown'}`
+    lines.push(
+      `gear ${target.character_name} ${target.slot}: ${target.item_type} (lvl ${target.level}, +${Math.round(
+        target.gain
+      )}) ${craft_text}` +
+        (route === 'craft' && target.source_mobs.length > 0
+          ? ` [also drops: ${target.source_mobs.slice(0, 3).join(' ')}]`
+          : '')
+    )
+  }
   if (strategy.gear.length > 6) lines.push(`gear: +${strategy.gear.length - 6} more upgrade(s)`)
   return Object.freeze(lines)
 }

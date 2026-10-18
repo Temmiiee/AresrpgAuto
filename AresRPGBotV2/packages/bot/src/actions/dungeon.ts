@@ -1,23 +1,24 @@
 // Dungeon runner: craft keys → start runs → repeat.
 // Thebes (gilded_lorito) is the entry dungeon at distance ~480 from centre — low level, farmable.
-import { job_recipes, recipe_detail, recipes_by_output, type RecipeDetail } from '../content/catalog.ts'
+import {
+  dungeons,
+  job_recipes,
+  recipe_detail,
+  recipes_by_output,
+  type RecipeDetail,
+} from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
 import { select_character, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
-import { plan_recipe, craft_once, type CraftPlan } from './craft.ts'
+import { craft_required_level } from '@aresrpg/immutable'
+import { plan_recipe, craft_once, craftable_by_level, type CraftPlan } from './craft.ts'
 import type { CharacterRow } from '@aresrpg/protocol'
 import type { ItemRow } from '@aresrpg/protocol'
 
-/** Dungeon key recipes we care about. Each has: output item, ingredients, source city. */
-export interface DungeonKeyConfig {
-  key: string
-  dungeon: string
-  city: string
-  city_zone: { zx: number; zz: number }
-  ingredients: Record<string, number>
-  job: string
-  difficulty: number
-}
+/** A dungeon the party can attempt: its identity plus the key item that opens it. Both facts are
+ *  authored in the seed (`dungeons.json`), so the roster is DERIVED — no hardcoded cities, zones,
+ *  ingredients, jobs or difficulty numbers that would silently go stale on a fresh clone. */
+export type DungeonKeyConfig = Readonly<{ key: string; dungeon: string }>
 
 /** Last logged craftability per key. `maybe_craft_dungeon_key` runs on every chore beat, so the
  *  negative case ("still missing X") is logged only when it CHANGES, not every pass. */
@@ -46,35 +47,11 @@ export const park_dungeon_key = (
   blacklist.set(key, now + DUNGEON_PARK_MS)
 }
 
-export const DUNGEON_KEYS: readonly DungeonKeyConfig[] = Object.freeze([
-  {
-    key: 'key_of_gilded_lorito',
-    dungeon: 'gilded_lorito',
-    city: 'thebes',
-    city_zone: { zx: 1578, zz: 1562 },
-    ingredients: { stone_lorito_plume: 2, quartz_set_trinket: 2 } as Record<string, number>,
-    job: 'JEWELER',
-    difficulty: 1,
-  },
-  {
-    key: 'key_of_tangled_aftermath',
-    dungeon: 'tangled_aftermath',
-    city: 'the_ruins',
-    city_zone: { zx: 1127, zz: 1521 },
-    ingredients: { aragne_fang: 3, aragne_carapace: 2, embertide_webbing: 1 } as Record<string, number>,
-    job: 'CARVER',
-    difficulty: 2,
-  },
-  {
-    key: 'key_of_ivory_rampart',
-    dungeon: 'ivory_rampart',
-    city: 'fuwage',
-    city_zone: { zx: 445, zz: 709 },
-    ingredients: { fuwa_horn: 1, fuwa_eye: 1, fuwa_fleece: 1, nifuwa_fleece: 1 } as Record<string, number>,
-    job: 'TAILOR',
-    difficulty: 3,
-  },
-])
+/** Every dungeon in the seed, paired with the key that opens it, in authored order. Derived from
+ *  `dungeons.json` so adding or removing a dungeon there needs no bot change. */
+export const DUNGEON_KEYS: readonly DungeonKeyConfig[] = Object.freeze(
+  dungeons.map((dungeon) => Object.freeze({ key: dungeon.key, dungeon: dungeon.dungeon }))
+)
 
 /** Find the RecipeDetail for a dungeon key. */
 export const dungeon_key_detail = (key: string): RecipeDetail | null => {
@@ -113,6 +90,12 @@ const describe_key_gap = (
   return missing ? `${key} needs ${missing}` : `${key}: ready`
 }
 
+/** A dungeon key is wanted for the RUN it opens, not the job XP, so it is still worth minting once
+ *  the trade has outgrown the recipe's payout. The XP rotation keeps the zero-XP floor to avoid
+ *  burning gas on a craft that teaches it nothing; a key pays for itself the moment the party walks
+ *  through the portal. */
+const KEY_ALLOW_ZERO_XP = true
+
 /** Plan and craft a dungeon key if ingredients are available. Returns true if crafted. */
 export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boolean> => {
   const state = ctx.state()
@@ -125,7 +108,14 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
 
   for (const dk of DUNGEON_KEYS) {
     if (key_parked(blacklist, dk.key)) continue
-    const canCraft = can_craft_key(dk.key, inventory, unavailable)
+    const detail = dungeon_key_detail(dk.key)
+    if (!detail) continue
+    // Two INDEPENDENT gates: the materials are held, and the crafter's job is high enough for the
+    // recipe. Both are checked here instead of inferring the level gate from a null `plan_recipe`,
+    // so the operator sees WHICH trade is holding the key back and not just "no plan".
+    const holds = can_craft_key(dk.key, inventory, unavailable)
+    const leveled = craftable_by_level(character, detail, KEY_ALLOW_ZERO_XP)
+    const canCraft = holds && leveled
     // This runs on every chore beat (rate-limited), so the negative case is logged only when a key's
     // craftability CHANGES. Logging "can_craft_key … = false / missing …" every beat flooded the
     // operator log with hundreds of identical lines an hour and buried the real events.
@@ -135,16 +125,19 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
         'dungeon',
         canCraft
           ? `${character.name}: can craft ${dk.key}`
-          : `${character.name}: ${describe_key_gap(dk.key, inventory, unavailable)}`
+          : holds
+            ? `${character.name}: ${dk.key} needs ${detail.job} level ${craft_required_level(detail.ingredients.length)}`
+            : `${character.name}: ${describe_key_gap(dk.key, inventory, unavailable)}`
       )
     }
     if (!canCraft) continue
-    const detail = dungeon_key_detail(dk.key)
-    if (!detail) continue
-    const plan = plan_recipe(character, detail, inventory, unavailable)
+    const plan = plan_recipe(character, detail, inventory, unavailable, KEY_ALLOW_ZERO_XP)
     if (!plan) {
+      // The gates above already passed, so this is a surprise (a stack racing away under the plan).
+      // SKIP to the next dungeon: returning here used to let the first key the crafter could not
+      // make block every later -- perfectly runnable -- key behind it in the same pass.
       log_warn('dungeon', `${character.name}: plan_recipe failed for ${dk.key}`)
-      return false
+      continue
     }
     log_info('dungeon', `${character.name}: attempting key craft ${dk.key}`)
     const result = await craft_once(ctx, plan)
@@ -166,8 +159,8 @@ export const held_dungeon_key = (inventory: readonly ItemRow[], unavailable: Rea
   return null
 }
 
-/** Check if a character should run dungeons (has appropriate job level). */
-export const should_run_dungeons = (character: CharacterRow): boolean => {
-  // omori runs all dungeons as part of crafting rotation
-  return character.name.toLowerCase() === 'omori'
-}
+/** The party LEADER drives dungeon runs: it crafts the keys, commits the group and starts each room.
+ *  Tied to party leadership rather than a hardcoded character name so it stays correct across
+ *  renames and on a fresh clone. False before a party exists (nobody runs dungeons solo). */
+export const should_run_dungeons = (character: CharacterRow, ctx: ActionContext): boolean =>
+  character.id === ctx.party_state?.leader_id

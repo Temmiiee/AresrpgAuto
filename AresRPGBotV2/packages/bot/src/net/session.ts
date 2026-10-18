@@ -769,7 +769,7 @@ export const play_loop = async (
     // fail. Step 2 above drives the room turns; step 1 routes the ended room's settlement through
     // the dungeon door, which advances the run or ends it.
     // When the leader starts a room, it becomes the party's active group fight — followers join it.
-    if (is_leader && should_run_dungeons(current)) {
+    if (should_run_dungeons(current, ctx)) {
       const dungeon = await rt.dungeon.run_once(mover)
       if (dungeon !== null) {
         if (dungeon.kind !== 'skipped' && dungeon.kind !== 'waiting')
@@ -1038,7 +1038,7 @@ export const play_loop = async (
     // owns this pass's crafting; the rotation resumes whenever no key can be made. Rate-limited so a
     // key that keeps failing cannot starve the rotation.
     let key_crafted = false
-    if (crafts && is_leader && should_run_dungeons(character)) {
+    if (crafts && should_run_dungeons(character, ctx)) {
       const KEY_CRAFT_COOLDOWN_MS = 60_000
       const now = Date.now()
       if ((now - (rt.last_key_craft_attempt_ms ?? 0)) >= KEY_CRAFT_COOLDOWN_MS) {

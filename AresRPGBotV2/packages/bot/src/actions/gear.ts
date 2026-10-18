@@ -21,7 +21,7 @@ import {
 import type { CharacterRow } from '@aresrpg/protocol'
 import type { SeedItem } from '@aresrpg/sdk/seed'
 
-import { items_by_type, recipe_job, recipes } from '../content/catalog.ts'
+import { items, items_by_type, loot_sources_by_item, recipe_job, recipes, recipes_by_output } from '../content/catalog.ts'
 import { unavailable_item_ids } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 
@@ -95,6 +95,28 @@ export const gear_candidates: readonly GearCandidate[] = Object.freeze(
       Object.freeze({
         output_type: recipe.output_type,
         job: recipe_job(recipe),
+        category: seed_item.category,
+        level: seed_item.level,
+        item: expected_gear(seed_item),
+      }),
+    ]
+  })
+)
+
+/** Wearables the seed offers ONLY as mob loot: no recipe, so they cannot be crafted and the strategy
+ *  must name the families that drop them instead. Empty for a craft-only slot, and the pet slot is
+ *  excluded (see {@link GEAR_GOAL_SLOTS}) — today every authored wearable has a recipe, so this is
+ *  empty and the `drop` route never fires. It exists so a loot-only piece is targeted automatically
+ *  the moment the seed authors one. `job` is empty (no trade stamps it). */
+export const gear_drop_candidates: readonly GearCandidate[] = Object.freeze(
+  items.flatMap((seed_item) => {
+    if (recipes_by_output[seed_item.item_type]) return []
+    if (!GEAR_CATEGORIES.has(seed_item.category)) return []
+    if ((loot_sources_by_item.get(seed_item.item_type)?.length ?? 0) === 0) return []
+    return [
+      Object.freeze({
+        output_type: seed_item.item_type,
+        job: '',
         category: seed_item.category,
         level: seed_item.level,
         item: expected_gear(seed_item),

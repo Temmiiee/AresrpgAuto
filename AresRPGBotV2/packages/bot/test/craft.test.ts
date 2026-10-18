@@ -1,7 +1,14 @@
 // craft tests – the recipe planner owns craftability; a plan is built only from held facts.
-import { item_is_stackable, job_xp_for_level } from '@aresrpg/immutable'
+import { craft_required_level, item_is_stackable, job_xp_for_level } from '@aresrpg/immutable'
 
-import { craft_once, craft_gather_demand, plan_recipe, drive_craft, select_craft_target } from '../src/actions/craft.ts'
+import {
+  craftable_by_level,
+  craft_once,
+  craft_gather_demand,
+  plan_recipe,
+  drive_craft,
+  select_craft_target,
+} from '../src/actions/craft.ts'
 import { rank_gather_candidates } from '../src/actions/gather.ts'
 import { gatherable_demand, items_by_type, recipe_detail, recipe_job, recipes, recipes_by_output } from '../src/content/catalog.ts'
 
@@ -30,6 +37,35 @@ const inventory_for = (detail: ReturnType<typeof recipe_detail>, held_output: bo
   )
   return rows
 }
+
+describe('craftable_by_level gate', () => {
+  const at_level = (job: string, level: number): never =>
+    ({ id: 'c', jobs: { [job]: String(job_xp_for_level(level) ?? 0) } }) as never
+
+  it('admits a recipe only at the trade level its slot count requires', () => {
+    const wide = recipes.map(recipe_detail).find((detail) => detail.ingredients.length >= 5)
+    expect(wide).toBeDefined()
+    const need = craft_required_level(wide!.ingredients.length)
+    expect(need).toBeGreaterThanOrEqual(20)
+    expect(craftable_by_level(at_level(wide!.job, need - 1), wide!)).toBe(false)
+    expect(craftable_by_level(at_level(wide!.job, need), wide!)).toBe(true)
+  })
+
+  it('keeps a goal craft (dungeon key) alive past the retro-XP floor', () => {
+    // A 2-slot craft pays 0 XP once the crafter holds 6 slot capacity (job level 60): the XP
+    // rotation must refuse it, but a DELIBERATE goal must not -- a key pays for itself the moment
+    // the party walks through the portal. Without the explicit bypass the key loop silently
+    // stopped crafting keys forever at high job levels while gather demand still asked for them.
+    const small = recipes.map(recipe_detail).find((detail) => detail.ingredients.length === 2)
+    expect(small).toBeDefined()
+    const crafter = at_level(small!.job, 60)
+    expect(craftable_by_level(crafter, small!)).toBe(false)
+    expect(craftable_by_level(crafter, small!, true)).toBe(true)
+    // And the planner agrees, so the gate and the plan cannot drift apart.
+    expect(plan_recipe(crafter, small!, inventory_for(small!, false), new Set(), true)).not.toBeNull()
+    expect(plan_recipe(crafter, small!, inventory_for(small!, false), new Set(), false)).toBeNull()
+  })
+})
 
 describe('plan_recipe output target', () => {
   it('never offers an output target for a non-stackable output (regression: abort 2323)', () => {

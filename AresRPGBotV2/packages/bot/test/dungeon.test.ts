@@ -1,5 +1,6 @@
 // Dungeon content projection — the runner reads rooms and the city portal straight from the seed.
 import { DUNGEON_KEYS, DUNGEON_PARK_MS, dungeon_key_detail, held_dungeon_key, key_parked, park_dungeon_key, should_run_dungeons } from '../src/actions/dungeon.ts'
+import { DUNGEON_EXPECTED_SCALAR, room_to_mob_group } from '../src/actions/dungeon_run.ts'
 import { dungeon_city, dungeon_rooms, worlds_by_id } from '../src/content/catalog.ts'
 
 describe('dungeon content projection', () => {
@@ -21,13 +22,14 @@ describe('dungeon content projection', () => {
     expect(dungeon_rooms('nope')).toEqual([])
   })
 
-  it('finds each dungeon key its authored city portal in nauvis', () => {
+  it('finds each dungeon its city portal in nauvis', () => {
     const nauvis = worlds_by_id['nauvis']
     expect(nauvis).toBeDefined()
     for (const dk of DUNGEON_KEYS) {
       const city = dungeon_city(nauvis!, dk.dungeon)
       expect(city).not.toBeNull()
-      expect(city!.city).toBe(dk.city)
+      expect(typeof city!.city).toBe('string')
+      expect(city!.city.length).toBeGreaterThan(0)
       expect(city!.x).toBeGreaterThan(0)
       expect(city!.z).toBeGreaterThan(0)
     }
@@ -57,8 +59,43 @@ describe('dungeon key helpers', () => {
     expect(key_parked(parked, 'key_of_ivory_rampart', now + DUNGEON_PARK_MS)).toBe(false)
   })
 
-  it('runs dungeons as the leader only', () => {
-    expect(should_run_dungeons({ name: 'omori' } as never)).toBe(true)
-    expect(should_run_dungeons({ name: 'memorien' } as never)).toBe(false)
+  it('runs dungeons as the party leader only', () => {
+    const ctx = { party_state: { leader_id: 'omori' } } as never
+    expect(should_run_dungeons({ id: 'omori' } as never, ctx)).toBe(true)
+    expect(should_run_dungeons({ id: 'memorien' } as never, ctx)).toBe(false)
+    // No party yet: nobody runs dungeons.
+    expect(should_run_dungeons({ id: 'omori' } as never, {} as never)).toBe(false)
+  })
+
+  it('derives the dungeon roster from the seed instead of hardcoding it', () => {
+    expect(DUNGEON_KEYS.length).toBeGreaterThan(0)
+    expect(DUNGEON_KEYS.every((dk) => dk.key.length > 0 && dk.dungeon.length > 0)).toBe(true)
+    for (const dk of DUNGEON_KEYS) {
+      expect(dungeon_rooms(dk.dungeon).length).toBeGreaterThan(0)
+      expect(dungeon_key_detail(dk.key)).not.toBeNull()
+    }
+    const names = DUNGEON_KEYS.map((dk) => dk.dungeon)
+    expect(names).toContain('ivory_rampart')
+    expect(new Set(names).size).toBe(names.length)
+  })
+})
+
+describe('dungeon room preview', () => {
+  it('scores a room at the EXPECTED level, not a per-seat ramp', () => {
+    // The chain derives each seat's scalar as mix(run_seed, seat) % 101 — a uniform draw over
+    // [0,100] (mean 50) the client cannot predict. The preview must use that expectation for
+    // EVERY seat; the old `50 + i` ramp over-estimated every mob after the first.
+    const group = room_to_mob_group([{ mob_type: 'nook' }, { mob_type: 'bramble' }, { mob_type: 'bramble' }])
+    expect(group.members.length).toBe(3)
+    expect(group.members.every((member) => member.level_scalar === DUNGEON_EXPECTED_SCALAR)).toBe(true)
+    expect(DUNGEON_EXPECTED_SCALAR).toBe(50)
+  })
+
+  it('maps every authored room mob onto a preview member in order', () => {
+    for (const room of dungeon_rooms('ivory_rampart')) {
+      expect(room_to_mob_group(room).members.map((member) => member.mob_type)).toEqual(
+        room.map((row) => row.mob_type)
+      )
+    }
   })
 })

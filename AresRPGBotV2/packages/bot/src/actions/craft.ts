@@ -65,6 +65,23 @@ const affordable_attempts = (
   return Math.max(0, Math.min(per_ingredient, cap))
 }
 
+/** Whether the JOB LEVEL alone allows this craft: the trade must be leveled high enough for the
+ *  recipe's ingredient slots, and the craft must still pay job XP at that level (unless zero-XP
+ *  crafts are allowed).
+ *
+ *  Split out of {@link plan_recipe} so a caller SCANNING several candidate recipes can skip the ones
+ *  it is not yet leveled for and keep going. `plan_recipe` answers only "no plan" for every reason at
+ *  once, which reads as "nothing is craftable" and let one too-low trade abort a whole pass. */
+export const craftable_by_level = (
+  character: CharacterRow,
+  detail: RecipeDetail,
+  allow_zero_xp = false
+): boolean => {
+  const level = job_level_from_xp(Number(character.jobs?.[detail.job] ?? '0'))
+  if (level < craft_required_level(detail.ingredients.length)) return false
+  return allow_zero_xp || craft_xp_at_level(detail.ingredients.length, level) > 0
+}
+
 /** One craftable batch for a recipe, or null when the character cannot craft it right now.
  *
  *  `allow_zero_xp` drops the retro-XP floor. The XP rotation uses the floor to avoid burning gas on a
@@ -77,9 +94,7 @@ export const plan_recipe = (
   unavailable: ReadonlySet<string>,
   allow_zero_xp = false
 ): CraftPlan | null => {
-  const level = job_level_from_xp(Number(character.jobs?.[detail.job] ?? '0'))
-  if (level < craft_required_level(detail.ingredients.length)) return null
-  if (!allow_zero_xp && craft_xp_at_level(detail.ingredients.length, level) <= 0) return null
+  if (!craftable_by_level(character, detail, allow_zero_xp)) return null
 
   const input_item_ids = detail.ingredients.map((ingredient) => held(inventory, ingredient.item_type, unavailable)?.id)
   if (input_item_ids.some((id) => id === undefined)) return null
@@ -222,16 +237,22 @@ export const select_craft_target = (
     inventory.some((row) => row.item_type === item_type && !unavailable.has(row.id))
 
   // Gear goals first, zero-XP allowed: an upgrade is crafted for the item, not the job xp.
+  // Jobs that unlock the best gear must come before the generic least-trained sweep: a job-locked
+  // goal means we should train THAT trade (craft its highest-XP affordable recipe) until it reaches
+  // the required level, rather than cycling to every other trade first.
+  const goal_jobs: string[] = []
   for (const output_type of priority_outputs) {
     const recipe = recipes_by_output[output_type]
     if (!recipe) continue
     const detail = recipe_detail(recipe)
+    const job = detail.job
     const plan = plan_recipe(character, detail, inventory, unavailable, true)
     if (plan) return plan
-    // The goal's job is level-locked for this character: it cannot drive a refinement either, so
-    // another crafter (or the xp rotation) owns it.
     const level = job_level_of(character, detail.job)
-    if (level < craft_required_level(detail.ingredients.length)) continue
+    if (level < craft_required_level(detail.ingredients.length)) {
+      if (!goal_jobs.includes(job)) goal_jobs.push(job)
+      continue
+    }
     const prerequisite = craft_prerequisite(
       character,
       detail,
@@ -246,7 +267,11 @@ export const select_craft_target = (
     }
   }
 
-  for (const job of rotation_order(character)) {
+  const job_order: string[] = []
+  for (const job of goal_jobs) if (!job_order.includes(job)) job_order.push(job)
+  for (const job of rotation_order(character)) if (!job_order.includes(job)) job_order.push(job)
+
+  for (const job of job_order) {
     const recipes = [...job_recipes(job)].sort(better_recipe(holds))
     for (const detail of recipes) {
       const plan = plan_recipe(character, detail, inventory, unavailable)
@@ -299,15 +324,13 @@ export const craft_gather_demand = (
   unavailable: ReadonlySet<string>,
   extra_outputs: readonly string[] = []
 ): ReadonlyMap<string, number> => {
-  const jobs = character.jobs ?? {}
   /** leaf -> summed one-craft requirement over every eligible recipe that resolves to it. */
   const leverage = new Map<string, number>()
   const note = (detail: RecipeDetail, explicit = false): void => {
-    const level = job_level_from_xp(Number(jobs[detail.job] ?? '0'))
-    if (level < craft_required_level(detail.ingredients.length)) return
-    // Deliberate goals (dungeon keys, gear upgrades) are worth gathering for even at a job level
-    // where the craft pays no XP — the rotation's xp gate must not hide their materials.
-    if (!explicit && craft_xp_at_level(detail.ingredients.length, level) <= 0) return
+    // Deliberate goals (dungeon keys, gear upgrades) pass `explicit` to bypass the rotation's XP
+    // floor: they are worth gathering for even at a job level where the craft pays no XP. The LEVEL
+    // gate always applies -- materials for a key nobody can craft yet are pure waste.
+    if (!craftable_by_level(character, detail, explicit)) return
     for (const [item_type, quantity] of gatherable_demand(detail.output_type))
       leverage.set(item_type, (leverage.get(item_type) ?? 0) + quantity)
   }

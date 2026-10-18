@@ -120,6 +120,20 @@ export const recipes_by_output = keyed(recipes, ({ output_type }) => output_type
 export const worlds_by_id = keyed(worlds, ({ world }) => world)
 export const dungeons_by_id = keyed(dungeons, ({ dungeon }) => dungeon)
 
+/** item_type -> the mob types whose loot table carries it. The strategy uses it to annotate a gear
+ *  route with the families that also DROP a craftable piece, and to find the best gear the seed
+ *  offers ONLY as loot (no recipe). Built once at module load. */
+export const loot_sources_by_item: ReadonlyMap<string, readonly string[]> = (() => {
+  const by_item = new Map<string, string[]>()
+  for (const mob of mobs)
+    for (const drop of mob.loot) {
+      const bucket = by_item.get(drop.item_type)
+      if (bucket) bucket.push(mob.mob_type)
+      else by_item.set(drop.item_type, [mob.mob_type])
+    }
+  return by_item
+})()
+
 /** The ordered room compositions of a dungeon; each room is a list of the mobs it stages. */
 export const dungeon_rooms = (dungeon: string): readonly (readonly Readonly<{ mob_type: string }>[])[] =>
   dungeons_by_id[dungeon]?.rooms ?? []

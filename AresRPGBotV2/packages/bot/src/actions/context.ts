@@ -47,9 +47,9 @@ export const create_group_claims = (): GroupClaims => {
   })
 }
 
-/** The engage-relevant view of the periodic strategy brain (set by the play loop). Kept to the one
- *  field actions need so this module has no dependency on `strategy.ts`. */
-export type StrategyHint = Readonly<{ wanted_mobs: ReadonlySet<string> }>
+export type StrategyHint = Readonly<{
+  wanted_mobs: ReadonlySet<string>
+}>
 
 export type ActionContext = Readonly<{
   /** the shared SDK wired to this bot's signer + network */
