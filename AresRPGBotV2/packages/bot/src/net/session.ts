@@ -77,6 +77,7 @@ import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, type ActionContext } from '../actions/context.ts'
 import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
+import { gear_goal_outputs } from '../actions/gear.ts'
 import { active_fight_of, freshness, unavailable_item_ids } from '../state/selectors.ts'
 import { initial_game_state, reduce, type GameState } from '../state/store.ts'
 import { recipe_detail, recipes_by_output, tool_category_of_job } from '../content/catalog.ts'
@@ -512,6 +513,19 @@ export const play_loop = async (
   }
   const request_auto_equip = (): void => {
     void run_auto_equip()
+  }
+
+  // ── gear craft goals ────────────────────────────────────────────────
+  // The craft planner's priority list: the best CRAFTABLE weapon/armour/accessory for each character at
+  // its level and affinity (see `actions/gear.ts`). Computed once per shared projection and reused by
+  // every character's chore in the same beat, because all four craft against the same inventory. The
+  // projection object is replaced on every packet, so identity is a faithful cache key.
+  let gear_goal_cache: Readonly<{ state: GameState; outputs: readonly string[] }> | null = null
+  const current_gear_goals = (): readonly string[] => {
+    if (gear_goal_cache && gear_goal_cache.state === game_state) return gear_goal_cache.outputs
+    const outputs = gear_goal_outputs(game_state.characters, game_state)
+    gear_goal_cache = Object.freeze({ state: game_state, outputs })
+    return outputs
   }
   /** true once, on the first pass that sees an equipment id the party has never seen (boot, drop,
    *  craft). The seen set is only advanced when something new appeared, so a removed id re-triggers
@@ -1016,8 +1030,11 @@ export const play_loop = async (
       // `kiosk::borrow` (code 11) — one wasted transaction per chore. Feeding each batch's burned ids
       // forward makes the next batch pick a different recipe (or stop) instead.
       const burned = new Set<string>()
+      // Gear goals win the pass: they are the best craftable weapon/armour for a character, so the
+      // party mints what it will WEAR before spending the same materials on xp filler.
+      const gear_goals = current_gear_goals()
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
-        const crafted = await drive_craft(ctx, burned)
+        const crafted = await drive_craft(ctx, burned, gear_goals)
         if (!crafted.success) break
         for (const id of crafted.input_item_ids) burned.add(id)
         rt.stats = record_craft(rt.stats, crafted.output_type, crafted.successes)

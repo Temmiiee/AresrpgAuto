@@ -54,6 +54,7 @@ AresRPGBotV2/
           craft.ts          plan_recipe / craft_once / drive_craft
           combat.ts         hydrate/drive/engage/settle fights (the fight driver)
           equip.ts          auto-equip: score gear + allocate it across the party
+          gear.ts           craft goals: best craftable weapon/armour per character level
           party.ts          the group-fight rendezvous shared by every character (PartyState)
           fight_preview.ts  local deterministic fight twin: screen_groups / viable_ranking
           turn_plan.ts      plan_turn / next_action / sim_commands
@@ -213,6 +214,18 @@ stats" is a SCORING question:
   run; a coalesced party-wide runner then retries every `EQUIP_RETRY_MS` (8 s) while any character is
   seated or stale. A character in a fight (`custody === 'fight'` or an `active_fight`) is skipped and
   retried — the kiosk borrow aborts during fight custody.
+
+## Gear crafting (`actions/gear.ts`)
+
+Auto-equip places the best gear the party OWNS; `gear.ts` makes the party own better gear. It scores
+every CRAFTABLE wearable in the seed with the same rune-weight + affinity math, keeps those at or
+below a character's level that beat what that character could wear today, and returns their output
+types as a **priority list** the craft planner (`select_craft_target`) tries BEFORE the xp rotation —
+so the party mints what it will WEAR before spending the same materials on xp filler. Gear goals allow
+zero-XP crafts (a 2-slot weapon still beats fists at job level 100), the rotation remains the
+fallback, and an output already held un-equipped is dropped (auto-equip will place it). Gathering
+needs no change: `craft_gather_demand` already walks every level-eligible crafting recipe, so a goal's
+inputs are already demanded.
 
 ## Traps that already cost time (do not re-learn these)
 

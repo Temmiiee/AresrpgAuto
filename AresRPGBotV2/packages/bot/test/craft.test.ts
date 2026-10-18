@@ -3,7 +3,7 @@ import { item_is_stackable, job_xp_for_level } from '@aresrpg/immutable'
 
 import { craft_once, craft_gather_demand, plan_recipe, drive_craft, select_craft_target } from '../src/actions/craft.ts'
 import { rank_gather_candidates } from '../src/actions/gather.ts'
-import { gatherable_demand, items_by_type, recipe_detail, recipes_by_output } from '../src/content/catalog.ts'
+import { gatherable_demand, items_by_type, recipe_detail, recipe_job, recipes, recipes_by_output } from '../src/content/catalog.ts'
 
 describe('craft actions type check', () => {
   it('exposes the planner and the craft doors', () => {
@@ -249,5 +249,84 @@ describe('select_craft_target prerequisites', () => {
     const plan = select_craft_target(ctx)
     expect(plan?.output_type).toBe('old_hoe')
     expect(select_craft_target(ctx, new Set(plan!.input_item_ids))).toBeNull()
+  })
+})
+
+// Gear goals are tried BEFORE the xp rotation, so the party mints the equipment it will actually
+// wear before it spends the same materials on xp filler. Two things must hold: a goal wins even when
+// a higher-xp recipe is also affordable, and a goal the character's trade cannot yet reach falls
+// through to the rotation (the trade still levels).
+describe('select_craft_target gear priority', () => {
+  const CRAFTING_JOBS = ['FORGER', 'CARVER', 'TAILOR', 'JEWELER', 'TANNER', 'HANDYMAN', 'ALCHEMIST', 'BAKER']
+
+  const ctx_for = (jobs: Record<string, number>, inventory: readonly (readonly [string, number])[]): any => ({
+    state: () => ({
+      characters: [
+        {
+          id: 'c',
+          jobs: Object.fromEntries(
+            Object.entries(jobs).map(([job, level]) => [job, String(job_xp_for_level(level) ?? 0)])
+          ),
+          equipment: [],
+        },
+      ],
+      inventory: inventory.map(([item_type, amount], index) => ({
+        id: `i${index}`,
+        item_type,
+        amount,
+        category: 'resource',
+      })),
+      listings: [],
+    }),
+    character_id: 'c',
+  })
+
+  /** A recipe and the amounts needed to craft it, merged so two recipes never double-list an input. */
+  const hold = (details: readonly ReturnType<typeof recipe_detail>[]): { item_type: string; amount: number }[] => {
+    const need = new Map<string, number>()
+    for (const detail of details)
+      for (const ingredient of detail.ingredients)
+        need.set(ingredient.item_type, Math.max(need.get(ingredient.item_type) ?? 0, ingredient.quantity))
+    return [...need].map(([item_type, quantity]) => ({ item_type, amount: quantity * 3 }))
+  }
+
+  it('prefers a gear goal over a higher-xp recipe in another trade', () => {
+    const gear = recipe_detail(recipes_by_output['lid_splitter']!) // a 2-slot FORGER axe
+    const filler_recipe = recipes.find(
+      (row) => CRAFTING_JOBS.includes(recipe_job(row)) && recipe_job(row) !== 'FORGER' && Object.keys(row.inputs).length === 4
+    )
+    expect(filler_recipe).toBeDefined()
+    const filler = recipe_detail(filler_recipe!)
+    expect(filler.craft_xp).toBeGreaterThan(gear.craft_xp)
+
+    const held = hold([gear, filler]).map(({ item_type, amount }) => [item_type, amount] as const)
+    // The filler's trade is the least-trained, so with NO priority the rotation reaches it first.
+    const ctx = ctx_for({ FORGER: 40, [filler.job]: 20 }, held)
+
+    expect(select_craft_target(ctx)?.output_type).toBe(filler.output_type)
+    expect(select_craft_target(ctx, undefined, ['lid_splitter'])?.output_type).toBe('lid_splitter')
+    expect(select_craft_target(ctx, undefined, ['lid_splitter'])?.job).toBe('FORGER')
+  })
+
+  it('still crafts a zero-xp gear goal the xp rotation refuses', () => {
+    const gear = recipe_detail(recipes_by_output['lid_splitter']!)
+    const held = hold([gear]).map(({ item_type, amount }) => [item_type, amount] as const)
+    const ctx = ctx_for({ FORGER: 100 }, held)
+    const character = ctx.state().characters[0]
+    const inventory = ctx.state().inventory
+    // A 2-slot recipe at job level 100 is four slots below capacity: the retro floor zeroes its xp,
+    // so the plain planner skips it even though the chain would accept the craft.
+    expect(plan_recipe(character, gear, inventory, new Set())).toBeNull()
+    expect(plan_recipe(character, gear, inventory, new Set(), true)).not.toBeNull()
+    expect(select_craft_target(ctx, undefined, ['lid_splitter'])?.output_type).toBe('lid_splitter')
+  })
+
+  it('falls through to the xp rotation when the goal trade is too low to craft it', () => {
+    const four_slot = recipes.find((row) => Object.keys(row.inputs).length === 4 && recipe_job(row) !== '')
+    expect(four_slot).toBeDefined()
+    const plan = select_craft_target(ctx_for({}, [['gnawed_branch', 3], ['salvaged_scrap', 2]]), undefined, [
+      four_slot!.output_type,
+    ])
+    expect(plan?.output_type).toBe('old_hoe')
   })
 })

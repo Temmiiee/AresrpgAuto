@@ -47,6 +47,9 @@ const held = (
 /** A shared empty set so the common "no extra exclusions" call allocates nothing. */
 const EMPTY_IDS: ReadonlySet<string> = Object.freeze(new Set<string>())
 
+/** A shared empty priority list, so the common "no gear goals" call allocates nothing. */
+const EMPTY_OUTPUTS: readonly string[] = Object.freeze([])
+
 /** How many attempts the held ingredients + the batch cap allow (0 = cannot craft). */
 const affordable_attempts = (
   detail: RecipeDetail,
@@ -62,16 +65,21 @@ const affordable_attempts = (
   return Math.max(0, Math.min(per_ingredient, cap))
 }
 
-/** One craftable batch for a recipe, or null when the character cannot craft it right now. */
+/** One craftable batch for a recipe, or null when the character cannot craft it right now.
+ *
+ *  `allow_zero_xp` drops the retro-XP floor. The XP rotation uses the floor to avoid burning gas on a
+ *  craft that grants no job xp, but an EQUIPMENT upgrade is worth making for the item itself — a
+ *  2-slot weapon still beats the character's fists at job level 100. */
 export const plan_recipe = (
   character: CharacterRow,
   detail: RecipeDetail,
   inventory: readonly ItemRow[],
-  unavailable: ReadonlySet<string>
+  unavailable: ReadonlySet<string>,
+  allow_zero_xp = false
 ): CraftPlan | null => {
   const level = job_level_from_xp(Number(character.jobs?.[detail.job] ?? '0'))
   if (level < craft_required_level(detail.ingredients.length)) return null
-  if (craft_xp_at_level(detail.ingredients.length, level) <= 0) return null
+  if (!allow_zero_xp && craft_xp_at_level(detail.ingredients.length, level) <= 0) return null
 
   const input_item_ids = detail.ingredients.map((ingredient) => held(inventory, ingredient.item_type, unavailable)?.id)
   if (input_item_ids.some((id) => id === undefined)) return null
@@ -153,7 +161,8 @@ const craft_prerequisite = (
   detail: RecipeDetail,
   inventory: readonly ItemRow[],
   unavailable: ReadonlySet<string>,
-  seen: ReadonlySet<string>
+  seen: ReadonlySet<string>,
+  allow_zero_xp = false
 ): RecipeDetail | null => {
   for (const ingredient of detail.ingredients) {
     if (held(inventory, ingredient.item_type, unavailable)) continue
@@ -163,11 +172,18 @@ const craft_prerequisite = (
     if (seen.has(sub.output_type)) continue
     const level = job_level_of(character, sub.job)
     if (level < craft_required_level(sub.ingredients.length)) continue
-    if (craft_xp_at_level(sub.ingredients.length, level) <= 0) continue
+    if (!allow_zero_xp && craft_xp_at_level(sub.ingredients.length, level) <= 0) continue
     // The intermediate itself is craftable now: that is the step to take.
-    if (plan_recipe(character, sub, inventory, unavailable)) return sub
+    if (plan_recipe(character, sub, inventory, unavailable, allow_zero_xp)) return sub
     // Otherwise look for the step that unblocks it.
-    const deeper = craft_prerequisite(character, sub, inventory, unavailable, new Set([...seen, sub.output_type]))
+    const deeper = craft_prerequisite(
+      character,
+      sub,
+      inventory,
+      unavailable,
+      new Set([...seen, sub.output_type]),
+      allow_zero_xp
+    )
     if (deeper) return deeper
   }
   return null
@@ -179,10 +195,16 @@ const craft_prerequisite = (
  *  When a level-eligible recipe is blocked on a missing intermediate, its deepest missing prerequisite
  *  (a refinement or another intermediate) is crafted first, so the trades are not starved of the
  *  flour/powder/weave their recipes are built from. Returns null when no ingredient set is held for
- *  any trade and no prerequisite stands between it and one. */
+ *  any trade and no prerequisite stands between it and one.
+ *
+ *  `priority_outputs` are tried FIRST, before the XP rotation: the gear goals (`actions/gear.ts`)
+ *  name the equipment that is an actual upgrade for some character, so the rotation mints what the
+ *  party will WEAR before it mints xp filler. A goal that is already craftable (or one step away
+ *  through a refinement) wins the pass; otherwise the rotation proceeds exactly as before. */
 export const select_craft_target = (
   ctx: ActionContext,
-  also_unavailable: ReadonlySet<string> = EMPTY_IDS
+  also_unavailable: ReadonlySet<string> = EMPTY_IDS,
+  priority_outputs: readonly string[] = EMPTY_OUTPUTS
 ): CraftPlan | null => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
@@ -198,6 +220,32 @@ export const select_craft_target = (
   const inventory = state.inventory
   const holds = (item_type: string): boolean =>
     inventory.some((row) => row.item_type === item_type && !unavailable.has(row.id))
+
+  // Gear goals first, zero-XP allowed: an upgrade is crafted for the item, not the job xp.
+  for (const output_type of priority_outputs) {
+    const recipe = recipes_by_output[output_type]
+    if (!recipe) continue
+    const detail = recipe_detail(recipe)
+    const plan = plan_recipe(character, detail, inventory, unavailable, true)
+    if (plan) return plan
+    // The goal's job is level-locked for this character: it cannot drive a refinement either, so
+    // another crafter (or the xp rotation) owns it.
+    const level = job_level_of(character, detail.job)
+    if (level < craft_required_level(detail.ingredients.length)) continue
+    const prerequisite = craft_prerequisite(
+      character,
+      detail,
+      inventory,
+      unavailable,
+      new Set([detail.output_type]),
+      true
+    )
+    if (prerequisite) {
+      const preplan = plan_recipe(character, prerequisite, inventory, unavailable, true)
+      if (preplan) return preplan
+    }
+  }
+
   for (const job of rotation_order(character)) {
     const recipes = [...job_recipes(job)].sort(better_recipe(holds))
     for (const detail of recipes) {
@@ -324,13 +372,15 @@ export const craft_once = async (ctx: ActionContext, plan: CraftPlan): Promise<C
   }
 }
 
-/** Plan and submit the best available craft, or report that nothing is craftable. `also_unavailable`
- *  excludes stacks an earlier batch in the same chore already burned (see {@link select_craft_target}). */
+/** Plan and submit the best available craft, or report that nothing is craftable.
+ *  `also_unavailable` excludes stacks an earlier batch in the same chore already burned (see
+ *  {@link select_craft_target}); `priority_outputs` are the gear goals tried before the rotation. */
 export const drive_craft = async (
   ctx: ActionContext,
-  also_unavailable: ReadonlySet<string> = EMPTY_IDS
+  also_unavailable: ReadonlySet<string> = EMPTY_IDS,
+  priority_outputs: readonly string[] = EMPTY_OUTPUTS
 ): Promise<CraftResult> => {
-  const plan = select_craft_target(ctx, also_unavailable)
+  const plan = select_craft_target(ctx, also_unavailable, priority_outputs)
   if (!plan) return { success: false, outcome: 'nothing_craftable', output_type: '', successes: 0, input_item_ids: [] }
   return await craft_once(ctx, plan)
 }
