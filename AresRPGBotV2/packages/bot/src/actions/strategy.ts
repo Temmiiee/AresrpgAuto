@@ -110,10 +110,11 @@ export type Strategy = Readonly<{
   wanted_mobs: ReadonlySet<string>
 }>
 
-/** Local seeds per sample. This is a coarse RANKING, not the engage's hard certification (which keeps
- *  all five): two distinct boards are enough to drop a family that only wins by luck, at a third of
- *  the cost. Two seeds make `win_rate` 0, 0.5 or 1, so the >= MIN_WIN_RATE gate only passes a
- *  candidate that won BOTH boards. */
+/** Local seeds per sample, PINNED (score_mobs's options.seeds runs them exactly, no sequential
+ *  extension). This is a coarse RANKING, not the engage's hard certification (which sequential-
+ *  seeds a borderline read to fifteen): two distinct boards are enough to drop a family that only
+ *  wins by luck, at a third of the cost. Two seeds make `win_rate` 0, 0.5 or 1, so the >=
+ *  MIN_WIN_RATE gate only passes a candidate that won BOTH boards. */
 const STRATEGY_SEEDS: readonly bigint[] = Object.freeze([1n, 2n])
 
 /** The zone-difficulty bands sampled, as block distances from the world centre. The scalar ramp is
@@ -281,7 +282,7 @@ export const plan_farm = (
       const mob_inputs: readonly FightMobInput[] = Array.from({ length: group_size }, () =>
         Object.freeze({ team: 1n, template, scalar: BigInt(scalar) })
       )
-      const score = score_mobs(leader, mob_inputs, allies, STRATEGY_SEEDS)
+      const score = score_mobs(leader, mob_inputs, allies, { seeds: STRATEGY_SEEDS })
       samples.push(
         Object.freeze({
           world: world.world,

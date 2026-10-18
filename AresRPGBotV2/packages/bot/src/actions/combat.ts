@@ -31,7 +31,7 @@ import { log_info, log_warn, log_debug } from '../shared/logger.ts'
 import { active_fight_of, chain_now, select_character, select_window_mob_groups } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { custody_of, type ActionContext } from './context.ts'
-import { screen_groups, viable_ranking, type GroupCandidate } from './fight_preview.ts'
+import { describe_score, screen_groups, viable_ranking, type GroupCandidate } from './fight_preview.ts'
 import type { FightRuntimeStore } from './fight_registry.ts'
 import type { Mover } from './travel.ts'
 import { describe_actions, plan_turn, plan_turn_party, type TurnAction } from './turn_plan.ts'
@@ -279,7 +279,7 @@ export const pick_engage_target = (
   for (const { candidate, score } of scored)
     log_info(
       'preview',
-      `group ${candidate.group.index} (${candidate.group.members.length} mobs): ${Math.round(score.win_rate * 100)}% win, ${score.turns.toFixed(1)} turns, ${Math.round(score.xp_per_turn)} xp/turn, ${Math.round(score.loot_per_turn * 100) / 100} loot/turn`
+      `group ${candidate.group.index} (${candidate.group.members.length} mobs): ${Math.round(score.win_rate * 100)}% win (${describe_score(score)}), ${score.turns.toFixed(1)} turns, ${Math.round(score.xp_per_turn)} xp/turn, ${Math.round(score.loot_per_turn * 100) / 100} loot/turn`
     )
   // Claim the best sure-win group no other party member is already walking to. A group is a single
   // on-chain bit, so two characters engaging it would race and one would abort.

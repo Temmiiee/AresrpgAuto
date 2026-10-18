@@ -23,7 +23,7 @@ import { active_fight_of, select_character, unavailable_item_ids } from '../stat
 import { custody_of, type ActionContext } from './context.ts'
 import { DUNGEON_KEYS, DUNGEON_PARK_MS, key_parked, park_dungeon_key, should_run_dungeons } from './dungeon.ts'
 import { safe_travel_to } from './roam.ts'
-import { score_group, type MobGroupRow } from './fight_preview.ts'
+import { describe_score, DUNGEON_ROUNDS, score_group, type MobGroupRow } from './fight_preview.ts'
 import type { Mover } from './travel.ts'
 
 /** After a successful `enter`, wait this long for the roster to reveal `dungeon_run` before
@@ -215,7 +215,8 @@ const enter_run = async (
 }
 
 /** Pick the first dungeon the party can field a GROUP for: at least MIN_GROUP_KEYS keys and a room-1
- *  preview that clears at the entrant seat count. Parks a key whose room 1 is unwinnable. */
+ *  preview that clears at the entrant seat count. Rooms are judged over DUNGEON_ROUNDS (a slow
+ *  clear still clears), and a key whose room 1 is unwinnable is parked. */
 const plan_group_dungeon = (
   ctx: ActionContext,
   character: CharacterRow
@@ -239,17 +240,17 @@ const plan_group_dungeon = (
     if (!room0) continue
     const seats = Math.min(keys, members.length)
     const allies = planning_allies(ctx, character, seats)
-    const preview = score_group(character, room_to_mob_group(room0), allies)
+    const preview = score_group(character, room_to_mob_group(room0), allies, { rounds: DUNGEON_ROUNDS })
     if (preview.win_rate < MIN_WIN_RATE) {
       const pct = (preview.win_rate * 100).toFixed(0)
       log_warn(
         'dungeon',
-        `${dk.dungeon} room 1: group preview win_rate=${pct}% < 80% (scored with ${allies.length + 1} of ${seats} seat(s)) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
+        `${dk.dungeon} room 1: group preview win_rate=${pct}% (${describe_score(preview)}) < 80% (scored with ${allies.length + 1} of ${seats} seat(s)) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
       )
       park_dungeon_key(blacklist, dk.key)
       continue
     }
-    log_info('dungeon', `${character.name}: ${dk.dungeon} room 1 group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, seats=${seats}, scored=${allies.length + 1}, keys=${keys}`)
+    log_info('dungeon', `${character.name}: ${dk.dungeon} room 1 group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${seats}, scored=${allies.length + 1}, keys=${keys}`)
     return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats })
   }
   return null
@@ -319,13 +320,19 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     }
 
     const allies = dungeon_allies(ctx, character).filter((ally) => ally.dungeon_run?.dungeon === run.dungeon)
-    const preview = score_group(character, room_to_mob_group(room), allies)
+    const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
     if (preview.win_rate < MIN_WIN_RATE) {
-      log_warn('dungeon', `${run.dungeon} room ${run.room}: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% < 80% -- abandoning run`)
+      log_warn(
+        'dungeon',
+        `${run.dungeon} room ${run.room}: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% (${describe_score(preview)}) < 80% -- abandoning run`
+      )
       await abandon(ctx)
       return outcome('skipped', `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% -- abandoned`)
     }
-    log_info('dungeon', `${run.dungeon} room ${run.room} preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, turns=${preview.turns.toFixed(1)}, xp/turn=${Math.round(preview.xp_per_turn)}`)
+    log_info(
+      'dungeon',
+      `${run.dungeon} room ${run.room} preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, turns=${preview.turns.toFixed(1)}, xp/turn=${Math.round(preview.xp_per_turn)}`
+    )
 
     last_start_ms = Date.now()
     try {

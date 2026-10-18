@@ -12,6 +12,7 @@ import {
   CONTRACT_CONSTANTS,
   create_fight,
   fight_path_to,
+  player_max_hp,
   reachable_fight_cells,
   spell_target_cells,
   weapon_target_cells,
@@ -47,6 +48,15 @@ export const spell_names_for = (cp: HydratedFightCheckpoint, seat: number): read
 
 /** Get current HP for a fighter. Max HP is not on Fighter; we use current HP for relative comparisons. */
 const fighter_hp = (fighter: Fighter): number => Number(fighter.hp ?? 0n)
+
+/** A player fighter's MAX HP, from its replay source — "hurt" means below half of THIS, not
+ *  below half of the pack. A fighter with no source has no bar to reason about, so it reads as
+ *  never hurt (never triggering a heal we cannot justify). */
+const fighter_max_hp = (cp: HydratedFightCheckpoint, fighter: Fighter): number => {
+  if (fighter.kind.type !== 'player') return Number(fighter.hp ?? 0n)
+  const source = cp.sources.players[fighter.kind.character]
+  return source ? Number(player_max_hp(source)) : Number(fighter.hp ?? 0n)
+}
 
 /** Check if a spell is a heal (targets allies, restores HP). */
 const is_heal_spell = (name: string): boolean =>
@@ -96,18 +106,22 @@ const next_action_party = (
   const enemy_cells = new Set(enemies.map((fighter) => fighter.cell))
   const allies = cp.contract.fighters.filter((f, i) => !f.dead && f.team === me.team && ally_seats.includes(i))
 
-  // 1. HEAL PRIORITY: if any ally < 50% HP and I have a heal, HEAL THEM
-  // Note: max_hp not on Fighter; we use current HP for relative (lower = more hurt)
+  // 1. HEAL PRIORITY: any ally BELOW HALF of its OWN max HP and I have a heal → heal the most
+  //    hurt one. (The old filter read `hp > 0` — ANY living ally — so supports wasted every cast
+  //    on healthy targets, in the live door AND this twin's replay of it.)
   const hurt_ally = allies
-    .map((ally) => ({ ally, hp: fighter_hp(ally) }))
-    .filter(({ hp }) => hp > 0)
-    .sort((a, b) => a.hp - b.hp)[0]
+    .map((ally) => ({ ally, hp: fighter_hp(ally), max: fighter_max_hp(cp, ally) }))
+    .filter(({ hp, max }) => hp > 0 && hp * 2 < max)
+    .sort((left, right) => left.hp / left.max - right.hp / right.max)[0]
   if (hurt_ally) {
     for (const name of spell_names_for(cp, seat)) {
       if (!is_heal_spell(name)) continue
       const targets = spell_target_cells(cp, actor, name).targetable
       if (targets.includes(hurt_ally.ally.cell)) {
-        log_debug('combat', `seat ${seat} (${party_role}): HEAL ${name} on ally at ${hurt_ally.ally.cell} (HP ${hurt_ally.hp})`)
+        log_debug(
+          'combat',
+          `seat ${seat} (${party_role}): HEAL ${name} on ally at ${hurt_ally.ally.cell} (HP ${hurt_ally.hp}/${hurt_ally.max})`
+        )
         return { type: 'cast', fighter_idx: actor, spell: name, target_cell: hurt_ally.ally.cell }
       }
     }
