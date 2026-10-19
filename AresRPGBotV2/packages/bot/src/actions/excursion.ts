@@ -20,7 +20,7 @@
 import { job_level_from_xp } from '@aresrpg/immutable'
 import type { CharacterRow } from '@aresrpg/protocol'
 
-import { config, type ChoreRole } from '../config.ts'
+import { config, GATHERING_JOBS, type ChoreRole } from '../config.ts'
 import { find_resource_zone, resource_eligible_at, type ResourceZone } from '../content/biomes.ts'
 import {
   tool_category_of_job,
@@ -56,9 +56,10 @@ export type PartyPose = Readonly<{ x: number; z: number }>
 export type GatherMember = Readonly<{
   id: string
   name: string
-  job: GatheringJob
-  /** whether the member currently owns (worn or held) a tool of its job's category */
-  tool_ready: boolean
+  /** every gathering job this member covers (one for a single-job chore, all three for a rotator) */
+  jobs: readonly GatheringJob[]
+  /** the subset of `jobs` the member owns a worn/held tool for — travel cannot fix a missing tool */
+  tool_ready_jobs: readonly GatheringJob[]
   /** the member's latest streamed pose, or null when it has none yet */
   pose: PartyPose | null
 }>
@@ -112,7 +113,13 @@ const has_job_tool = (
   )
 }
 
-/** Every party member whose chore is a gathering specialty, with its tool readiness and pose. */
+/** Every party member whose chore gathers, with the jobs it covers and the ones it is tool-ready for.
+ *  A single-job chore (`gather`/`gather_craft`) covers ONE job; an all-resource chore
+ *  (`gather_all`/`gather_all_craft`) covers every job. Recognising only `gather` here was the bug
+ *  that killed every excursion: the default plan is `gather_craft`/`gather_all_craft`, so this
+ *  returned EMPTY, `gather_needs` saw no gap, and the party never left a biome its gatherers could
+ *  not work (the live window held only quartz+amber while omori's chore wanted HERBALIST — zero
+ *  harvests for the whole window). */
 export const gather_members = (state: GameState, party: PartyState): readonly GatherMember[] => {
   const unavailable = unavailable_item_ids(state)
   const members: GatherMember[] = []
@@ -120,13 +127,19 @@ export const gather_members = (state: GameState, party: PartyState): readonly Ga
     const character = state.characters.find((row) => row.id === id)
     if (!character) continue
     const chore: ChoreRole = config.chore_plan[character.name.toLowerCase()] ?? Object.freeze({ kind: 'none' })
-    if (chore.kind !== 'gather') continue
+    const jobs: readonly GatheringJob[] | null =
+      chore.kind === 'gather' || chore.kind === 'gather_craft'
+        ? [chore.job]
+        : chore.kind === 'gather_all' || chore.kind === 'gather_all_craft'
+          ? GATHERING_JOBS
+          : null
+    if (!jobs) continue
     members.push(
       Object.freeze({
         id,
         name: character.name,
-        job: chore.job,
-        tool_ready: has_job_tool(character, state.inventory, chore.job, unavailable),
+        jobs,
+        tool_ready_jobs: Object.freeze(jobs.filter((job) => has_job_tool(character, state.inventory, job, unavailable))),
         pose: party.poses.get(id) ?? null,
       })
     )
@@ -147,8 +160,10 @@ const highest_unlocked_tier = (job: GatheringJob, level: number): number => {
   return best
 }
 
-/** A gatherer's unmet specialty: its highest unlocked tier has no live pack within reach. Members
- *  without their job tool are skipped — travel cannot fix a missing tool, only a craft can. */
+/** A gatherer's unmet specialty: NONE of the jobs it is tool-ready for has a live, unlocked pack in
+ *  reach. A member without a tool for a job is skipped for that job — travel cannot fix a missing
+ *  tool, only a craft can. A single-job member is unmet exactly when its one job is absent; a rotator
+ *  only when all of its jobs are. */
 export const gather_needs = (
   state: GameState,
   members: readonly GatherMember[],
@@ -157,33 +172,44 @@ export const gather_needs = (
   const packs = select_window_resource_packs(state)
   const needs: GatherNeed[] = []
   for (const member of members) {
-    if (!member.tool_ready) continue
     const character = state.characters.find((row) => row.id === member.id)
     if (!character) continue
-    const level = job_level_from_xp(Number(character.jobs?.[member.job] ?? '0'))
-    const tier = highest_unlocked_tier(member.job, level)
-    if (tier <= 0) continue
-    const items = tier_items(member.job, tier)
-    if (items.length === 0) continue
-    const pose = member.pose ?? (character.x !== undefined && character.z !== undefined ? { x: character.x, z: character.z } : null)
+    const pose =
+      member.pose ?? (character.x !== undefined && character.z !== undefined ? { x: character.x, z: character.z } : null)
     if (!pose) continue
-    const item_set = new Set(items.map((row) => row.item_type))
-    const present = packs.some(
-      ({ pack }) =>
-        item_set.has(pack.item_type) &&
-        Math.max(Math.abs(pack.x - pose.x), Math.abs(pack.z - pose.z)) <= radius
-    )
-    if (present) continue
-    needs.push(
-      Object.freeze({
-        member_id: member.id,
-        member_name: member.name,
-        job: member.job,
-        tier,
-        item_types: Object.freeze(items.map((row) => row.item_type)),
-        world: items[0]!.world,
-      })
-    )
+    const unmet: GatherNeed[] = []
+    let satisfied = false
+    for (const job of member.tool_ready_jobs) {
+      const level = job_level_from_xp(Number(character.jobs?.[job] ?? '0'))
+      const tier = highest_unlocked_tier(job, level)
+      if (tier <= 0) continue
+      const items = tier_items(job, tier)
+      if (items.length === 0) continue
+      const item_set = new Set(items.map((row) => row.item_type))
+      const present = packs.some(
+        ({ pack }) =>
+          item_set.has(pack.item_type) &&
+          Math.max(Math.abs(pack.x - pose.x), Math.abs(pack.z - pose.z)) <= radius
+      )
+      if (present) {
+        satisfied = true
+        break
+      }
+      unmet.push(
+        Object.freeze({
+          member_id: member.id,
+          member_name: member.name,
+          job,
+          tier,
+          item_types: Object.freeze(items.map((row) => row.item_type)),
+          world: items[0]!.world,
+        })
+      )
+    }
+    if (satisfied || unmet.length === 0) continue
+    // Relocate for the richest missing specialty when a rotator has several.
+    unmet.sort((left, right) => right.tier - left.tier)
+    needs.push(unmet[0]!)
   }
   return Object.freeze(needs)
 }
