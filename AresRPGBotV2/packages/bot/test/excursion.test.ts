@@ -66,6 +66,21 @@ describe('gather_needs', () => {
     expect(needs.map((need) => need.world)).toEqual(['nauvis'])
   })
 
+  it('is satisfied by ANY unlocked tier of the job, not only the richest', () => {
+    // memorien farms at level 69, so the richest unlocked FARMER tier in nauvis is wheat_malt (T3);
+    // a bare wheat (T1) pack underfoot still feeds the member, so no relocation is warranted.
+    const state: GameState = {
+      ...initial_game_state,
+      characters: [character('memorien', { FARMER: xp(69) }, [{ id: 't', category: 'tool_farmer', slot: 'tool' }])],
+      zones: [{ world: 'nauvis', zx: 0, zz: 0, mob_taken: '0', res_taken: [0] } as never],
+      zone_spawns: {
+        'nauvis:0:0': { mobs: [], resources: [{ index: 0, nodes: 5, item_type: 'wheat', x: 0, z: 0 }] },
+      } as never,
+    }
+    const party = party_with(['memorien'], { memorien: { x: 0, z: 0 } })
+    expect(gather_needs(state, gather_members(state, party))).toEqual([])
+  })
+
   it('skips a member that owns no tool for its job (travel cannot fix a missing tool)', () => {
     const state: GameState = { ...initial_game_state, characters: [character('omori', { HERBALIST: xp(60) })] }
     const party = party_with(['omori'], { omori: { x: 0, z: 0 } })

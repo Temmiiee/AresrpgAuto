@@ -172,10 +172,22 @@ const highest_unlocked_tier = (job: GatheringJob, level: number, world: string):
   return best
 }
 
-/** A gatherer's unmet specialty: NONE of the jobs it is tool-ready for has a live, unlocked pack in
- *  reach. A member without a tool for a job is skipped for that job — travel cannot fix a missing
- *  tool, only a craft can. A single-job member is unmet exactly when its one job is absent; a rotator
- *  only when all of its jobs are. */
+/** Every item_type of `job` whose tier unlocks at `level` AND grows in `world`. The "is this
+ *  gatherer fed?" test uses the whole set: being able to harvest ANY unlocked tier of its job
+ *  counts as fed, so the party does not relocate just because a richer tier grows elsewhere (which
+ *  made it ping-pong forest -> desert -> ... and starve the fight rate). */
+const unlocked_items = (job: GatheringJob, level: number, world: string): ReadonlySet<string> =>
+  new Set(
+    (resources_by_job[job] ?? [])
+      .filter((row) => row.world === world && tier_unlock_level(row.tier) <= level)
+      .map((row) => row.item_type)
+  )
+
+/** A gatherer's unmet specialty: NONE of the jobs it is tool-ready for has a live, unlocked pack of
+ *  ANY tier in reach (a wholly-absent job, e.g. a herbalist parked in a miner-only biome). A member
+ *  without a tool for a job is skipped for that job — travel cannot fix a missing tool, only a craft
+ *  can. A single-job member is unmet exactly when its one job is absent; a rotator only when all of
+ *  its jobs are. */
 export const gather_needs = (
   state: GameState,
   members: readonly GatherMember[],
@@ -195,28 +207,29 @@ export const gather_needs = (
     let satisfied = false
     for (const job of member.tool_ready_jobs) {
       const level = job_level_from_xp(Number(character.jobs?.[job] ?? '0'))
-      const tier = highest_unlocked_tier(job, level, world)
-      if (tier <= 0) continue
-      const items = tier_items(job, tier, world)
-      if (items.length === 0) continue
-      const item_set = new Set(items.map((row) => row.item_type))
+      const items = unlocked_items(job, level, world)
+      if (items.size === 0) continue
       const present = packs.some(
         ({ pack }) =>
-          item_set.has(pack.item_type) &&
+          items.has(pack.item_type) &&
           Math.max(Math.abs(pack.x - pose.x), Math.abs(pack.z - pose.z)) <= radius
       )
       if (present) {
         satisfied = true
         break
       }
+      // Aim the relocation at the richest tier the member can work, so it lands on a good node.
+      const tier = highest_unlocked_tier(job, level, world)
+      const target = tier_items(job, tier, world)
+      if (tier <= 0 || target.length === 0) continue
       unmet.push(
         Object.freeze({
           member_id: member.id,
           member_name: member.name,
           job,
           tier,
-          item_types: Object.freeze(items.map((row) => row.item_type)),
-          world: items[0]!.world,
+          item_types: Object.freeze(target.map((row) => row.item_type)),
+          world,
         })
       )
     }
