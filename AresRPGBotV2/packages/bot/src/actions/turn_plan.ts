@@ -13,13 +13,20 @@ import {
   create_fight,
   fight_path_to,
   player_max_hp,
+  project_spell_turn,
+  project_weapon_turn,
   reachable_fight_cells,
+  spell_area_cells,
   spell_target_cells,
+  weapon_area_cells,
+  weapon_level_of,
   weapon_target_cells,
   type FightCommand,
   type Fighter,
   type HydratedFightCheckpoint,
+  type SpellTurnProjection,
 } from '@aresrpg/fight'
+import { AREA_SHAPES, CHANNELS, EFFECT_KINDS } from '@aresrpg/fight/move_contract'
 
 import { log_debug } from '../shared/logger.ts'
 
@@ -62,10 +69,115 @@ const fighter_max_hp = (cp: HydratedFightCheckpoint, fighter: Fighter): number =
 const is_heal_spell = (name: string): boolean =>
   name.toLowerCase().includes('soothe') || name.toLowerCase().includes('heal') || name.toLowerCase().includes('bramble')
 
-/** Check if a spell is a damage spell (targets enemies). */
-const is_damage_spell = (name: string): boolean =>
-  name.toLowerCase().includes('strike') || name.toLowerCase().includes('arrow') || name.toLowerCase().includes('sacrifice') ||
-  name.toLowerCase().includes('bramble') && !name.toLowerCase().includes('soothe')
+// ── damage scoring ───────────────────────────────────────────────────
+// What decides how long a fight lasts is how much enemy HP a turn REMOVES, never how fast the
+// turn lands: the chain paces every turn at its own floor (turn_min_ms) whatever the turn holds, so
+// a turn that walks or heals costs exactly as much wall-clock as one that kills. The planner used
+// to spend the turn on the FIRST hit it found — the weapon strike, and only a spell when the strike
+// was out of reach — which made a fighter whose fists were in range (4 base damage, reach 1) ignore
+// a damage spell basing three to five times higher. Both cards are ranked below on the engine's OWN
+// damage projection, so the turn's whole AP budget goes into the strongest hit it actually owns.
+
+/** The effect kinds that take HP off a target, mirroring @aresrpg/fight's own damage display: a
+ *  direct hit, plus any HP remove/steal/fixed-remove (e.g. a "sacrifice" that steals life). */
+const HP_LOSS_KINDS: readonly bigint[] = [
+  EFFECT_KINDS.damage,
+  EFFECT_KINDS.remove,
+  EFFECT_KINDS.steal,
+  EFFECT_KINDS.fixed_remove,
+]
+
+const takes_hp = (effect: Readonly<{ kind: bigint; stat: bigint }>): boolean =>
+  effect.kind === EFFECT_KINDS.damage || (effect.stat === CHANNELS.hp && HP_LOSS_KINDS.includes(effect.kind))
+
+/** Average HP one card takes off ONE target, before that target's own resistances. The engine's
+ *  projection already amplified every value by the caster's stat and raw damage, so the only gap
+ *  left is an unrolled magnitude roll — the midpoint is the expectation. */
+const projected_damage = (projection: SpellTurnProjection | null): number => {
+  if (projection === null) return 0
+  let total = 0
+  for (const effect of projection.effects) {
+    if (!takes_hp(effect)) continue
+    total += (Number(effect.value) + Number(effect.value_max)) / 2
+  }
+  return total
+}
+
+/** True when a card lands on the single target cell alone: its area then needs no engine lookup,
+ *  which keeps the per-turn scoring as cheap as the old single-cell strike scan. */
+const single_target_card = (projection: SpellTurnProjection): boolean =>
+  projection.effects.every((effect) => effect.area_shape === AREA_SHAPES.point)
+
+/** The action points the chain charges for one cast of a spell this seat has invested in. */
+const spell_ap_cost = (cp: HydratedFightCheckpoint, seat: number, name: string): number => {
+  const fighter = cp.contract.fighters[seat]
+  const player = fighter?.kind.type === 'player' ? cp.sources.players[fighter.kind.character] : undefined
+  const level = cp.sources.spells[name]?.levels[Number((player?.spell_levels[name] ?? 1n) - 1n)]
+  return level ? Math.max(1, Number(level.ap_cost)) : 4
+}
+
+type DamageOption = Readonly<{ action: TurnAction; score: number; cost: number }>
+
+/** Every damaging action this seat may take right now, scored by the enemy HP it removes per action
+ *  point: the sum, over the card's WHOLE area, of the damage it lands on each enemy (never more
+ *  than that enemy has left, so overkill is not worth chasing) divided by the AP the card costs. */
+const damage_options = (cp: HydratedFightCheckpoint, seat: number, enemies: readonly Fighter[]): readonly DamageOption[] => {
+  const actor = BigInt(seat)
+  const enemy_cells = new Set(enemies.map((fighter) => fighter.cell))
+  const options: DamageOption[] = []
+  const collect = (
+    make_action: (cell: bigint) => TurnAction,
+    projection: SpellTurnProjection | null,
+    area_of: (cell: bigint) => readonly bigint[],
+    targets: readonly bigint[],
+    cost: number
+  ): void => {
+    const per_target = projected_damage(projection)
+    if (projection === null || per_target <= 0) return
+    const point = single_target_card(projection)
+    const ap = Math.max(1, cost)
+    for (const cell of targets) {
+      const area = point ? [cell] : area_of(cell)
+      let dealt = 0
+      for (const enemy of enemies) if (area.includes(enemy.cell)) dealt += Math.min(per_target, fighter_hp(enemy))
+      if (dealt > 0) options.push({ action: make_action(cell), score: dealt / ap, cost: ap })
+    }
+  }
+
+  const strike_targets = weapon_target_cells(cp, actor).targetable.filter((cell) => enemy_cells.has(cell))
+  if (strike_targets.length > 0) {
+    collect(
+      (cell) => ({ type: 'strike', fighter_idx: actor, target_cell: cell }),
+      project_weapon_turn(cp, actor),
+      (cell) => weapon_area_cells(cp, actor, cell),
+      strike_targets,
+      Number(weapon_level_of(cp, actor)?.ap_cost ?? 4n)
+    )
+  }
+
+  for (const name of spell_names_for(cp, seat)) {
+    const spell_targets = spell_target_cells(cp, actor, name).targetable.filter((cell) => enemy_cells.has(cell))
+    if (spell_targets.length === 0) continue
+    collect(
+      (cell) => ({ type: 'cast', fighter_idx: actor, spell: name, target_cell: cell }),
+      project_spell_turn(cp, actor, name),
+      (cell) => spell_area_cells(cp, actor, name, cell),
+      spell_targets,
+      spell_ap_cost(cp, seat, name)
+    )
+  }
+
+  return options
+}
+
+/** The damaging action that turns this turn's action points into the most enemy HP. Ties go to the
+ *  cheaper card, which leaves AP for one more action in the same turn. */
+const best_damage_action = (cp: HydratedFightCheckpoint, seat: number, enemies: readonly Fighter[]): TurnAction | null => {
+  const ranked = [...damage_options(cp, seat, enemies)].sort(
+    (left, right) => right.score - left.score || left.cost - right.cost
+  )
+  return ranked[0]?.action ?? null
+}
 
 /** The longest legal path (bounded by the fighter's MP) ending closest to the nearest enemy. */
 const step_toward_enemy = (
@@ -103,7 +215,6 @@ const next_action_party = (
   const actor = BigInt(seat)
   const enemies = cp.contract.fighters.filter((fighter) => !fighter.dead && fighter.team !== me.team)
   if (enemies.length === 0) return null
-  const enemy_cells = new Set(enemies.map((fighter) => fighter.cell))
   const allies = cp.contract.fighters.filter((f, i) => !f.dead && f.team === me.team && ally_seats.includes(i))
 
   // 1. HEAL PRIORITY: any ally BELOW HALF of its OWN max HP and I have a heal → heal the most
@@ -127,31 +238,15 @@ const next_action_party = (
     }
   }
 
-  // 2. FOCUS FIRE: pick the enemy with LOWEST HP (kill confirmation)
-  const strike = weapon_target_cells(cp, actor).targetable.find((cell) => enemy_cells.has(cell))
-  if (strike !== undefined) {
-    const target_fighter = enemies.find((f) => f.cell === strike)
-    const hp = fighter_hp(target_fighter!)
-    log_debug('combat', `seat ${seat} (${party_role}): STRIKE enemy at ${strike} (HP ${hp})`)
-    return { type: 'strike', fighter_idx: actor, target_cell: strike }
+  // 2. DAMAGE: the strongest hit this turn's action points can buy (see damage_options — the
+  //    weapon strike and every spell are ranked on the enemy HP they actually remove per AP).
+  const damage = best_damage_action(cp, seat, enemies)
+  if (damage !== null) {
+    log_debug('combat', `seat ${seat} (${party_role}): DAMAGE ${describe_actions([damage])}`)
+    return damage
   }
 
-  // 3. DAMAGE SPELLS: prefer lowest-HP enemy in range
-  const enemy_hp = enemies
-    .map((e) => ({ ...e, hp: fighter_hp(e) }))
-    .sort((a, b) => a.hp - b.hp)
-  for (const enemy of enemy_hp) {
-    for (const name of spell_names_for(cp, seat)) {
-      if (!is_damage_spell(name)) continue
-      const targets = spell_target_cells(cp, actor, name).targetable
-      if (targets.includes(enemy.cell)) {
-        log_debug('combat', `seat ${seat} (${party_role}): CAST ${name} on enemy at ${enemy.cell} (HP ${enemy.hp})`)
-        return { type: 'cast', fighter_idx: actor, spell: name, target_cell: enemy.cell }
-      }
-    }
-  }
-
-  // 4. POSITIONING: no attack in range — ALWAYS close the distance to the nearest enemy. (An
+  // 3. POSITIONING: no attack in range — ALWAYS close the distance to the nearest enemy. (An
   //    earlier "supports hold back when an ally is ahead" rule returned a null action, which made a
   //    whole turn empty: the character wasted its turn AND, before the pass guard existed, froze the
   //    fight on a no-op turn. Closing distance gets every seat into range and can never deadlock.)
@@ -196,18 +291,11 @@ const assign_roles = (cp: HydratedFightCheckpoint, seats: readonly number[]): Ma
 const next_action = (cp: HydratedFightCheckpoint, seat: number): TurnAction | null => {
   const me = cp.contract.fighters[seat]
   if (!me || me.dead) return null
-  const actor = BigInt(seat)
   const enemies = cp.contract.fighters.filter((fighter) => !fighter.dead && fighter.team !== me.team)
   if (enemies.length === 0) return null
-  const enemy_cells = new Set(enemies.map((fighter) => fighter.cell))
 
-  const strike = weapon_target_cells(cp, actor).targetable.find((cell) => enemy_cells.has(cell))
-  if (strike !== undefined) return { type: 'strike', fighter_idx: actor, target_cell: strike }
-
-  for (const name of spell_names_for(cp, seat)) {
-    const target = spell_target_cells(cp, actor, name).targetable.find((cell) => enemy_cells.has(cell))
-    if (target !== undefined) return { type: 'cast', fighter_idx: actor, spell: name, target_cell: target }
-  }
+  const damage = best_damage_action(cp, seat, enemies)
+  if (damage !== null) return damage
 
   const path = step_toward_enemy(cp, seat, enemies)
   return path === null ? null : { type: 'move', path }
