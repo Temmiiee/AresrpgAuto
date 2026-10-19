@@ -10,7 +10,7 @@ import {
   select_craft_target,
 } from '../src/actions/craft.ts'
 import { rank_gather_candidates } from '../src/actions/gather.ts'
-import { gatherable_demand, items_by_type, recipe_detail, recipe_job, recipes, recipes_by_output } from '../src/content/catalog.ts'
+import { gatherable_demand, items_by_type, loot_demand, recipe_detail, recipe_job, recipes, recipes_by_output } from '../src/content/catalog.ts'
 
 describe('craft actions type check', () => {
   it('exposes the planner and the craft doors', () => {
@@ -139,6 +139,33 @@ describe('gatherable_demand', () => {
       'wheat',
       'wheat_barley',
     ])
+  })
+})
+
+// The other half of the loop: leaves that NO world grows and no gather can aim at — the mob-only
+// drops the key chain eats. `water` feeds every refinement in the game, so a key chain fed by
+// gathering alone can never fill; the engage must hunt the families that carry those drops.
+describe('loot_demand', () => {
+  it('expands a craft down to its mob-only drop leaves', () => {
+    // quartz_set_trinket <- shiny_trinket (drop) + quartz_powder (quartz + water) + barley_flour
+    // (wheats + water): only shiny_trinket and the two waters are looted leaves.
+    const loot = loot_demand('quartz_set_trinket')
+    expect([...loot.keys()].sort()).toEqual(['shiny_trinket', 'water'])
+    expect(loot.get('shiny_trinket')).toBe(1)
+    expect(loot.get('water')).toBe(2)
+  })
+
+  it('finds the mob-only water every refinement consumes', () => {
+    // stone_lorito_plume <- lorito_feather + amber_powder (water) x3 + wheat_flour (water) x3:
+    // the dropped feather and six waters (three per refinement) must surface.
+    const loot = loot_demand('stone_lorito_plume')
+    expect(loot.get('lorito_feather')).toBe(1)
+    expect(loot.get('water')).toBe(6)
+  })
+
+  it('skips gatherable leaves and reports none for a pure leaf', () => {
+    expect(loot_demand('amber').size).toBe(0) // amber is grown by a world
+    expect(loot_demand('shiny_trinket').size).toBe(0) // a leaf has nothing below it
   })
 })
 
@@ -376,5 +403,52 @@ describe('select_craft_target gear priority', () => {
       four_slot!.output_type,
     ])
     expect(plan?.output_type).toBe('old_hoe')
+  })
+})
+
+// The dungeon runner's shortfall: the key chain was only ever minted by `maybe_craft_dungeon_key`,
+// which fires ONLY once every input is already held -- so nothing ever BUILT the chain, and the xp
+// rotation spent the same materials on filler (wheatbound_branch, old_hoe) instead. Passing the key
+// outputs as craft priorities must make the planner drill into the chain and mint the missing step.
+describe('select_craft_target dungeon-key priority', () => {
+  const ctx_for = (jobs: Record<string, number>, inventory: readonly (readonly [string, number])[]): any => ({
+    state: () => ({
+      characters: [
+        {
+          id: 'c',
+          jobs: Object.fromEntries(
+            Object.entries(jobs).map(([job, level]) => [job, String(job_xp_for_level(level) ?? 0)])
+          ),
+          equipment: [],
+        },
+      ],
+      inventory: inventory.map(([item_type, amount], index) => ({
+        id: `i${index}`,
+        item_type,
+        amount,
+        category: 'resource',
+      })),
+      listings: [],
+    }),
+    character_id: 'c',
+  })
+
+  it('refines a key input instead of spending the same staples on xp filler', () => {
+    // CARVER:1 can mint wheatbound_branch from raw staples and sorts first in the rotation; MINER:10
+    // can refine amber_powder (a gilded-lorito step) from the same amber/quartz/water. Without the key
+    // priority the rotation mints the wheatbound_branch filler; with it the key chain wins.
+    const held = [
+      ['amber', 20],
+      ['quartz', 20],
+      ['water', 20],
+      ['wheat', 20],
+      ['gnawed_branch', 5],
+    ] as const
+    const ctx = ctx_for({ CARVER: 1, MINER: 10, TAILOR: 10 }, held)
+
+    expect(select_craft_target(ctx)?.output_type).toBe('wheatbound_branch')
+    const keyed = select_craft_target(ctx, undefined, ['key_of_gilded_lorito'])
+    expect(keyed?.output_type).toBe('amber_powder')
+    expect(keyed?.job).toBe('MINER')
   })
 })

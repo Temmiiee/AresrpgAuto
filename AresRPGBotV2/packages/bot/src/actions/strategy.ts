@@ -20,7 +20,9 @@ import { craft_required_level, job_level_from_xp } from '@aresrpg/immutable'
 import type { CharacterRow } from '@aresrpg/protocol'
 
 import {
+  dungeons,
   items_by_type,
+  loot_demand,
   loot_sources_by_item,
   mobs_by_type,
   recipe_detail,
@@ -106,7 +108,8 @@ export type Strategy = Readonly<{
   gear: readonly GearTarget[]
   /** trades to level so the wanted gear becomes craftable, in goal-gain order */
   training: readonly GearTraining[]
-  /** mob types whose loot carries a wanted upgrade — the engage's soft preference */
+  /** mob types whose loot carries a wanted upgrade OR a mob-only input of a dungeon-key chain — the
+   *  engage's soft preference */
   wanted_mobs: ReadonlySet<string>
 }>
 
@@ -345,6 +348,13 @@ export const compute_strategy = (
   const gear = plan_gear_targets(characters, state)
   const wanted_mobs = new Set<string>()
   for (const target of gear) for (const mob_type of target.source_mobs) wanted_mobs.add(mob_type)
+  // Dungeon keys are the party's long pole and their DAG eats mob-only leaves (EVERY refinement
+  // needs `water`; the plumes/trinkets/webbings need feathers, trinkets and silk), so the key chain
+  // can never fill from gathering alone. Fold the families that carry those drop leaves into the
+  // engage's wanted set, ahead of any XP tie, so the party hunts them while it farms.
+  for (const dungeon of dungeons)
+    for (const [leaf] of loot_demand(dungeon.key))
+      for (const mob_type of loot_sources_by_item.get(leaf) ?? []) wanted_mobs.add(mob_type)
   return Object.freeze({
     computed_ms: options.now_ms ?? Date.now(),
     farm: plan_farm(characters, options),

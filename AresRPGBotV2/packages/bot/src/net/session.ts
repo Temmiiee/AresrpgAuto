@@ -1054,11 +1054,15 @@ export const play_loop = async (
       // `kiosk::borrow` (code 11) — one wasted transaction per chore. Feeding each batch's burned ids
       // forward makes the next batch pick a different recipe (or stop) instead.
       const burned = new Set<string>()
-      // Gear goals win the pass: they are the best craftable weapon/armour for a character, so the
-      // party mints what it will WEAR before spending the same materials on xp filler.
-      const gear_goals = current_gear_goals()
+      // Dungeon-key materials win the pass: the run a key opens is the whole point of the farm, and
+      // its chain is long (refinements -> plumes/trinkets -> key), so waiting for every input to
+      // happen to be held (the leader-only `maybe_craft_dungeon_key`) meant nothing ever built the
+      // chain. `select_craft_target` drills through the key's missing prerequisites, so the party
+      // now mints the flour/powder/weave the keys eat before spending those materials on xp filler.
+      // Gear goals follow, then the XP rotation.
+      const craft_priorities = [...KEY_OUTPUTS, ...current_gear_goals()]
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
-        const crafted = await drive_craft(ctx, burned, gear_goals)
+        const crafted = await drive_craft(ctx, burned, craft_priorities)
         if (!crafted.success) break
         for (const id of crafted.input_item_ids) burned.add(id)
         rt.stats = record_craft(rt.stats, crafted.output_type, crafted.successes)

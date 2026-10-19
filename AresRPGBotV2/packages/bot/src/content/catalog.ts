@@ -236,4 +236,42 @@ export const gatherable_demand = (output_type: string): ReadonlyMap<string, numb
   return result
 }
 
+const loot_memo = new Map<string, ReadonlyMap<string, number>>()
+const loot_visiting = new Set<string>()
+const no_loot: ReadonlyMap<string, number> = new Map()
+
+/** How much ONE craft of `output_type` consumes of each MOB-DROP input, walked down the craft DAG.
+ *  The exact mirror of {@link gatherable_demand}: an ingredient a world grows is skipped (the gather
+ *  action supplies it), an ingredient that is itself craftable expands, and an ingredient with no
+ *  recipe that is not gatherable is a leaf — it can only come from a mob's loot table. The engage
+ *  reads these leaves to bias toward the families carrying the materials a chain is missing.
+ *
+ *  This closes the loop the gather demand cannot: EVERY refinement in the dungeon-key DAG eats
+ *  `water`, a mob-only drop authored on no world, so a key chain fed by gathering alone never fills.
+ *  Memoised + cycle-guarded like the gatherable walk. Read-only. */
+export const loot_demand = (output_type: string): ReadonlyMap<string, number> => {
+  const cached = loot_memo.get(output_type)
+  if (cached) return cached
+  if (loot_visiting.has(output_type)) return no_loot
+  loot_visiting.add(output_type)
+
+  const result = new Map<string, number>()
+  const recipe = recipes_by_output[output_type]
+  if (recipe)
+    for (const ingredient of recipe_detail(recipe).ingredients) {
+      const item_type = ingredient.item_type
+      if (gatherable_of(item_type)) continue
+      if (recipes_by_output[item_type]) {
+        for (const [leaf, quantity] of loot_demand(item_type))
+          result.set(leaf, (result.get(leaf) ?? 0) + ingredient.quantity * quantity)
+        continue
+      }
+      result.set(item_type, (result.get(item_type) ?? 0) + ingredient.quantity)
+    }
+
+  loot_visiting.delete(output_type)
+  loot_memo.set(output_type, result)
+  return result
+}
+
 export { craft_batch_limit }

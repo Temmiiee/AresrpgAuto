@@ -13,7 +13,7 @@ import {
   plan_gear_targets,
   scaled_level,
 } from '../src/actions/strategy.ts'
-import { items_by_type, mobs_by_type, recipes_by_output } from '../src/content/catalog.ts'
+import { dungeons, items_by_type, loot_demand, loot_sources_by_item, mobs_by_type, recipes_by_output } from '../src/content/catalog.ts'
 import { initial_game_state, type GameState } from '../src/state/store.ts'
 
 const character = (over: Partial<CharacterRow> = {}): CharacterRow =>
@@ -87,12 +87,20 @@ describe('plan_gear_targets', () => {
 })
 
 describe('compute_strategy', () => {
-  it('derives the wanted mobs from the gear routes and reports on console', () => {
+  it('derives the wanted mobs from the gear routes + the dungeon-key drop chain, and reports on console', () => {
     const rows = [character({ level: 10 })]
     const strategy = compute_strategy(rows, state_with(rows), { now_ms: 123, distances: [] })
     expect(strategy.computed_ms).toBe(123)
     const wanted = new Set(strategy.gear.flatMap((target) => target.source_mobs))
+    // Every dungeon key's mob-only leaves must also be hunted: their refinements eat `water` and the
+    // plumes/trinkets/webbings eat other drops, so the chain cannot fill from gathering alone.
+    for (const dungeon of dungeons)
+      for (const [leaf] of loot_demand(dungeon.key))
+        for (const mob_type of loot_sources_by_item.get(leaf) ?? []) wanted.add(mob_type)
     expect([...strategy.wanted_mobs].sort()).toEqual([...wanted].sort())
+    // Proof the set actually widened past the gear set: `lorito__water` drops both water and the
+    // feather the gilded-lorito plume needs.
+    expect(strategy.wanted_mobs.has('lorito__water')).toBe(true)
     expect(describe_strategy(strategy).length).toBeGreaterThan(0)
   })
 })
