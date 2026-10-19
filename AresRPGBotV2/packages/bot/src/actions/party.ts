@@ -35,9 +35,12 @@ const STAGE_TIMEOUT_MS = 300_000
  *  and re-planning for the members that DID arrive. A follower that has simply not caught up (a
  *  world-join drops it at the map centre, ~14k blocks and ~20 min out) would otherwise hold the
  *  whole party idle for the full stage timeout, so no fight ever starts. Measured from the moment the
- *  LEADER is itself in position (`in_position_at_ms`), not from the rendezvous being planned, and
- *  sized to cover the one blocking leg a follower needs to walk in from the rendezvous point. */
-const STAGE_GRACE_MS = 120_000
+ *  LEADER is itself in position (`in_position_at_ms`), not from the rendezvous being planned.
+ *  60s, not 120s: the live watch caught a follower that had walked ~720 blocks to a demanded pack
+ *  while the group staged -- it stalled the rendezvous for 108s and was written off anyway. A normal
+ *  rally closes in 7-40s, so 60s covers every honest catch-up while halving the worst case; the
+ *  write-off re-plans the side honestly and the straggler rejoins the moment it stages. */
+const STAGE_GRACE_MS = 60_000
 /** How long an active group fight may be invisible to the roster/indexer before we conclude it ended. */
 const ACTIVE_GRACE_MS = 60_000
 /** How far (in blocks) a gatherer may range from a pack and still call its specialty "available". */
