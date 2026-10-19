@@ -1,7 +1,9 @@
 // Mastery quest automation: the daily/epoch dungeon completion quest.
 // If an active mastery quest points to a dungeon we can clear, prioritize it.
 
-import type { GameState, MasteryRow } from '../state/store.ts'
+import type { MasteryRow } from '@aresrpg/protocol'
+
+import type { GameState } from '../state/store.ts'
 import { dungeon_rooms, dungeon_city, worlds_by_id } from '../content/catalog.ts'
 import { DUNGEON_KEYS, held_key_amount, key_parked } from './dungeon.ts'
 import { score_group, DUNGEON_ROUNDS, MIN_WIN_RATE, describe_score } from './fight_preview.ts'
