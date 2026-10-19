@@ -251,13 +251,23 @@ const plan_group_dungeon = (
       }
     }
     if (chosen_seats === 0) {
-      // No seat count works — park with the max-seat diagnostic.
+      // No seat count clears every room. Name the room that actually FAILS: room 1 is often a 100%
+      // walkover while a later room is the wall, and always reporting room 1 printed a contradiction
+      // ("win_rate=100% ... < 80%") that reads as a gating bug rather than the real shortfall.
       const allies = planning_allies(ctx, character, max_seats)
-      const preview = score_group(character, room_to_mob_group(all_rooms[0]), allies, { rounds: DUNGEON_ROUNDS })
-      const pct = (preview.win_rate * 100).toFixed(0)
+      let failing = 0
+      let preview = score_group(character, room_to_mob_group(all_rooms[0]), allies, { rounds: DUNGEON_ROUNDS })
+      for (let ri = 0; ri < all_rooms.length; ri++) {
+        const room_preview = score_group(character, room_to_mob_group(all_rooms[ri]), allies, { rounds: DUNGEON_ROUNDS })
+        if (room_preview.win_rate < MIN_WIN_RATE) {
+          failing = ri
+          preview = room_preview
+          break
+        }
+      }
       log_warn(
         'dungeon',
-        `${dk.dungeon} room 1: group preview win_rate=${pct}% (${describe_score(preview)}) < 80% even at ${max_seats} seat(s) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
+        `${dk.dungeon} room ${failing + 1}: group preview win_rate=${(preview.win_rate * 100).toFixed(0)}% (${describe_score(preview)}) < 80% even at ${max_seats} seat(s) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
       )
       park_dungeon_key(blacklist, dk.key)
       continue

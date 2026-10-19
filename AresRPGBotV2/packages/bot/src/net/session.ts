@@ -1025,6 +1025,10 @@ export const play_loop = async (
         rt.stats = record_gather(rt.stats, gathered.item_type, gathered.quantity)
         digest_stats = record_gather(digest_stats, gathered.item_type, gathered.quantity)
         acted = true
+      } else {
+        // A skip used to be silent, which hid a dead gather pipeline for a whole night (the roster
+        // showed zero harvests and nothing said why). One line per chore is cheap next to that.
+        log_info('gather', `${character.name}: no harvest — ${gathered.reason}`)
       }
       // Advance the rotation so the all-resource gatherer sweeps FARMER → HERBALIST → MINER.
       if (chore.kind === 'gather_all' || chore.kind === 'gather_all_craft') rt.gather_cursor = (rt.gather_cursor + 1) % GATHERING_JOBS.length

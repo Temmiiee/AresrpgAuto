@@ -23,10 +23,14 @@ import { custody_of, type ActionContext } from './context.ts'
 import type { GroupCandidate } from './fight_preview.ts'
 import type { Mover } from './travel.ts'
 
-/** How long a rendezvous may run before the party gives up and falls back to solo play. Long enough
- *  for a follower to hop its chain checkpoint (search_zone) across several zones at the speed law.
- *  Increased to 15 minutes to accommodate follower travel after leader roams. */
-const STAGE_TIMEOUT_MS = 900_000
+/** How long a rendezvous may run before the party gives up and falls back to solo play. The 15-minute
+ *  value this used to hold dated from when a leader could roam 20_000 blocks in one silent leg and
+ *  drag the rendezvous out of reach. The keep-together gate now bounds every group leg to PARTY_RADIUS
+ *  (2_000, ~3 min at the foot speed law) BEFORE the rendezvous is planned, so a leg that still cannot
+ *  be proven after 5 minutes is genuinely stuck — and every one of those minutes is a minute the whole
+ *  party is not fighting. 5 min leaves >60% headroom over the worst reachable leg while bounding a
+ *  dead rendezvous to a fifth of the old wait. */
+const STAGE_TIMEOUT_MS = 300_000
 /** How long a rendezvous waits for a still-un-staged follower before writing it off as a straggler
  *  and re-planning for the members that DID arrive. A follower that has simply not caught up (a
  *  world-join drops it at the map centre, ~14k blocks and ~20 min out) would otherwise hold the
