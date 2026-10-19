@@ -122,15 +122,30 @@ export const gather_once = async (
   const pose = mover.pose()
   const held = state.inventory
   const unavailable = unavailable_item_ids(state)
+  // Tally WHY a pack was dropped so a barren run says whether the window held nothing, the job did
+  // not match, the tier was locked, or the tool was missing -- a generic message hid a dead gather
+  // pipeline for a whole night (every chore skipped with no hint of which filter was biting).
+  const window_packs = select_window_resource_packs(state).filter(({ zone }) => zone.world === world)
+  let job_out = 0
+  let tier_out = 0
+  let tool_out = 0
   const candidates = rank_gather_candidates(
-    select_window_resource_packs(state)
-      .filter(({ zone }) => zone.world === world)
+    window_packs
       .flatMap(({ pack }) => {
         const gatherable = gatherable_of(pack.item_type)
         if (!gatherable) return []
-        if (job !== undefined && gatherable.job !== job) return []
-        if (tier_unlock_level(gatherable.tier) > job_level_from_xp(Number(jobs[gatherable.job] ?? 0))) return []
-        if (!tool_ready(character, held, gatherable.job, unavailable)) return []
+        if (job !== undefined && gatherable.job !== job) {
+          job_out += 1
+          return []
+        }
+        if (tier_unlock_level(gatherable.tier) > job_level_from_xp(Number(jobs[gatherable.job] ?? 0))) {
+          tier_out += 1
+          return []
+        }
+        if (!tool_ready(character, held, gatherable.job, unavailable)) {
+          tool_out += 1
+          return []
+        }
         return [{ pack, gatherable }]
       })
       .filter(({ pack }) => max_distance === undefined || distance_to(pose, pack.x, pack.z) <= max_distance),
@@ -139,7 +154,10 @@ export const gather_once = async (
   )
 
   const target = candidates[0]
-  if (!target) return skipped('no tool-ready unlocked live packs in the tracked window')
+  if (!target)
+    return skipped(
+      `no tool-ready unlocked live packs in the tracked window (window=${window_packs.length} job≠${job_out} tier-locked=${tier_out} no-tool=${tool_out})`
+    )
 
   if (!(await ensure_tool(ctx, character, target.gatherable.job, unavailable))) {
     log_warn('gather', `no ${target.gatherable.job} tool owned; skipping ${target.pack.item_type}`)
