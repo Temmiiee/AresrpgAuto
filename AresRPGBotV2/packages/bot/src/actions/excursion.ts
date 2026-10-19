@@ -147,14 +147,26 @@ export const gather_members = (state: GameState, party: PartyState): readonly Ga
   return Object.freeze(members)
 }
 
-const tier_items = (job: GatheringJob, tier: number): readonly Readonly<{ item_type: string; world: string }>[] =>
+/** Every authored resource of `job` in `world` at `tier` (the world filter is what keeps a need
+ *  answerable: a tier that only grows in another world could never be satisfied by a same-world
+ *  relocation, which is all the excursion does). */
+const tier_items = (
+  job: GatheringJob,
+  tier: number,
+  world: string
+): readonly Readonly<{ item_type: string; world: string }>[] =>
   Object.freeze(
-    (resources_by_job[job] ?? []).filter((row) => row.tier === tier).map((row) => Object.freeze({ item_type: row.item_type, world: row.world }))
+    (resources_by_job[job] ?? [])
+      .filter((row) => row.world === world && row.tier === tier)
+      .map((row) => Object.freeze({ item_type: row.item_type, world: row.world }))
   )
 
-/** The highest tier whose unlock level the member's job level already meets (0 when none). */
-const highest_unlocked_tier = (job: GatheringJob, level: number): number => {
-  const tiers = [...new Set((resources_by_job[job] ?? []).map((row) => row.tier))]
+/** The highest tier of `job` that BOTH unlocks at `level` AND grows in `world` (0 when none). Scoped
+ *  to the member's own world on purpose: the globally-highest unlocked tier is usually the tier 4-6
+ *  line that only grows in yakutia, so a global need would always resolve cross-world, the excursion
+ *  would log "holding", and the party would never relocate to answer a gap it could actually fix. */
+const highest_unlocked_tier = (job: GatheringJob, level: number, world: string): number => {
+  const tiers = [...new Set((resources_by_job[job] ?? []).filter((row) => row.world === world).map((row) => row.tier))]
   let best = 0
   for (const tier of tiers) if (tier_unlock_level(tier) <= level) best = Math.max(best, tier)
   return best
@@ -177,13 +189,15 @@ export const gather_needs = (
     const pose =
       member.pose ?? (character.x !== undefined && character.z !== undefined ? { x: character.x, z: character.z } : null)
     if (!pose) continue
+    const world = character.world
+    if (!world) continue
     const unmet: GatherNeed[] = []
     let satisfied = false
     for (const job of member.tool_ready_jobs) {
       const level = job_level_from_xp(Number(character.jobs?.[job] ?? '0'))
-      const tier = highest_unlocked_tier(job, level)
+      const tier = highest_unlocked_tier(job, level, world)
       if (tier <= 0) continue
-      const items = tier_items(job, tier)
+      const items = tier_items(job, tier, world)
       if (items.length === 0) continue
       const item_set = new Set(items.map((row) => row.item_type))
       const present = packs.some(

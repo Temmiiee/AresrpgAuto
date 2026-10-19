@@ -61,6 +61,9 @@ describe('gather_needs', () => {
     const party = party_with(['omori'], { omori: { x: 0, z: 0 } })
     const needs = gather_needs(state, gather_members(state, party))
     expect(needs.map((need) => need.job)).toEqual(['HERBALIST'])
+    // The need is scoped to the member's OWN world: an unlocked-but-remote yakutia tier must not
+    // make a nauvis gap unresolvable (same-world relocation is all the excursion can do).
+    expect(needs.map((need) => need.world)).toEqual(['nauvis'])
   })
 
   it('skips a member that owns no tool for its job (travel cannot fix a missing tool)', () => {
