@@ -9,7 +9,7 @@ import { gather_time_ms, job_level_from_xp } from '@aresrpg/immutable'
 
 import { gatherable_of, tool_category_of_job, tier_unlock_level, type Gatherable, type GatheringJob } from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { is_paused_error, select_character, select_window_resource_packs, unavailable_item_ids } from '../state/selectors.ts'
+import { is_version_assert_error, select_character, select_window_resource_packs, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import type { Mover } from './travel.ts'
 
@@ -88,8 +88,8 @@ const ensure_tool = async (
       custody: custody_of(character),
     })
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('gather', `could not equip ${category} (${tool.id}) — game paused by the server`)
+    if (is_version_assert_error(error)) {
+      log_warn('gather', `could not equip ${category} (${tool.id}) — object versions stale or game paused`)
       return false
     }
     log_warn(
@@ -194,9 +194,9 @@ export const gather_once = async (
       custody: custody_of(character),
     })
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('gather', `${target.pack.item_type} at ${zx}:${zz} — game paused by the server`)
-      return Object.freeze({ kind: 'skipped', reason: 'game paused' })
+    if (is_version_assert_error(error)) {
+      log_warn('gather', `${target.pack.item_type} at ${zx}:${zz} — object versions stale or game paused`)
+      return Object.freeze({ kind: 'skipped', reason: 'versions stale' })
     }
     throw error
   }
@@ -230,9 +230,9 @@ export const gather_once = async (
       custody: custody_of(character),
     })
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('gather', `resolve_ambush at ${zx}:${zz} — game paused by the server`)
-      return Object.freeze({ kind: 'skipped', reason: 'game paused' })
+    if (is_version_assert_error(error)) {
+      log_warn('gather', `resolve_ambush at ${zx}:${zz} — object versions stale or game paused`)
+      return Object.freeze({ kind: 'skipped', reason: 'versions stale' })
     }
     throw error
   }

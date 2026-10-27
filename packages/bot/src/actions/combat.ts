@@ -28,7 +28,7 @@ import type {
 
 import { catalog_spell_sources } from '../content/fight_sources.ts'
 import { log_info, log_warn, log_debug } from '../shared/logger.ts'
-import { active_fight_of, chain_now, is_paused_error, select_character, select_window_mob_groups } from '../state/selectors.ts'
+import { active_fight_of, chain_now, is_version_assert_error, select_character, select_window_mob_groups } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import { describe_score, screen_groups, viable_ranking, type GroupCandidate } from './fight_preview.ts'
@@ -147,9 +147,9 @@ const drive_placement = async (
     try {
       placed = await ctx.sdk.fight.place({ fight: contract.id, fighter_idx: BigInt(seat), cell })
     } catch (error) {
-      if (is_paused_error(error)) {
-        log_warn('combat', `place seat ${seat} in ${contract.id} — game paused by the server`)
-        return { kind: 'waiting_turn', detail: 'game paused' }
+      if (is_version_assert_error(error)) {
+        log_warn('combat', `place seat ${seat} in ${contract.id} — object versions stale or game paused`)
+        return { kind: 'waiting_turn', detail: 'versions stale' }
       }
       throw error
     }
@@ -167,9 +167,9 @@ const drive_placement = async (
   try {
     readied = await ctx.sdk.fight.ready({ fight: contract.id, fighter_idx: BigInt(seat) })
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('combat', `ready seat ${seat} in ${contract.id} — game paused by the server`)
-      return { kind: 'waiting_turn', detail: 'game paused' }
+    if (is_version_assert_error(error)) {
+      log_warn('combat', `ready seat ${seat} in ${contract.id} — object versions stale or game paused`)
+      return { kind: 'waiting_turn', detail: 'versions stale' }
     }
     throw error
   }
@@ -204,9 +204,9 @@ const drive_turn = async (
   try {
     receipt = await ctx.sdk.fight.commit_turn({ fight: contract.id, actions })
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('combat', `commit turn ${identity} — game paused by the server`)
-      return { kind: 'waiting_turn', detail: 'game paused' }
+    if (is_version_assert_error(error)) {
+      log_warn('combat', `commit turn ${identity} — object versions stale or game paused`)
+      return { kind: 'waiting_turn', detail: 'versions stale' }
     }
     throw error
   }
@@ -362,10 +362,10 @@ export const engage_target = async (
     log_info('combat', `engaged group ${group.index} at ${group.x},${group.z} -> fight ${receipt.fight}`)
     return { kind: 'engaged', fight: receipt.fight, detail: `${group.members.length} mob(s)` }
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('combat', `engage failed (group ${group.index}) — game paused by the server`)
+    if (is_version_assert_error(error)) {
+      log_warn('combat', `engage failed (group ${group.index}) — object versions stale or game paused`)
       ctx.claims.release(claimed, ctx.character_id)
-      return { kind: 'skipped', detail: 'game paused' }
+      return { kind: 'skipped', detail: 'versions stale' }
     }
     // A refused engage (stale group, custody race, gas) must never crash the character loop: drop
     // the claim so the party can retry the group, and let the next pass re-screen fresh state.
@@ -401,8 +401,8 @@ const close_fight = async (ctx: ActionContext, fight: string): Promise<void> => 
     ctx.ledger.append({ kind: 'fight_close', digest: receipt.digest, detail: { fight } })
     log_info('combat', `closed fight ${fight}`)
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('combat', `close ${fight} failed — game paused by the server`)
+    if (is_version_assert_error(error)) {
+      log_warn('combat', `close ${fight} failed — object versions stale or game paused`)
       return
     }
     log_warn('combat', `close ${fight} failed: ${message_of(error)}`)
@@ -481,8 +481,8 @@ const settle_one = async (
     ctx.fight_runtimes.drop(fight)
     return report
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('combat', `settle ${fight} failed — game paused by the server`)
+    if (is_version_assert_error(error)) {
+      log_warn('combat', `settle ${fight} failed — object versions stale or game paused`)
       return null
     }
     log_warn('combat', `settle ${fight} failed: ${message_of(error)}`)

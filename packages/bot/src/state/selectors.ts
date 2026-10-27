@@ -21,6 +21,11 @@ import { zone_key, type ChainClock, type GameState } from './store.ts'
  *  chain has moved past what the projection knows, so a race is likely. */
 export const MAX_INDEXING_LAG = 300
 
+/** The freshness gate will not pass until the projection has folded at least this many packets —
+ *  prevents submitting txs against a still-empty/partial projection right after connect, which
+ *  would abort with `version::assert_latest` (stale object versions). */
+export const MIN_PACKETS_SEEN = 10
+
 export type Freshness = Readonly<{ ok: true }> | Readonly<{ ok: false; reason: string }>
 
 /** The interval during which a chain timestamp observation is a usable estimate. */
@@ -46,13 +51,16 @@ export const freshness = (state: GameState, now_ms: number): Freshness => {
   if (state.indexing_lag > MAX_INDEXING_LAG)
     return Object.freeze({ ok: false, reason: `indexing lag ${state.indexing_lag} > ${MAX_INDEXING_LAG}` })
   if (chain_now(state.chain_clock, now_ms) === null) return Object.freeze({ ok: false, reason: 'chain clock stale' })
+  if (state.packets_seen < MIN_PACKETS_SEEN)
+    return Object.freeze({ ok: false, reason: `projection still syncing (${state.packets_seen} packets)` })
   return Object.freeze({ ok: true })
 }
 
-/** A transaction that failed with `version::assert_latest` abort 601: the game server is paused.
- *  The chain rejects every object-mutation tx while frozen, so the bot should hold and wait
- *  instead of retrying blindly (which only burns gas and logs noise). */
-export const is_paused_error = (error: unknown): boolean => {
+/** A transaction that failed with `version::assert_latest` abort 601: the chain rejected the tx
+ *  because our object versions were stale (the projection hasn't caught up), OR the game server is
+ *  paused. Distinguish: if `state.frozen` is true it's a paused game; otherwise it's stale state.
+ *  The bot should hold and wait either way — never retry blindly (which only burns gas). */
+export const is_version_assert_error = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error)
   return message.includes('::version::assert_latest') && /abort code:\s*601\b/i.test(message)
 }

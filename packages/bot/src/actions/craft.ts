@@ -27,7 +27,7 @@ import {
   type RecipeDetail,
 } from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { is_paused_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
+import { is_version_assert_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
 
 export type CraftPlan = Readonly<{
@@ -392,8 +392,8 @@ export const craft_once = async (ctx: ActionContext, plan: CraftPlan): Promise<C
       input_item_ids: plan.input_item_ids,
     }
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('craft', `craft ${plan.output_type} failed — game paused by the server`)
+    if (is_version_assert_error(error)) {
+      log_warn('craft', `craft ${plan.output_type} failed — object versions stale or game paused`)
       return { success: false, outcome: 'paused', output_type: plan.output_type, successes: 0, input_item_ids: [] }
     }
     const msg = error instanceof Error ? error.message : String(error)

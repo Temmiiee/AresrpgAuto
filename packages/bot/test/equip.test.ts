@@ -69,6 +69,7 @@ const fresh_state = (inventory: readonly ItemRow[], characters: readonly Charact
   frozen: false,
   indexing_lag: 0,
   chain_clock: { chain_ms: Date.now(), received_ms: Date.now() },
+  packets_seen: 20,
 })
 
 const context = (game: GameState, equip: unknown): unknown =>

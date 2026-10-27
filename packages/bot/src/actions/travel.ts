@@ -22,7 +22,7 @@ import {
   type CharacterRow,
 } from '@aresrpg/protocol'
 
-import { chain_now, checkpoint_of, is_paused_error } from '../state/selectors.ts'
+import { chain_now, checkpoint_of, is_version_assert_error } from '../state/selectors.ts'
 import { log_info, log_warn, sleep } from '../shared/logger.ts'
 import { custody_of, type ActionContext } from './context.ts'
 
@@ -259,10 +259,10 @@ export const create_mover = (ctx: ActionContext): Mover => {
         custody: custody_of(character),
       })
     } catch (error) {
-      if (is_paused_error(error)) {
-        log_warn('travel', `search_zone ${zx}:${zz} — game paused by the server`)
-        return
-      }
+    if (is_version_assert_error(error)) {
+      log_warn('travel', `search_zone ${zx}:${zz} — object versions stale or game paused`)
+      return
+    }
       throw error
     }
     log_info('travel', `zone ${character.world ?? ctx.world}:${zx}:${zz} searched at ${pose.x},${pose.z}`)

@@ -26,7 +26,7 @@ import {
 import { type SeedWorld } from '../content/catalog.ts'
 import { mob_template_of } from '../content/fight_sources.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { active_fight_of, is_paused_error, select_character, select_window_mob_groups, select_zone } from '../state/selectors.ts'
+import { active_fight_of, is_version_assert_error, select_character, select_window_mob_groups, select_zone } from '../state/selectors.ts'
 import { zone_key } from '../state/store.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import { nearest_candidates } from './fight_preview.ts'
@@ -197,9 +197,9 @@ export const create_roamer = (ctx: ActionContext): Roamer => {
       log_info('roam', `joined ${world}${receipt.joined.first_join ? ' (first join)' : ''}`)
       return outcome('joined', world)
     } catch (error) {
-      if (is_paused_error(error)) {
-        log_warn('roam', `join ${world} failed — game paused by the server`)
-        return outcome('skipped', `join ${world} failed: game paused`)
+      if (is_version_assert_error(error)) {
+        log_warn('roam', `join ${world} failed — object versions stale or game paused`)
+        return outcome('skipped', `join ${world} failed: versions stale`)
       }
       const detail = error instanceof Error ? error.message : String(error)
       log_warn('roam', `join ${world} failed: ${detail}`)

@@ -19,7 +19,7 @@ import type { CharacterRow } from '@aresrpg/protocol'
 
 import { dungeon_city, dungeon_rooms, worlds_by_id } from '../content/catalog.ts'
 import { log_debug, log_info, log_warn } from '../shared/logger.ts'
-import { active_fight_of, is_paused_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
+import { active_fight_of, is_version_assert_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import { DUNGEON_KEYS, DUNGEON_PARK_MS, held_key_amount, key_parked, park_dungeon_key, should_run_dungeons } from './dungeon.ts'
 import { safe_travel_to } from './roam.ts'
@@ -200,9 +200,9 @@ const enter_run = async (
     log_info('dungeon', `${character.name}: entered ${dk.dungeon} (burned ${dk.key})`)
     return outcome('entered', `entered ${dk.dungeon}`)
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('dungeon', `enter ${dk.dungeon} failed — game paused by the server`)
-      return outcome('skipped', `enter failed: game paused`)
+    if (is_version_assert_error(error)) {
+      log_warn('dungeon', `enter ${dk.dungeon} failed — object versions stale or game paused`)
+      return outcome('skipped', `enter failed: versions stale`)
     }
     log_warn('dungeon', `enter ${dk.dungeon} failed: ${message_of(error)}`)
     return outcome('skipped', `enter failed: ${message_of(error)}`)
@@ -321,8 +321,8 @@ export const follower_dungeon_step = async (ctx: ActionContext, mover: Mover): P
       await ctx.sdk.dungeon.abandon({ character_id: ctx.character_id, custody: custody_of(character) })
       log_info('dungeon', `${character.name}: abandoned a stale ${character.dungeon_run.dungeon} run`)
     } catch (error) {
-      if (is_paused_error(error)) {
-        log_warn('dungeon', `${character.name}: stale-run abandon skipped — game paused by the server`)
+      if (is_version_assert_error(error)) {
+        log_warn('dungeon', `${character.name}: stale-run abandon skipped — object versions stale or game paused`)
       } else {
         log_debug('dungeon', `${character.name}: stale-run abandon skipped (${message_of(error)})`)
       }
@@ -390,9 +390,9 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       log_info('dungeon', `${run.dungeon} room ${run.room} (${room.length} mobs) -> fight ${receipt.fight}`)
       return outcome('started', `${run.dungeon} room ${run.room} fight ${receipt.fight}`, receipt.fight)
     } catch (error) {
-      if (is_paused_error(error)) {
-        log_warn('dungeon', `start ${run.dungeon} room ${run.room} failed — game paused by the server`)
-        return outcome('skipped', `start failed: game paused`)
+      if (is_version_assert_error(error)) {
+        log_warn('dungeon', `start ${run.dungeon} room ${run.room} failed — object versions stale or game paused`)
+        return outcome('skipped', `start failed: versions stale`)
       }
       log_warn('dungeon', `start ${run.dungeon} room ${run.room} failed: ${message_of(error)}`)
       return outcome('skipped', `start failed: ${message_of(error)}`)
@@ -485,8 +485,8 @@ const abandon = async (ctx: ActionContext): Promise<void> => {
   try {
     await ctx.sdk.dungeon.abandon({ character_id: ctx.character_id, custody: custody_of(character) })
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('dungeon', `abandon failed — game paused by the server`)
+    if (is_version_assert_error(error)) {
+      log_warn('dungeon', `abandon failed — object versions stale or game paused`)
     } else {
       log_warn('dungeon', `abandon failed: ${message_of(error)}`)
     }

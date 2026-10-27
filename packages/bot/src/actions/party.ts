@@ -16,7 +16,7 @@ import type { CharacterRow } from '@aresrpg/protocol'
 
 import { config } from '../config.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { active_fight_of, is_paused_error, select_character } from '../state/selectors.ts'
+import { active_fight_of, is_version_assert_error, select_character } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { claim_key, engage_target, pick_engage_target } from './combat.ts'
 import { custody_of, type ActionContext } from './context.ts'
@@ -379,8 +379,8 @@ export const join_followers = async (ctx: ActionContext, followers: readonly str
       access: 0,
     })
   } catch (error) {
-    if (is_paused_error(error)) {
-      log_warn('party', `join ${followers.length} partner(s) to ${fight} — game paused by the server`)
+    if (is_version_assert_error(error)) {
+      log_warn('party', `join ${followers.length} partner(s) to ${fight} — object versions stale or game paused`)
       return 0
     }
     throw error
@@ -408,8 +408,8 @@ export const join_dungeon_followers = async (
       await ctx.sdk.dungeon.join_fight({ fight, character_id: id, custody: custody_of(character) })
       joined.push(id)
     } catch (error) {
-      if (is_paused_error(error)) {
-        log_warn('party', `dungeon seat join failed for ${id} — game paused by the server`)
+      if (is_version_assert_error(error)) {
+        log_warn('party', `dungeon seat join failed for ${id} — object versions stale or game paused`)
         continue
       }
       log_warn('party', `dungeon seat join failed for ${id}: ${error instanceof Error ? error.message : String(error)}`)
@@ -498,8 +498,8 @@ export const leader_group_step = async (
         try {
           await join_followers(ctx, followers, outcome.fight)
         } catch (error) {
-          if (is_paused_error(error)) {
-            log_warn('party', `join failed — game paused by the server`)
+          if (is_version_assert_error(error)) {
+            log_warn('party', `join failed — object versions stale or game paused`)
           } else {
             log_warn('party', `join failed: ${error instanceof Error ? error.message : String(error)}`)
           }
