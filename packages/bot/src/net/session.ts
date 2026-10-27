@@ -215,6 +215,9 @@ type CharRuntime = {
   last_key_craft_attempt_ms: number | null
   /** last time this character's chore genuinely acted (gathered or crafted); the forced window reads it */
   last_chore_ms: number
+  /** true on this character's very first pass — auto-equip is deferred past it so the character can
+   *  land its first settle/chore/engage before gear swaps start firing. */
+  first_pass: boolean
 }
 
 /** The forced-chore floor: once this character has gone a full interval with NO chore, its pass runs
@@ -345,13 +348,16 @@ export const play_loop = async (
   // the same handler fires again on recovery. A hard stop is only the terminal statuses above.
 
   // ── discover characters from the roster ────────────────────────────
+  // Poll fast at first (200ms × 10 = 2s) so a responsive server doesn't cost 30s, then fall back
+  // to 1s cadence. The server pushes `packet/characters` on connect, so a healthy link populates
+  // the roster within a beat.
   let roster_ready = false
   for (let i = 0; i < 30; i++) {
     if (game_state.characters.length > 0) {
       roster_ready = true
       break
     }
-    await sleep(1000)
+    await sleep(i < 10 ? 200 : 1000)
   }
   if (!roster_ready) {
     log_error('session', 'no characters found in roster after 30s')
@@ -472,6 +478,7 @@ export const play_loop = async (
       awaiting_fight_ms: null,
       last_key_craft_attempt_ms: null,
       last_chore_ms: Date.now(),
+      first_pass: true,
     })
   }
 
@@ -721,8 +728,10 @@ export const play_loop = async (
     }
 
     // 3a. auto-equip. The first pass that meets a new equipment id gears the WHOLE party (coalesced),
-    // so a drop is equipped the moment it lands rather than at the next restart.
-    if (take_gear_trigger(game_state)) request_auto_equip()
+    // so a drop is equipped the moment it lands rather than at the next restart. Deferred past the
+    // very first pass so the character can land its first settle/chore/engage before gear swaps fire.
+    if (!rt.first_pass && take_gear_trigger(game_state)) request_auto_equip()
+    rt.first_pass = false
 
     // 3b. group fight: while the party wants to fight as ONE side, a follower must not wander off to
     // a chore — that strands the rendezvous and forces a fresh multi-minute convergence. So the group
@@ -1173,6 +1182,10 @@ export const play_loop = async (
         const row = game_state.characters.find((c) => c.id === rt.character.id)
         return row ? [row] : []
       })
+    // Don't slam `compute_strategy` on the very first tick: let the character loops land their
+    // first actions (settle, chore, engage) before the brain burns CPU on full-seed simulation.
+    // Subsequent passes run on the configured interval.
+    await sleep(Math.min(config.strategy_interval_ms, 5_000))
     while (!stopped) {
       let ran = false
       try {
