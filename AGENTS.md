@@ -1,4 +1,4 @@
-# AGENTS.md — context for working on AresRPGBotV2
+# AGENTS.md — context for working on AresRPGAuto
 
 This file is the orientation an AI agent (or a new human) needs before touching the code. Read it
 first. It records the hard invariants, the runtime shape, and the traps that have already cost time.
@@ -37,7 +37,7 @@ If you ever add a second `create_session` for the same address, you have reintro
 ## Layout
 
 ```
-AresRPGBotV2/
+AresRPGAuto/
   packages/
     bot/           the bot itself (all app code lives here)
       src/
@@ -190,7 +190,7 @@ object) enforces the two consequences:
   converge in seconds.
 
 A rendezvous that cannot form within `STAGE_TIMEOUT_MS` (300 s) is abandoned and retried; after
-`MAX_STAGE_FAILURES` (3) the party plays solo for `GROUP_COOLDOWN_MS` (5 min) before trying again.
+`MAX_STAGE_FAILURES` (5) the party plays solo for `GROUP_COOLDOWN_MS` (60 s) before trying again.
 `ACTIVE_GRACE_MS` (60 s) covers the roster/indexer lag after an engage.
 
 

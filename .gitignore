@@ -1,9 +1,13 @@
-.aider*
-
-# Local-only: nested clone of aresrpg/aresrpg (reference for sync_vendor --check; not tracked).
-aresrpg/
-
-# Build / state artifacts.
 node_modules/
 dist/
 *.log
+
+# Local runtime config (may hold a Discord webhook URL) — commit .env.example instead.
+.env
+!.env.example
+
+# zkLogin session cache (contains an ephemeral keypair + ZK proof) — never commit.
+.enoki-session.json
+
+# Durable bot state: pending transaction records + activity ledger.
+.state/

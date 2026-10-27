@@ -5,10 +5,10 @@
   "type": "module",
   "description": "Headless AresRPG automation bot: zkLogin auth, authenticated live-state websocket, gather/fight/craft/jobs farming, Discord reporting.",
   "scripts": {
-    "start": "bun run src/main.ts",
-    "login": "bun run src/cli/login.ts",
-    "doctor": "bun run src/cli/doctor.ts",
-    "status": "bun run src/cli/status.ts",
+    "start": "bun run src/main.ts run",
+    "login": "bun run src/main.ts login",
+    "doctor": "bun run src/main.ts doctor",
+    "status": "bun run src/main.ts status",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

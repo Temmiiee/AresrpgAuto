@@ -333,6 +333,12 @@ export const play_loop = async (
       log_error('session', `auth rejected: ${status.reason}`)
       notify(`auth rejected (${status.reason}) — stopping`, 'error')
     }
+    if (status.kind === 'failed') {
+      log_warn('session', `connection failed: ${status.error}`)
+    }
+    if (status.kind === 'violation') {
+      log_warn('session', `connection violation: ${status.reason}`)
+    }
   }
 
   // The link is long-lived: a transient drop keeps this session object and reconnects in place, so
@@ -404,7 +410,7 @@ export const play_loop = async (
   // (below) is the recurring "what it is doing" follow-up.
   notify(
     [
-      `✅ AresRPGBotV2 started — ${party_label}`,
+      `✅ AresRPGAuto started — ${party_label}`,
       `leader=${leader.name} · group=${toggles.group} · world=${leader.world ?? config.world ?? WORLD_FALLBACK}`,
       ...job_lines,
     ].join('\n'),
@@ -1148,7 +1154,7 @@ export const play_loop = async (
       }
       const body = format_summary(digest_stats, total_xp, jobs)
       log_info('session', `digest: ${body.replace(/\n/g, ' | ')}`)
-      notify(`📊 AresRPGBotV2 digest — last ${config.digest_minutes}m · ${party_label}\n${body}`, 'info')
+      notify(`📊 AresRPGAuto digest — last ${config.digest_minutes}m · ${party_label}\n${body}`, 'info')
       digest_stats = empty_stats
     }
   }
