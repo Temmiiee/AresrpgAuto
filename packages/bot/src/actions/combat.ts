@@ -28,7 +28,7 @@ import type {
 
 import { catalog_spell_sources } from '../content/fight_sources.ts'
 import { log_info, log_warn, log_debug } from '../shared/logger.ts'
-import { active_fight_of, chain_now, select_character, select_window_mob_groups } from '../state/selectors.ts'
+import { active_fight_of, chain_now, is_paused_error, select_character, select_window_mob_groups } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import { describe_score, screen_groups, viable_ranking, type GroupCandidate } from './fight_preview.ts'
@@ -143,7 +143,16 @@ const drive_placement = async (
     // clears `place_cell`, and `fighter.ready` ends placement).
     if (ctx.fight_runtimes.placement_sent(contract.id, seat, 'place'))
       return { kind: 'waiting_turn', detail: 'placed; awaiting the checkpoint' }
-    const placed = await ctx.sdk.fight.place({ fight: contract.id, fighter_idx: BigInt(seat), cell })
+    let placed
+    try {
+      placed = await ctx.sdk.fight.place({ fight: contract.id, fighter_idx: BigInt(seat), cell })
+    } catch (error) {
+      if (is_paused_error(error)) {
+        log_warn('combat', `place seat ${seat} in ${contract.id} — game paused by the server`)
+        return { kind: 'waiting_turn', detail: 'game paused' }
+      }
+      throw error
+    }
     ctx.fight_runtimes.mark_placement_sent(contract.id, seat, 'place')
     ctx.ledger.append({ kind: 'fight_place', digest: placed.digest, detail: { fight: contract.id, seat } })
     log_info('combat', `placed seat ${seat} at ${cell} in ${contract.id}`)
@@ -154,7 +163,16 @@ const drive_placement = async (
   // after its accepted ready, before the checkpoint showed `fighter.ready`.
   if (ctx.fight_runtimes.placement_sent(contract.id, seat, 'ready'))
     return { kind: 'waiting_turn', detail: 'readied; awaiting the checkpoint' }
-  const readied = await ctx.sdk.fight.ready({ fight: contract.id, fighter_idx: BigInt(seat) })
+  let readied
+  try {
+    readied = await ctx.sdk.fight.ready({ fight: contract.id, fighter_idx: BigInt(seat) })
+  } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('combat', `ready seat ${seat} in ${contract.id} — game paused by the server`)
+      return { kind: 'waiting_turn', detail: 'game paused' }
+    }
+    throw error
+  }
   ctx.fight_runtimes.mark_placement_sent(contract.id, seat, 'ready')
   ctx.ledger.append({
     kind: 'fight_ready',
@@ -182,7 +200,16 @@ const drive_turn = async (
   const floor = Number(contract.turn_started_ms) + Number(CONTRACT_CONSTANTS.turn_min_ms) + TURN_GUARD_MS
   if (observed < floor) return { kind: 'waiting_turn', detail: `turn floor in ${floor - observed}ms` }
 
-  const receipt = await ctx.sdk.fight.commit_turn({ fight: contract.id, actions })
+  let receipt
+  try {
+    receipt = await ctx.sdk.fight.commit_turn({ fight: contract.id, actions })
+  } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('combat', `commit turn ${identity} — game paused by the server`)
+      return { kind: 'waiting_turn', detail: 'game paused' }
+    }
+    throw error
+  }
   ctx.fight_runtimes.mark_committed(contract.id, identity)
   const summary = describe_actions(actions) || 'pass'
   ctx.ledger.append({
@@ -335,6 +362,11 @@ export const engage_target = async (
     log_info('combat', `engaged group ${group.index} at ${group.x},${group.z} -> fight ${receipt.fight}`)
     return { kind: 'engaged', fight: receipt.fight, detail: `${group.members.length} mob(s)` }
   } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('combat', `engage failed (group ${group.index}) — game paused by the server`)
+      ctx.claims.release(claimed, ctx.character_id)
+      return { kind: 'skipped', detail: 'game paused' }
+    }
     // A refused engage (stale group, custody race, gas) must never crash the character loop: drop
     // the claim so the party can retry the group, and let the next pass re-screen fresh state.
     ctx.claims.release(claimed, ctx.character_id)
@@ -369,6 +401,10 @@ const close_fight = async (ctx: ActionContext, fight: string): Promise<void> => 
     ctx.ledger.append({ kind: 'fight_close', digest: receipt.digest, detail: { fight } })
     log_info('combat', `closed fight ${fight}`)
   } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('combat', `close ${fight} failed — game paused by the server`)
+      return
+    }
     log_warn('combat', `close ${fight} failed: ${message_of(error)}`)
   }
 }
@@ -445,6 +481,10 @@ const settle_one = async (
     ctx.fight_runtimes.drop(fight)
     return report
   } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('combat', `settle ${fight} failed — game paused by the server`)
+      return null
+    }
     log_warn('combat', `settle ${fight} failed: ${message_of(error)}`)
     return null
   }

@@ -49,6 +49,14 @@ export const freshness = (state: GameState, now_ms: number): Freshness => {
   return Object.freeze({ ok: true })
 }
 
+/** A transaction that failed with `version::assert_latest` abort 601: the game server is paused.
+ *  The chain rejects every object-mutation tx while frozen, so the bot should hold and wait
+ *  instead of retrying blindly (which only burns gas and logs noise). */
+export const is_paused_error = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('::version::assert_latest') && /abort code:\s*601\b/i.test(message)
+}
+
 /** The character the bot drives: the configured id when set, else the first row in the roster the
  *  signer owns. Returns null while the roster is empty (the server has not pushed it yet). */
 export const select_character = (state: GameState, preferred_id: string | null): CharacterRow | null => {

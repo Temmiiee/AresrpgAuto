@@ -671,6 +671,15 @@ export const play_loop = async (
     const live_pose = mover.pose()
     party_state.poses.set(character.id, { x: live_pose.x, z: live_pose.z })
 
+    // 0. freshness gate — refuse to submit ANY transaction (settle, drive, engage, gather, equip)
+    // while the link is unauthenticated, gameplay is frozen, indexing lag is unacceptable, or the
+    // chain clock is stale. Placed BEFORE settle/drive so a paused game never emits a single tx.
+    const fresh = freshness(game_state, Date.now())
+    if (!fresh.ok) {
+      log_warn('session', `${character.name}: holding — ${fresh.reason}`)
+      return idle_sleep_ms
+    }
+
     // 1. reconcile any ended fight (settle loot, then close the fight object)
     log_debug(
       'pass',
@@ -709,13 +718,6 @@ export const play_loop = async (
     if (rt.awaiting_fight_ms !== null) {
       if (Date.now() - rt.awaiting_fight_ms < ENGAGE_GRACE_MS) return idle_sleep_ms
       rt.awaiting_fight_ms = null
-    }
-
-    // 3. a spendy field action needs a fresh projection + live chain clock
-    const fresh = freshness(game_state, Date.now())
-    if (!fresh.ok) {
-      log_warn('session', `${character.name}: holding — ${fresh.reason}`)
-      return idle_sleep_ms
     }
 
     // 3a. auto-equip. The first pass that meets a new equipment id gears the WHOLE party (coalesced),
