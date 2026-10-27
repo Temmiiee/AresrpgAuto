@@ -29,7 +29,7 @@ export const MIN_PACKETS_SEEN = 10
 export type Freshness = Readonly<{ ok: true }> | Readonly<{ ok: false; reason: string }>
 
 /** The interval during which a chain timestamp observation is a usable estimate. */
-const MAX_SAMPLE_AGE_MS = 15_000
+const MAX_SAMPLE_AGE_MS = 30_000
 
 /** Chain time, or null when the observation is missing or has expired. Wall-clock passage never
  *  fabricates chain time (chain_clock.ts law) — it only ages a real observation toward expiry. */
@@ -42,12 +42,15 @@ export const chain_now = (clock: ChainClock, monotonic_ms: number): number | nul
 }
 
 /** The pre-transaction gate: connected, gameplay unfrozen, projection caught up, chain clock live.
- *  Unknown is treated exactly like stale — the bot never guesses past a missing fact. */
+ *  Unknown indexing lag is a warning, not a hard block — the chain will reject truly stale txs with
+ *  `version::assert_latest` (which we handle), so holding forever against a slow network is worse
+ *  than occasionally racing. */
 export const freshness = (state: GameState, now_ms: number): Freshness => {
   if (!state.connected) return Object.freeze({ ok: false, reason: 'link not authenticated' })
   if (state.frozen === null) return Object.freeze({ ok: false, reason: 'gameplay state unknown' })
   if (state.frozen) return Object.freeze({ ok: false, reason: 'gameplay frozen by the server' })
-  if (state.indexing_lag === null) return Object.freeze({ ok: false, reason: 'indexing lag unknown' })
+  if (state.indexing_lag === null)
+    return Object.freeze({ ok: true, reason: 'indexing lag unknown (warning)' })
   if (state.indexing_lag > MAX_INDEXING_LAG)
     return Object.freeze({ ok: false, reason: `indexing lag ${state.indexing_lag} > ${MAX_INDEXING_LAG}` })
   if (chain_now(state.chain_clock, now_ms) === null) return Object.freeze({ ok: false, reason: 'chain clock stale' })
