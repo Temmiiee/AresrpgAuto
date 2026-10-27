@@ -218,6 +218,10 @@ type CharRuntime = {
   /** true on this character's very first pass — auto-equip is deferred past it so the character can
    *  land its first settle/chore/engage before gear swaps start firing. */
   first_pass: boolean
+  /** last time a tx was rejected with `version::assert_latest` abort 601 (stale object versions).
+   *  While within `VERSIONS_STALE_COOLDOWN_MS` of it, the character skips txs so the WebSocket can
+   *  push fresh object versions instead of racing the chain on every 3s pass. */
+  last_assert_latest_ms: number
 }
 
 /** The forced-chore floor: once this character has gone a full interval with NO chore, its pass runs
@@ -226,6 +230,10 @@ type CharRuntime = {
  *  not reset it. Disabled when `BOT_CHORE_INTERVAL_MS` is 0. */
 const chore_due = (rt: CharRuntime): boolean =>
   config.chore_interval_ms > 0 && Date.now() - rt.last_chore_ms >= config.chore_interval_ms
+
+/** How long a character skips txs after an `assert_latest` rejection, giving the WebSocket time to
+ *  push fresh object versions before the next attempt. */
+const VERSIONS_STALE_COOLDOWN_MS = 10_000
 
 /** Human-readable one-liner for a chore role, logged at startup so it is obvious what each
  *  character will do with its non-combat time. */
@@ -479,6 +487,7 @@ export const play_loop = async (
       last_key_craft_attempt_ms: null,
       last_chore_ms: Date.now(),
       first_pass: true,
+      last_assert_latest_ms: 0,
     })
   }
 
@@ -687,6 +696,18 @@ export const play_loop = async (
       return idle_sleep_ms
     }
 
+    // Cooldown after a `version::assert_latest` rejection: wait for the WebSocket to push fresh
+    // object versions before retrying txs, instead of racing the chain on every 3s pass.
+    if (Date.now() - rt.last_assert_latest_ms < VERSIONS_STALE_COOLDOWN_MS) {
+      log_debug(
+        'session',
+        `${character.name}: versions stale cooldown — ${Math.round(
+          (VERSIONS_STALE_COOLDOWN_MS - (Date.now() - rt.last_assert_latest_ms)) / 1000
+        )}s left`
+      )
+      return idle_sleep_ms
+    }
+
     // 1. reconcile any ended fight (settle loot, then close the fight object)
     log_debug(
       'pass',
@@ -717,6 +738,7 @@ export const play_loop = async (
       log_debug('pass', `${character.name}: fight outcome=${outcome.kind}${outcome.detail ? ` (${outcome.detail})` : ''}`)
       if (outcome.kind !== 'waiting_turn' && outcome.kind !== 'not_our_turn')
         log_info('session', `${character.name}: fight ${outcome.kind}${outcome.detail ? ` (${outcome.detail})` : ''}`)
+      if (outcome.detail === 'versions stale') rt.last_assert_latest_ms = Date.now()
       return FIGHT_POLL_MS
     }
 
@@ -990,6 +1012,7 @@ export const play_loop = async (
           return idle_sleep_ms
         }
         if (engaged.kind === 'traveling') return idle_sleep_ms
+        if (engaged.detail === 'versions stale') rt.last_assert_latest_ms = Date.now()
       }
     }
 
@@ -1046,6 +1069,7 @@ export const play_loop = async (
         // A skip used to be silent, which hid a dead gather pipeline for a whole night (the roster
         // showed zero harvests and nothing said why). One line per chore is cheap next to that.
         log_info('gather', `${character.name}: no harvest — ${gathered.reason}`)
+        if (gathered.reason === 'versions stale') rt.last_assert_latest_ms = Date.now()
       }
       // Advance the rotation so the all-resource gatherer sweeps FARMER → HERBALIST → MINER.
       if (chore.kind === 'gather_all' || chore.kind === 'gather_all_craft') rt.gather_cursor = (rt.gather_cursor + 1) % GATHERING_JOBS.length
@@ -1084,7 +1108,10 @@ export const play_loop = async (
       const craft_priorities = [...KEY_OUTPUTS, ...current_gear_goals()]
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
         const crafted = await drive_craft(ctx, burned, craft_priorities)
-        if (!crafted.success) break
+        if (!crafted.success) {
+          if (crafted.outcome === 'paused') rt.last_assert_latest_ms = Date.now()
+          break
+        }
         for (const id of crafted.input_item_ids) burned.add(id)
         rt.stats = record_craft(rt.stats, crafted.output_type, crafted.successes)
         digest_stats = record_craft(digest_stats, crafted.output_type, crafted.successes)
