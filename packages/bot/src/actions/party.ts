@@ -16,7 +16,7 @@ import type { CharacterRow } from '@aresrpg/protocol'
 
 import { config } from '../config.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { active_fight_of, select_character } from '../state/selectors.ts'
+import { active_fight_of, is_paused_error, select_character } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { claim_key, engage_target, pick_engage_target } from './combat.ts'
 import { custody_of, type ActionContext } from './context.ts'
@@ -369,13 +369,22 @@ export const join_followers = async (ctx: ActionContext, followers: readonly str
   if (followers.length === 0) return 0
   const leader = select_character(ctx.state(), ctx.character_id)
   if (!leader) return 0
-  const receipt = await ctx.sdk.fight.join_many({
-    fight,
-    character_ids: followers,
-    custody: custody_of(leader),
-    team: 0,
-    access: 0,
-  })
+  let receipt
+  try {
+    receipt = await ctx.sdk.fight.join_many({
+      fight,
+      character_ids: followers,
+      custody: custody_of(leader),
+      team: 0,
+      access: 0,
+    })
+  } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('party', `join ${followers.length} partner(s) to ${fight} — game paused by the server`)
+      return 0
+    }
+    throw error
+  }
   ctx.ledger.append({ kind: 'fight_join_group', digest: receipt.digest, detail: { fight, members: followers } })
   log_info('party', `joined ${followers.length} partner(s) to ${fight}`)
   return followers.length
@@ -399,6 +408,10 @@ export const join_dungeon_followers = async (
       await ctx.sdk.dungeon.join_fight({ fight, character_id: id, custody: custody_of(character) })
       joined.push(id)
     } catch (error) {
+      if (is_paused_error(error)) {
+        log_warn('party', `dungeon seat join failed for ${id} — game paused by the server`)
+        continue
+      }
       log_warn('party', `dungeon seat join failed for ${id}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -485,7 +498,11 @@ export const leader_group_step = async (
         try {
           await join_followers(ctx, followers, outcome.fight)
         } catch (error) {
-          log_warn('party', `join failed: ${error instanceof Error ? error.message : String(error)}`)
+          if (is_paused_error(error)) {
+            log_warn('party', `join failed — game paused by the server`)
+          } else {
+            log_warn('party', `join failed: ${error instanceof Error ? error.message : String(error)}`)
+          }
         }
         party.fight = outcome.fight
         party.phase = 'active'

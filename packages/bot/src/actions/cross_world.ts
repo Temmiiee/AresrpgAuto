@@ -26,7 +26,7 @@ import {
 } from '../content/catalog.ts'
 import { WORLD_CENTER } from '../content/zone_map.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { active_fight_of, select_character, unavailable_item_ids } from '../state/selectors.ts'
+import { active_fight_of, is_paused_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import { gather_once } from './gather.ts'
@@ -157,6 +157,10 @@ export const create_cross_world_gatherer = (ctx: ActionContext, home: string): C
       log_info('cross_world', `joined ${world}${receipt.joined.first_join ? ' (first join)' : ''}`)
       return true
     } catch (error) {
+      if (is_paused_error(error)) {
+        log_warn('cross_world', `join ${world} failed — game paused by the server`)
+        return false
+      }
       log_warn('cross_world', `join ${world} failed: ${message_of(error)}`)
       return false
     }

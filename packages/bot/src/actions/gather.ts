@@ -9,7 +9,7 @@ import { gather_time_ms, job_level_from_xp } from '@aresrpg/immutable'
 
 import { gatherable_of, tool_category_of_job, tier_unlock_level, type Gatherable, type GatheringJob } from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { select_character, select_window_resource_packs, unavailable_item_ids } from '../state/selectors.ts'
+import { is_paused_error, select_character, select_window_resource_packs, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import type { Mover } from './travel.ts'
 
@@ -88,6 +88,10 @@ const ensure_tool = async (
       custody: custody_of(character),
     })
   } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('gather', `could not equip ${category} (${tool.id}) — game paused by the server`)
+      return false
+    }
     log_warn(
       'gather',
       `could not equip ${category} (${tool.id}): ${error instanceof Error ? error.message : String(error)}`
@@ -175,18 +179,27 @@ export const gather_once = async (
   await mover.ensure_zone(false)
 
   const inventory = ctx.state().inventory
-  const receipt = await ctx.sdk.character.gather({
-    character_id: ctx.character_id,
-    world,
-    zone_x: zx,
-    zone_z: zz,
-    pack_index: target.pack.index,
-    item_type: target.pack.item_type,
-    rare_item_type: target.gatherable.rare_item_type,
-    existing: find_held(inventory, target.pack.item_type, unavailable)?.id ?? null,
-    existing_rare: find_held(inventory, target.gatherable.rare_item_type, unavailable)?.id ?? null,
-    custody: custody_of(character),
-  })
+  let receipt
+  try {
+    receipt = await ctx.sdk.character.gather({
+      character_id: ctx.character_id,
+      world,
+      zone_x: zx,
+      zone_z: zz,
+      pack_index: target.pack.index,
+      item_type: target.pack.item_type,
+      rare_item_type: target.gatherable.rare_item_type,
+      existing: find_held(inventory, target.pack.item_type, unavailable)?.id ?? null,
+      existing_rare: find_held(inventory, target.gatherable.rare_item_type, unavailable)?.id ?? null,
+      custody: custody_of(character),
+    })
+  } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('gather', `${target.pack.item_type} at ${zx}:${zz} — game paused by the server`)
+      return Object.freeze({ kind: 'skipped', reason: 'game paused' })
+    }
+    throw error
+  }
 
   ctx.ledger.append({
     kind: 'gather',
@@ -209,11 +222,20 @@ export const gather_once = async (
 
   if (!receipt.ambushed) return Object.freeze({ kind: 'gathered', item_type: target.pack.item_type, quantity: receipt.quantity, protector: null })
 
-  const fight = await ctx.sdk.character.resolve_ambush({
-    character_id: ctx.character_id,
-    protector_mob_type: target.gatherable.protector,
-    custody: custody_of(character),
-  })
+  let fight
+  try {
+    fight = await ctx.sdk.character.resolve_ambush({
+      character_id: ctx.character_id,
+      protector_mob_type: target.gatherable.protector,
+      custody: custody_of(character),
+    })
+  } catch (error) {
+    if (is_paused_error(error)) {
+      log_warn('gather', `resolve_ambush at ${zx}:${zz} — game paused by the server`)
+      return Object.freeze({ kind: 'skipped', reason: 'game paused' })
+    }
+    throw error
+  }
   ctx.ledger.append({
     kind: 'ambush',
     digest: fight.digest,

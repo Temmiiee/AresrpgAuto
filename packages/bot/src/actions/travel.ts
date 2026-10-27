@@ -22,7 +22,7 @@ import {
   type CharacterRow,
 } from '@aresrpg/protocol'
 
-import { chain_now, checkpoint_of } from '../state/selectors.ts'
+import { chain_now, checkpoint_of, is_paused_error } from '../state/selectors.ts'
 import { log_info, log_warn, sleep } from '../shared/logger.ts'
 import { custody_of, type ActionContext } from './context.ts'
 
@@ -249,14 +249,22 @@ export const create_mover = (ctx: ActionContext): Mover => {
     // about to record (the tx executes a beat later, so this under-estimates by that beat — the
     // safe direction: the travel bank can never look larger than it truly is).
     const proven_at_ms = effective_now()
-    await ctx.sdk.character.search_zone({
-      character_id: ctx.character_id,
-      world: character.world ?? ctx.world,
-      x: pose.x,
-      z: pose.z,
-      refresh,
-      custody: custody_of(character),
-    })
+    try {
+      await ctx.sdk.character.search_zone({
+        character_id: ctx.character_id,
+        world: character.world ?? ctx.world,
+        x: pose.x,
+        z: pose.z,
+        refresh,
+        custody: custody_of(character),
+      })
+    } catch (error) {
+      if (is_paused_error(error)) {
+        log_warn('travel', `search_zone ${zx}:${zz} — game paused by the server`)
+        return
+      }
+      throw error
+    }
     log_info('travel', `zone ${character.world ?? ctx.world}:${zx}:${zz} searched at ${pose.x},${pose.z}`)
     // The door just moved the chain checkpoint onto our pose, so the mover is anchored HERE now.
     // Without this the anchor keeps the position (and clock) the walk STARTED from: a stale anchor

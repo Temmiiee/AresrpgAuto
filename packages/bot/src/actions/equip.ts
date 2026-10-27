@@ -27,7 +27,7 @@ import type { CharacterRow, ItemRow } from '@aresrpg/protocol'
 
 import { spells } from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { freshness, select_character, unavailable_item_ids } from '../state/selectors.ts'
+import { freshness, is_paused_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 
 import { custody_of, type ActionContext } from './context.ts'
@@ -302,6 +302,10 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
           .join(', ')}`
       )
     } catch (error) {
+      if (is_paused_error(error)) {
+        log_warn('equip', `${character.name}: equip failed — game paused by the server`)
+        continue
+      }
       log_warn('equip', `${character.name}: equip failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
