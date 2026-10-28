@@ -11,6 +11,7 @@ import {
   mob_inputs,
   score_mobs,
   MIN_WIN_RATE,
+  viable_ranking,
 } from '../src/actions/fight_preview.ts'
 
 const character = (over: Partial<CharacterRow> = {}): CharacterRow =>
@@ -105,6 +106,43 @@ describe('score_mobs sequential seeding', () => {
     expect(score.seeds).toBeLessThan(5)
     expect_runs_accounted(score)
     expect(describe_score(score)).toBe(`wins=0/${score.seeds}, timeouts=${score.timeouts}, wipes=${score.wipes}`)
+  })
+
+  describe('viable_ranking loot focus', () => {
+    const scored = (mob_type: string, xp_per_turn: number, x: number) => ({
+      candidate: {
+        zone: {} as never,
+        group: { index: x, x, z: 0, members: [{ mob_type, level_scalar: 50 }] },
+      },
+      score: {
+        win_rate: 1,
+        turns: 5,
+        xp_per_turn,
+        loot_per_turn: 0,
+        seeds: 5,
+        wins: 5,
+        timeouts: 0,
+        wipes: 0,
+      },
+    })
+
+    it('chooses the needed drop source ahead of a much higher-XP unrelated group', () => {
+      const xp_group = scored('wild_boar', 100, 1)
+      const loot_group = scored('lorito__water', 1, 2)
+      const ranked = viable_ranking({ x: 0, z: 0 }, [xp_group, loot_group], 4, new Set(['lorito__water']))
+      expect(ranked[0]).toBe(loot_group)
+    })
+
+    it('continues to require a reliable preview before prioritizing wanted loot', () => {
+      const unwinnable = {
+        ...scored('lorito__water', 1, 2),
+        score: { ...scored('lorito__water', 1, 2).score, win_rate: 0.6 },
+      }
+      const xp_group = scored('wild_boar', 100, 1)
+      const ranked = viable_ranking({ x: 0, z: 0 }, [unwinnable, xp_group], 4, new Set(['lorito__water']))
+      expect(ranked).toHaveLength(1)
+      expect(ranked[0]).toBe(xp_group)
+    })
   })
 
   it('stops a clean win at the first batch without over-sampling', () => {

@@ -20,6 +20,9 @@ import type { ItemRow } from '@aresrpg/protocol'
  *  ingredients, jobs or difficulty numbers that would silently go stale on a fresh clone. */
 export type DungeonKeyConfig = Readonly<{ key: string; dungeon: string }>
 
+/** A group dungeon requires one key from each of at least two entrants. */
+export const MIN_GROUP_KEYS = 2
+
 /** Last logged craftability per key. `maybe_craft_dungeon_key` runs on every chore beat, so the
  *  negative case ("still missing X") is logged only when it CHANGES, not every pass. */
 const key_craftability = new Map<string, boolean>()
@@ -80,6 +83,24 @@ export const held_key_amount = (inventory: readonly ItemRow[], unavailable: Read
   return total
 }
 
+/** Focus the key chain on one dungeon at a time, stopping once the party has enough keys for a group
+ *  run. Keep an under-level key targeted: select_craft_target uses that goal to train its trade
+ *  until the key becomes craftable. Seed order breaks ties; parked and group-ready dungeons are skipped. */
+export const dungeon_key_targets = (
+  inventory: readonly ItemRow[],
+  unavailable: ReadonlySet<string>,
+  blacklist: ReadonlyMap<string, number>,
+  now = Date.now()
+): readonly string[] => {
+  for (const dk of DUNGEON_KEYS) {
+    if (key_parked(blacklist, dk.key, now)) continue
+    if (held_key_amount(inventory, unavailable, dk.key) >= MIN_GROUP_KEYS) continue
+    if (!dungeon_key_detail(dk.key)) continue
+    return Object.freeze([dk.key])
+  }
+  return Object.freeze([])
+}
+
 /** A one-line "what this key still needs" summary, for the operator log. */
 const describe_key_gap = (
   key: string,
@@ -114,9 +135,10 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
   const unavailable = unavailable_item_ids(state)
   // Shared parked-key map from the dungeon runner (keys whose preview reads unwinnable right now).
   const blacklist = ctx.dungeon_blacklist
+  const targets = new Set(dungeon_key_targets(inventory, unavailable, blacklist))
 
   for (const dk of DUNGEON_KEYS) {
-    if (key_parked(blacklist, dk.key)) continue
+    if (!targets.has(dk.key)) continue
     const detail = dungeon_key_detail(dk.key)
     if (!detail) continue
     // Two INDEPENDENT gates: the materials are held, and the crafter's job is high enough for the

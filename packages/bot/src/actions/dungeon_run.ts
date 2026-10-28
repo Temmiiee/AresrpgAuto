@@ -21,7 +21,15 @@ import { dungeon_city, dungeon_rooms, worlds_by_id } from '../content/catalog.ts
 import { log_debug, log_info, log_warn } from '../shared/logger.ts'
 import { active_fight_of, is_version_assert_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
-import { DUNGEON_KEYS, DUNGEON_PARK_MS, held_key_amount, key_parked, park_dungeon_key, should_run_dungeons } from './dungeon.ts'
+import {
+  DUNGEON_KEYS,
+  DUNGEON_PARK_MS,
+  held_key_amount,
+  key_parked,
+  MIN_GROUP_KEYS,
+  park_dungeon_key,
+  should_run_dungeons,
+} from './dungeon.ts'
 import { safe_travel_to } from './roam.ts'
 import { describe_score, DUNGEON_ROUNDS, score_group, type MobGroupRow } from './fight_preview.ts'
 import { plan_mastery_dungeon, is_mastery_dungeon } from './mastery.ts'
@@ -37,7 +45,6 @@ const START_GRACE_MS = 20_000
 const GROUP_ENTER_WAIT_MS = 90_000
 /** A group run needs at least this many keys (one per entrant). Fewer is a solo run, which the party
  *  has stopped doing -- dungeon fights are only worth it fought as a stack. */
-const MIN_GROUP_KEYS = 2
 /** The win rate below which a room is not worth committing to. */
 const MIN_WIN_RATE = 0.8
 
@@ -110,6 +117,7 @@ const planning_allies = (
       const member = select_character(state, id)
       return member ? [member] : []
     })
+    .sort((left, right) => right.level - left.level)
     .slice(0, Math.max(0, seats - 1))
 }
 
@@ -201,7 +209,7 @@ const enter_run = async (
     return outcome('entered', `entered ${dk.dungeon}`)
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('dungeon', `enter ${dk.dungeon} failed — object versions stale or game paused`)
+      log_warn('dungeon', `enter ${dk.dungeon} failed — MoveAbort 601 (package version mismatch or paused version gate)`)
       return outcome('skipped', `enter failed: versions stale`)
     }
     log_warn('dungeon', `enter ${dk.dungeon} failed: ${message_of(error)}`)
@@ -322,7 +330,7 @@ export const follower_dungeon_step = async (ctx: ActionContext, mover: Mover): P
       log_info('dungeon', `${character.name}: abandoned a stale ${character.dungeon_run.dungeon} run`)
     } catch (error) {
       if (is_version_assert_error(error)) {
-        log_warn('dungeon', `${character.name}: stale-run abandon skipped — object versions stale or game paused`)
+        log_warn('dungeon', `${character.name}: stale-run abandon skipped — MoveAbort 601 (package version mismatch or paused version gate)`)
       } else {
         log_debug('dungeon', `${character.name}: stale-run abandon skipped (${message_of(error)})`)
       }
@@ -391,7 +399,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       return outcome('started', `${run.dungeon} room ${run.room} fight ${receipt.fight}`, receipt.fight)
     } catch (error) {
       if (is_version_assert_error(error)) {
-        log_warn('dungeon', `start ${run.dungeon} room ${run.room} failed — object versions stale or game paused`)
+        log_warn('dungeon', `start ${run.dungeon} room ${run.room} failed — MoveAbort 601 (package version mismatch or paused version gate)`)
         return outcome('skipped', `start failed: versions stale`)
       }
       log_warn('dungeon', `start ${run.dungeon} room ${run.room} failed: ${message_of(error)}`)
@@ -486,7 +494,7 @@ const abandon = async (ctx: ActionContext): Promise<void> => {
     await ctx.sdk.dungeon.abandon({ character_id: ctx.character_id, custody: custody_of(character) })
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('dungeon', `abandon failed — object versions stale or game paused`)
+      log_warn('dungeon', `abandon failed — MoveAbort 601 (package version mismatch or paused version gate)`)
     } else {
       log_warn('dungeon', `abandon failed: ${message_of(error)}`)
     }

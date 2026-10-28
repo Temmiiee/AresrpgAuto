@@ -2,6 +2,7 @@
 import { craft_required_level, item_is_stackable, job_xp_for_level } from '@aresrpg/immutable'
 
 import {
+  CRAFT_BLACKLIST,
   craftable_by_level,
   craft_once,
   craft_gather_demand,
@@ -17,6 +18,36 @@ describe('craft actions type check', () => {
     expect(typeof plan_recipe).toBe('function')
     expect(typeof craft_once).toBe('function')
     expect(typeof drive_craft).toBe('function')
+  })
+
+  it('blacklists the unwanted starter tools in direct plans and the craft rotation', () => {
+    for (const output of ['old_hoe', 'basic_pickaxe']) {
+      const recipe = recipes_by_output[output]
+      expect(recipe).toBeDefined()
+      const detail = recipe_detail(recipe!)
+      const inventory = inventory_for(detail, false)
+      expect(CRAFT_BLACKLIST.has(output)).toBe(true)
+      expect(plan_recipe(character_for(detail.job), detail, inventory, new Set(), true)).toBeNull()
+      const character = {
+        id: 'c',
+        jobs: { [detail.job]: String(job_xp_for_level(100) ?? 0) },
+        equipment: [],
+      }
+      const ctx = {
+        state: () => ({
+          characters: [character],
+          inventory: detail.ingredients.map((ingredient, index) => ({
+            id: `i${index}`,
+            item_type: ingredient.item_type,
+            amount: ingredient.quantity * 5,
+          })),
+          listings: [],
+        }),
+        character_id: 'c',
+      }
+      const selected = select_craft_target(ctx as never)
+      expect(selected === null || !CRAFT_BLACKLIST.has(selected.output_type)).toBe(true)
+    }
   })
 })
 
@@ -311,19 +342,17 @@ describe('select_craft_target prerequisites', () => {
     expect(lacquer?.output_type).toBe('mushroom_lacquer')
   })
 
-  it('still crafts a directly affordable trade recipe first', () => {
+  it('skips a directly affordable blacklisted starter tool', () => {
     const plan = select_craft_target(ctx_for({}, [['gnawed_branch', 3], ['salvaged_scrap', 2]]))
-    expect(plan?.output_type).toBe('old_hoe')
-    expect(plan?.job).toBe('HANDYMAN')
+    expect(plan).toBeNull()
   })
 
   it('drops a recipe whose stacks an earlier batch already burned this chore', () => {
-    // The projection lags the confirmed craft, so without the burned set a second batch reuses the
-    // same ingredient ids and aborts `kiosk::borrow`. Excluding them must fall through to nothing.
+    // The only affordable output from these inputs is blacklisted, so neither the first nor a later
+    // batch may submit it.
     const ctx = ctx_for({}, [['gnawed_branch', 3], ['salvaged_scrap', 2]])
     const plan = select_craft_target(ctx)
-    expect(plan?.output_type).toBe('old_hoe')
-    expect(select_craft_target(ctx, new Set(plan!.input_item_ids))).toBeNull()
+    expect(plan).toBeNull()
   })
 })
 
@@ -402,7 +431,7 @@ describe('select_craft_target gear priority', () => {
     const plan = select_craft_target(ctx_for({}, [['gnawed_branch', 3], ['salvaged_scrap', 2]]), undefined, [
       four_slot!.output_type,
     ])
-    expect(plan?.output_type).toBe('old_hoe')
+    expect(plan).toBeNull()
   })
 })
 

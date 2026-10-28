@@ -89,7 +89,7 @@ const ensure_tool = async (
     })
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('gather', `could not equip ${category} (${tool.id}) — object versions stale or game paused`)
+      log_warn('gather', `could not equip ${category} (${tool.id}) — MoveAbort 601 (package version mismatch or paused version gate)`)
       return false
     }
     log_warn(
@@ -195,7 +195,7 @@ export const gather_once = async (
     })
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('gather', `${target.pack.item_type} at ${zx}:${zz} — object versions stale or game paused`)
+      log_warn('gather', `${target.pack.item_type} at ${zx}:${zz} — MoveAbort 601 (package version mismatch or paused version gate)`)
       return Object.freeze({ kind: 'skipped', reason: 'versions stale' })
     }
     throw error
@@ -231,7 +231,7 @@ export const gather_once = async (
     })
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('gather', `resolve_ambush at ${zx}:${zz} — object versions stale or game paused`)
+      log_warn('gather', `resolve_ambush at ${zx}:${zz} — MoveAbort 601 (package version mismatch or paused version gate)`)
       return Object.freeze({ kind: 'skipped', reason: 'versions stale' })
     }
     throw error

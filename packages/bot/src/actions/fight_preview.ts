@@ -365,19 +365,18 @@ const wanted_hits = (
   return hits
 }
 
-/** The sure-win groups, best reward per turn first. Loot only breaks ties: there is no live price
- *  feed, and turning expected drop quantity into an additive "value" is exactly how a trivial
- *  high-drop fight outranks a hard, high-XP one (the Old bot's 1-xp lesson). Ties then fall to
- *  fewer turns, then to the closer group.
+/** The sure-win groups, first satisfying the active missing-loot focus, then best reward per
+ *  committed turn. Needed ingredients can be dropped only by a particular family, including low-level
+ *  mobs; leaving them as a tie-break let XP farming starve crafts indefinitely. Among equally useful
+ *  choices, XP plus expected overall loot wins. Ties then fall to fewer turns, then the closer group.
  *
  *  When `party_size > 1` (group fight), we bias toward LARGER mob groups because:
  *  - 4 players kill more mobs per round → fight ends in similar turns but yields more total drops
  *  - Monster drops are the bottleneck for crafting (HANDYMAN tools, etc.)
  *  The bias is a soft multiplier on loot_per_turn so XP still matters but drops count more.
  *
- *  `wanted_mobs` (the periodic strategy's gear-drop set) is a FURTHER tiebreak below value: among
- *  equally valuable groups, prefer one carrying a mob whose loot the party wants. Empty changes
- *  nothing. */
+ *  `wanted_mobs` contains only the source family for the current unfilled craft-material focus.
+ *  Such groups rank ahead of unrelated fights, but still must pass the same reliable-win screen. */
 export const viable_ranking = (
   pose: Readonly<{ x: number; z: number }>,
   scored: readonly ScoredGroup[],
@@ -394,9 +393,8 @@ export const viable_ranking = (
         const left_val = left.score.xp_per_turn + left.score.loot_per_turn * loot_weight
         const right_val = right.score.xp_per_turn + right.score.loot_per_turn * loot_weight
         return (
-          right_val - left_val ||
-          // Among equal value, prefer a group carrying a mob whose loot the strategy wants
           wanted_hits(right.candidate.group, wanted_mobs) - wanted_hits(left.candidate.group, wanted_mobs) ||
+          right_val - left_val ||
           // Among equal value, prefer MORE mobs (more drops per fight)
           right_mobs - left_mobs ||
           left.score.turns - right.score.turns ||

@@ -169,7 +169,7 @@ describe('party stragglers', () => {
     const party = staging_party()
     party.members = ['leader', 'follower']
     // the leader is in position (it can reach) but the follower has had the grace and is still absent
-    party.in_position_at_ms = Date.now() - 200_000
+    party.in_position_at_ms = Date.now() - 300_000
     const { ctx, released } = ctx_claims([{ id: 'follower', name: 'follower' }])
     const handled = await leader_group_step(ctx, mover_reaching(true), leader(), party)
     expect(handled).toBeNull()
@@ -181,7 +181,7 @@ describe('party stragglers', () => {
   it('keeps waiting for a follower before the grace elapses', async () => {
     const party = staging_party()
     party.members = ['leader', 'follower']
-    party.in_position_at_ms = Date.now() - 5_000
+    party.in_position_at_ms = Date.now() - 120_000
     const { ctx, released } = ctx_claims([{ id: 'follower', name: 'follower' }])
     const handled = await leader_group_step(ctx, mover_reaching(true), leader(), party)
     expect(handled).not.toBeNull()

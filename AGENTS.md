@@ -227,6 +227,17 @@ fallback, and an output already held un-equipped is dropped (auto-equip will pla
 inputs are demanded through `craft_gather_demand`'s `extra_outputs`, which the play loop fills with the
 goal outputs — pulled even when the craft pays no XP, because the goal is deliberate, not filler.
 
+## Dungeon runs (`actions/dungeon_run.ts`)
+
+Dungeon keys are deliberate party goals: the leader focuses gather and craft demand on one
+unparked key at a time until the shared inventory holds the two keys needed to commit a group run.
+An under-level key remains a goal so the craft planner trains its required trade instead of dropping
+the dungeon objective. Once a dungeon is parked after failing its room previews, its key is skipped
+until the retry window expires and the next key can become the goal. The runner still screens every
+room with the fight twin before spending keys; do not lower that safety gate without a verified
+combat reason. Group previews use the strongest available party members first. The general craft
+rotation excludes `old_hoe` and `basic_pickaxe`.
+
 ## Strategy brain (`actions/strategy.ts`)
 
 Once every `BOT_STRATEGY_INTERVAL_MS` (30 min) the play loop runs ONE whole-content pass and publishes

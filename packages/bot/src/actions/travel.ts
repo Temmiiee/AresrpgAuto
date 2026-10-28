@@ -260,7 +260,7 @@ export const create_mover = (ctx: ActionContext): Mover => {
       })
     } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('travel', `search_zone ${zx}:${zz} — object versions stale or game paused`)
+      log_warn('travel', `search_zone ${zx}:${zz} — MoveAbort 601 (package version mismatch or paused version gate)`)
       return
     }
       throw error

@@ -16,12 +16,19 @@
 // Pure, read-only and best-effort: a scan that finds nothing winnable yields no plan (the roam keeps
 // its own heuristic) rather than a wrong one. No I/O, no timers, no chain.
 import { create_mob_snapshot, type FightMobInput } from '@aresrpg/fight'
-import { craft_required_level, job_level_from_xp } from '@aresrpg/immutable'
+import {
+  craft_required_level,
+  craft_xp_at_level,
+  job_kind_of,
+  job_level_from_xp,
+  job_slugs,
+} from '@aresrpg/immutable'
 import type { CharacterRow } from '@aresrpg/protocol'
 
 import {
-  dungeons,
+  job_recipes,
   items_by_type,
+  gatherable_of,
   loot_demand,
   loot_sources_by_item,
   mobs_by_type,
@@ -30,6 +37,7 @@ import {
   type SeedWorld,
 } from '../content/catalog.ts'
 import { mob_template_of } from '../content/fight_sources.ts'
+import { unavailable_item_ids } from '../state/selectors.ts'
 import {
   fight_world_for_level,
   mob_group_size_bounds,
@@ -37,8 +45,10 @@ import {
 } from '../content/zone_map.ts'
 import type { GameState } from '../state/store.ts'
 
-import { MIN_WIN_RATE, score_mobs } from './fight_preview.ts'
+import { MIN_WIN_RATE, score_mobs, type FightScore } from './fight_preview.ts'
 import { gear_drop_candidates, plan_gear_goals } from './gear.ts'
+import { CRAFT_BLACKLIST } from './craft.ts'
+import { dungeon_key_targets, held_key_amount, MIN_GROUP_KEYS } from './dungeon.ts'
 
 /** How a wanted item is obtained: `craft` when the seed authors a recipe, `drop` when only loot. */
 export type GearRoute = 'craft' | 'drop'
@@ -108,9 +118,18 @@ export type Strategy = Readonly<{
   gear: readonly GearTarget[]
   /** trades to level so the wanted gear becomes craftable, in goal-gain order */
   training: readonly GearTraining[]
-  /** mob types whose loot carries a wanted upgrade OR a mob-only input of a dungeon-key chain — the
-   *  engage's soft preference */
+  /** One currently missing mob drop and its best available source/farming band. */
+  loot_focus: LootFocus | null
+  /** The current loot focus's source mob; winnable encounters carrying it outrank XP-only fights. */
   wanted_mobs: ReadonlySet<string>
+}>
+
+export type LootFocus = Readonly<{
+  item_type: string
+  mob_type: string
+  have: number
+  need: number
+  distance: number
 }>
 
 /** Local seeds per sample, PINNED (score_mobs's options.seeds runs them exactly, no sequential
@@ -233,6 +252,10 @@ export type FarmOptions = Readonly<{
   party_level?: number
   /** the block distances to sample; defaults to the full ring */
   distances?: readonly number[]
+  /** Session-local key parking state; parked keys should not drive loot farming. */
+  dungeon_blacklist?: ReadonlyMap<string, number>
+  /** Shared sample time for deterministic key-target selection. */
+  now_ms?: number
 }>
 
 /** Scan every mob family in the fight world across the difficulty bands and pick the distance whose
@@ -338,28 +361,144 @@ export const plan_farm = (
   })
 }
 
-/** The whole periodic analysis: the farm plan and the gear targets, plus the engage hint derived from
- *  the gear routes (the mobs whose loot carries a wanted upgrade). */
+const held_amount = (state: GameState, item_type: string): number => {
+  const unavailable = unavailable_item_ids(state)
+  return state.inventory.reduce(
+    (total, item) => total + (item.item_type === item_type && !unavailable.has(item.id) ? item.amount : 0),
+    0
+  )
+}
+
+const xp_training_outputs = (characters: readonly CharacterRow[]): readonly string[] => {
+  const outputs = new Set<string>()
+  for (const character of characters) {
+    for (const job of job_slugs.filter((slug) => job_kind_of(slug) !== 'gathering')) {
+      const level = job_level_from_xp(Number(character.jobs?.[job] ?? '0'))
+      const candidates = job_recipes(job)
+        .filter((detail) => !CRAFT_BLACKLIST.has(detail.output_type))
+        .filter((detail) => level >= craft_required_level(detail.ingredients.length))
+        .map((detail) => ({ detail, xp: craft_xp_at_level(detail.ingredients.length, level) }))
+        .filter(({ xp }) => xp > 0)
+        .sort((left, right) => right.xp - left.xp)
+      const best = candidates[0]
+      if (best) outputs.add(best.detail.output_type)
+    }
+  }
+  return Object.freeze([...outputs])
+}
+
+/** Select one missing mob-drop material from live craft goals, then choose its best source mob and a
+ *  winnable farming band. Gatherable ingredients stay with the gather planner; only loot-only leaves
+ *  direct combat toward mobs. Key demand accounts for the number of keys still needed by the party. */
+export const plan_loot_focus = (
+  characters: readonly CharacterRow[],
+  state: GameState,
+  gear: readonly GearTarget[],
+  options: FarmOptions = {}
+): LootFocus | null => {
+  const leader = characters[0]
+  if (!leader) return null
+  const world = options.world ?? fight_world_for_level(options.party_level ?? leader.level)
+  if (!world) return null
+  const now = options.now_ms ?? Date.now()
+  const unavailable = unavailable_item_ids(state)
+  const key_targets = dungeon_key_targets(
+    state.inventory,
+    unavailable,
+    options.dungeon_blacklist ?? new Map(),
+    now
+  )
+  const needs = new Map<string, number>()
+  const add_output = (output_type: string, crafts = 1): void => {
+    for (const [item_type, quantity] of loot_demand(output_type)) {
+      if (gatherable_of(item_type)) continue
+      needs.set(item_type, (needs.get(item_type) ?? 0) + quantity * crafts)
+    }
+  }
+
+  for (const key of key_targets) {
+    const held = held_key_amount(state.inventory, unavailable, key)
+    add_output(key, Math.max(0, MIN_GROUP_KEYS - held))
+  }
+  for (const target of gear) {
+    if (target.route === 'drop') {
+      needs.set(target.item_type, (needs.get(target.item_type) ?? 0) + 1)
+    } else {
+      add_output(target.item_type)
+    }
+  }
+  for (const output_type of xp_training_outputs(characters)) add_output(output_type)
+
+  const world_mobs = new Map(world.mobs.map((entry) => [entry.mob_type, entry]))
+  const distances = options.distances ?? SAMPLE_DISTANCES
+  for (const [item_type, need] of needs) {
+    const have = state.inventory.reduce(
+      (total, item) => total + (item.item_type === item_type && !unavailable.has(item.id) ? item.amount : 0),
+      0
+    )
+    if (have >= need) continue
+    const sources = (loot_sources_by_item.get(item_type) ?? [])
+      .flatMap((mob_type) => {
+        const spawn = world_mobs.get(mob_type)
+        const template = mob_template_of(mob_type)
+        const drop = mobs_by_type[mob_type]?.loot.find((row) => row.item_type === item_type)
+        if (!spawn || !template || !drop) return []
+        const expected_drop = (drop.chance_bp / 10_000) * ((drop.min_qty + drop.max_qty) / 2)
+        return [{ mob_type, spawn_weight: spawn.weight_bp, expected_drop, template }]
+      })
+      .sort(
+        (left, right) =>
+          right.spawn_weight * right.expected_drop - left.spawn_weight * left.expected_drop
+      )
+    const source = sources[0]
+    if (!source) continue
+
+    let best: Readonly<{ distance: number; score: FightScore }> | null = null
+    for (const distance of distances) {
+      const [scalar_low, scalar_high] = mob_level_scalar_bounds(distance)
+      const scalar = Math.trunc((scalar_low + scalar_high) / 2)
+      const [size_low, size_high] = mob_group_size_bounds(distance)
+      const group_size = Math.max(1, Math.round((size_low + size_high) / 2))
+      const input = Object.freeze({ team: 1n, template: source.template, scalar: BigInt(scalar) })
+      const score = score_mobs(leader, Array.from({ length: group_size }, () => input), characters.slice(1), {
+        seeds: STRATEGY_SEEDS,
+      })
+      if (score.win_rate < MIN_WIN_RATE) continue
+      if (
+        !best ||
+        score.xp_per_turn > best.score.xp_per_turn ||
+        (score.xp_per_turn === best.score.xp_per_turn && distance < best.distance)
+      )
+        best = Object.freeze({ distance, score })
+    }
+    if (best)
+      return Object.freeze({
+        item_type,
+        mob_type: source.mob_type,
+        have,
+        need,
+        distance: best.distance,
+      })
+  }
+  return null
+}
+
+/** The whole periodic analysis: farm XP, level jobs, improve gear, and focus the next missing
+ *  monster-drop ingredient on a winnable source family. */
 export const compute_strategy = (
   characters: readonly CharacterRow[],
   state: GameState,
   options: FarmOptions & Readonly<{ now_ms?: number }> = {}
 ): Strategy => {
   const gear = plan_gear_targets(characters, state)
-  const wanted_mobs = new Set<string>()
-  for (const target of gear) for (const mob_type of target.source_mobs) wanted_mobs.add(mob_type)
-  // Dungeon keys are the party's long pole and their DAG eats mob-only leaves (EVERY refinement
-  // needs `water`; the plumes/trinkets/webbings need feathers, trinkets and silk), so the key chain
-  // can never fill from gathering alone. Fold the families that carry those drop leaves into the
-  // engage's wanted set, ahead of any XP tie, so the party hunts them while it farms.
-  for (const dungeon of dungeons)
-    for (const [leaf] of loot_demand(dungeon.key))
-      for (const mob_type of loot_sources_by_item.get(leaf) ?? []) wanted_mobs.add(mob_type)
+  const loot_focus = plan_loot_focus(characters, state, gear, options)
+  const wanted_mobs = new Set(loot_focus ? [loot_focus.mob_type] : [])
   return Object.freeze({
     computed_ms: options.now_ms ?? Date.now(),
     farm: plan_farm(characters, options),
     gear,
     training: plan_training(gear),
+    loot_focus,
     wanted_mobs,
   })
 }
@@ -403,5 +542,9 @@ export const describe_strategy = (strategy: Strategy): readonly string[] => {
     )
   }
   if (strategy.gear.length > 6) lines.push(`gear: +${strategy.gear.length - 6} more upgrade(s)`)
+  if (strategy.loot_focus)
+    lines.push(
+      `loot focus: ${strategy.loot_focus.item_type} ${strategy.loot_focus.have}/${strategy.loot_focus.need} from ${strategy.loot_focus.mob_type} @${strategy.loot_focus.distance}`
+    )
   return Object.freeze(lines)
 }

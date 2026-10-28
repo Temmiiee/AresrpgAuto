@@ -112,9 +112,18 @@ export const plan_roam = (
   /** The periodic strategy brain's target distance (band), or null to use the median-family
    *  heuristic. The brain scores in-level families across the WHOLE world's roster, so this is the
    *  distance its expected group pays the most XP at; the heuristic only knows the median family band. */
-  targetBand: number | null = null
+  targetBand: number | null = null,
+  lootFocusBand: number | null = null
 ): RoamPlan => {
   const current = distance_at(pose)
+  if (lootFocusBand !== null) {
+    const want = clamp(lootFocusBand, MIN_ROAM_DISTANCE, MAX_ROAM_DISTANCE)
+    if (want !== current) {
+      const distance = want > current ? Math.min(want, current + stepBlocks) : Math.max(want, current - stepBlocks)
+      return Object.freeze({ kind: 'advance', distance, reason: 'needed monster loot' })
+    }
+    return Object.freeze({ kind: 'stay', reason: 'at the needed-loot band' })
+  }
   if (assessment.overwhelming) {
     const distance = clamp(current - stepBlocks, MIN_ROAM_DISTANCE, MAX_ROAM_DISTANCE)
     return distance < current
@@ -167,7 +176,8 @@ export type Roamer = Readonly<{
     level?: number,
     stepBlocks?: number,
     viable?: boolean,
-    targetBand?: number | null
+    targetBand?: number | null,
+    lootFocus?: Readonly<{ mob_type: string; distance: number }> | null
   ) => Promise<RoamOutcome>
 }>
 
@@ -198,7 +208,7 @@ export const create_roamer = (ctx: ActionContext): Roamer => {
       return outcome('joined', world)
     } catch (error) {
       if (is_version_assert_error(error)) {
-        log_warn('roam', `join ${world} failed — object versions stale or game paused`)
+        log_warn('roam', `join ${world} failed — MoveAbort 601 (package version mismatch or paused version gate)`)
         return outcome('skipped', `join ${world} failed: versions stale`)
       }
       const detail = error instanceof Error ? error.message : String(error)
@@ -233,7 +243,8 @@ export const create_roamer = (ctx: ActionContext): Roamer => {
     level?: number,
     stepBlocks?: number,
     viable = true,
-    targetBand: number | null = null
+    targetBand: number | null = null,
+    lootFocus: Readonly<{ mob_type: string; distance: number }> | null = null
   ): Promise<RoamOutcome> => {
     const state = ctx.state()
     const character = select_character(state, ctx.character_id)
@@ -264,9 +275,13 @@ export const create_roamer = (ctx: ActionContext): Roamer => {
 
     const nearby = nearest_candidates(pose, select_window_mob_groups(state)).map(({ group }) => group)
     const assessment = assess_window(effectiveLevel, nearby)
+    const focus_band =
+      lootFocus && !nearby.some((group) => group.members.some((member) => member.mob_type === lootFocus.mob_type))
+        ? lootFocus.distance
+        : null
     // Use smaller steps when grouping so followers can keep up
     const step = stepBlocks ?? STEP_BLOCKS
-    const plan = plan_roam(effectiveLevel, pose, fight_world, assessment, step, viable, targetBand)
+    const plan = plan_roam(effectiveLevel, pose, fight_world, assessment, step, viable, targetBand, focus_band)
     if (plan.kind === 'stay') {
       // Log the live level match once per distinct window, so it is visible whether the prey we
       // hold at is actually high enough for the character (and never spams every pass).

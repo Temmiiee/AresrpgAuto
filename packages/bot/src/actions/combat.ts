@@ -148,7 +148,7 @@ const drive_placement = async (
       placed = await ctx.sdk.fight.place({ fight: contract.id, fighter_idx: BigInt(seat), cell })
     } catch (error) {
       if (is_version_assert_error(error)) {
-        log_warn('combat', `place seat ${seat} in ${contract.id} — object versions stale or game paused`)
+        log_warn('combat', `place seat ${seat} in ${contract.id} — MoveAbort 601 (package version mismatch or paused version gate)`)
         return { kind: 'waiting_turn', detail: 'versions stale' }
       }
       throw error
@@ -168,7 +168,7 @@ const drive_placement = async (
     readied = await ctx.sdk.fight.ready({ fight: contract.id, fighter_idx: BigInt(seat) })
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('combat', `ready seat ${seat} in ${contract.id} — object versions stale or game paused`)
+      log_warn('combat', `ready seat ${seat} in ${contract.id} — MoveAbort 601 (package version mismatch or paused version gate)`)
       return { kind: 'waiting_turn', detail: 'versions stale' }
     }
     throw error
@@ -205,7 +205,7 @@ const drive_turn = async (
     receipt = await ctx.sdk.fight.commit_turn({ fight: contract.id, actions })
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('combat', `commit turn ${identity} — object versions stale or game paused`)
+      log_warn('combat', `commit turn ${identity} — MoveAbort 601 (package version mismatch or paused version gate)`)
       return { kind: 'waiting_turn', detail: 'versions stale' }
     }
     throw error
@@ -363,7 +363,7 @@ export const engage_target = async (
     return { kind: 'engaged', fight: receipt.fight, detail: `${group.members.length} mob(s)` }
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('combat', `engage failed (group ${group.index}) — object versions stale or game paused`)
+      log_warn('combat', `engage failed (group ${group.index}) — MoveAbort 601 (package version mismatch or paused version gate)`)
       ctx.claims.release(claimed, ctx.character_id)
       return { kind: 'skipped', detail: 'versions stale' }
     }
@@ -402,7 +402,7 @@ const close_fight = async (ctx: ActionContext, fight: string): Promise<void> => 
     log_info('combat', `closed fight ${fight}`)
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('combat', `close ${fight} failed — object versions stale or game paused`)
+      log_warn('combat', `close ${fight} failed — MoveAbort 601 (package version mismatch or paused version gate)`)
       return
     }
     log_warn('combat', `close ${fight} failed: ${message_of(error)}`)
@@ -482,7 +482,7 @@ const settle_one = async (
     return report
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('combat', `settle ${fight} failed — object versions stale or game paused`)
+      log_warn('combat', `settle ${fight} failed — MoveAbort 601 (package version mismatch or paused version gate)`)
       return null
     }
     log_warn('combat', `settle ${fight} failed: ${message_of(error)}`)

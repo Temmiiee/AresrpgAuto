@@ -1,5 +1,15 @@
 // Dungeon content projection — the runner reads rooms and the city portal straight from the seed.
-import { DUNGEON_KEYS, DUNGEON_PARK_MS, dungeon_key_detail, held_dungeon_key, key_parked, park_dungeon_key, should_run_dungeons } from '../src/actions/dungeon.ts'
+import {
+  DUNGEON_KEYS,
+  DUNGEON_PARK_MS,
+  dungeon_key_detail,
+  dungeon_key_targets,
+  held_dungeon_key,
+  key_parked,
+  MIN_GROUP_KEYS,
+  park_dungeon_key,
+  should_run_dungeons,
+} from '../src/actions/dungeon.ts'
 import { DUNGEON_EXPECTED_SCALAR, room_to_mob_group } from '../src/actions/dungeon_run.ts'
 import { dungeon_city, dungeon_rooms, worlds_by_id } from '../src/content/catalog.ts'
 
@@ -46,6 +56,33 @@ describe('dungeon key helpers', () => {
     expect(held_dungeon_key(inventory as never, new Set())).toBe('key_of_gilded_lorito')
     // `unavailable` is a set of ITEM ids, not item types.
     expect(held_dungeon_key(inventory as never, new Set(['k1']))).toBeNull()
+  })
+
+  it('targets one unparked key at a time until the party can enter as a group', () => {
+    const inventory: any[] = []
+    const blacklist = new Map<string, number>()
+    const now = 1_000_000
+    expect(dungeon_key_targets(inventory, new Set(), blacklist, now)).toEqual([DUNGEON_KEYS[0]!.key])
+
+    inventory.push({ id: 'first-key', item_type: DUNGEON_KEYS[0]!.key, amount: MIN_GROUP_KEYS })
+    expect(dungeon_key_targets(inventory, new Set(), blacklist, now)).toEqual([DUNGEON_KEYS[1]!.key])
+
+    park_dungeon_key(blacklist, DUNGEON_KEYS[0]!.key, now)
+    inventory.length = 0
+    expect(dungeon_key_targets(inventory, new Set(), blacklist, now)).toEqual([DUNGEON_KEYS[1]!.key])
+  })
+
+  it('keeps an under-level key targeted so the craft planner can train its trade', () => {
+    expect(dungeon_key_targets([], new Set(), new Map())).toEqual([DUNGEON_KEYS[0]!.key])
+  })
+
+  it('does not request more keys once every dungeon is parked or group-ready', () => {
+    const inventory = DUNGEON_KEYS.map((dk, index) => ({
+      id: `key-${index}`,
+      item_type: dk.key,
+      amount: MIN_GROUP_KEYS,
+    }))
+    expect(dungeon_key_targets(inventory as never, new Set(), new Map())).toEqual([])
   })
 
   it('parks a key only until its retry window elapses, then re-screens it', () => {

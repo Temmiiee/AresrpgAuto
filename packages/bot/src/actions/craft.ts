@@ -50,6 +50,11 @@ const EMPTY_IDS: ReadonlySet<string> = Object.freeze(new Set<string>())
 /** A shared empty priority list, so the common "no gear goals" call allocates nothing. */
 const EMPTY_OUTPUTS: readonly string[] = Object.freeze([])
 
+/** Outputs the XP rotation should never spend ingredients on. */
+export const CRAFT_BLACKLIST: ReadonlySet<string> = new Set(['old_hoe', 'basic_pickaxe'])
+
+const is_craft_blacklisted = (output_type: string): boolean => CRAFT_BLACKLIST.has(output_type)
+
 /** How many attempts the held ingredients + the batch cap allow (0 = cannot craft). */
 const affordable_attempts = (
   detail: RecipeDetail,
@@ -94,6 +99,7 @@ export const plan_recipe = (
   unavailable: ReadonlySet<string>,
   allow_zero_xp = false
 ): CraftPlan | null => {
+  if (is_craft_blacklisted(detail.output_type)) return null
   if (!craftable_by_level(character, detail, allow_zero_xp)) return null
 
   const input_item_ids = detail.ingredients.map((ingredient) => held(inventory, ingredient.item_type, unavailable)?.id)
@@ -179,6 +185,7 @@ const craft_prerequisite = (
   seen: ReadonlySet<string>,
   allow_zero_xp = false
 ): RecipeDetail | null => {
+  if (is_craft_blacklisted(detail.output_type)) return null
   for (const ingredient of detail.ingredients) {
     if (held(inventory, ingredient.item_type, unavailable)) continue
     const recipe = recipes_by_output[ingredient.item_type]
@@ -242,6 +249,7 @@ export const select_craft_target = (
   // the required level, rather than cycling to every other trade first.
   const goal_jobs: string[] = []
   for (const output_type of priority_outputs) {
+    if (is_craft_blacklisted(output_type)) continue
     const recipe = recipes_by_output[output_type]
     if (!recipe) continue
     const detail = recipe_detail(recipe)
@@ -274,6 +282,7 @@ export const select_craft_target = (
   for (const job of job_order) {
     const recipes = [...job_recipes(job)].sort(better_recipe(holds))
     for (const detail of recipes) {
+      if (is_craft_blacklisted(detail.output_type)) continue
       const plan = plan_recipe(character, detail, inventory, unavailable)
       if (plan) return plan
       // A level-gated recipe cannot drive a refinement: this character will not craft the trade
@@ -327,6 +336,7 @@ export const craft_gather_demand = (
   /** leaf -> summed one-craft requirement over every eligible recipe that resolves to it. */
   const leverage = new Map<string, number>()
   const note = (detail: RecipeDetail, explicit = false): void => {
+    if (is_craft_blacklisted(detail.output_type)) return
     // Deliberate goals (dungeon keys, gear upgrades) pass `explicit` to bypass the rotation's XP
     // floor: they are worth gathering for even at a job level where the craft pays no XP. The LEVEL
     // gate always applies -- materials for a key nobody can craft yet are pure waste.
@@ -393,7 +403,7 @@ export const craft_once = async (ctx: ActionContext, plan: CraftPlan): Promise<C
     }
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('craft', `craft ${plan.output_type} failed — object versions stale or game paused`)
+      log_warn('craft', `craft ${plan.output_type} failed — MoveAbort 601 (package version mismatch or paused version gate)`)
       return { success: false, outcome: 'paused', output_type: plan.output_type, successes: 0, input_item_ids: [] }
     }
     const msg = error instanceof Error ? error.message : String(error)

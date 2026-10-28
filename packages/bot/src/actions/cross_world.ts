@@ -158,7 +158,7 @@ export const create_cross_world_gatherer = (ctx: ActionContext, home: string): C
       return true
     } catch (error) {
       if (is_version_assert_error(error)) {
-        log_warn('cross_world', `join ${world} failed — object versions stale or game paused`)
+        log_warn('cross_world', `join ${world} failed — MoveAbort 601 (package version mismatch or paused version gate)`)
         return false
       }
       log_warn('cross_world', `join ${world} failed: ${message_of(error)}`)

@@ -49,6 +49,13 @@ export const create_group_claims = (): GroupClaims => {
 
 export type StrategyHint = Readonly<{
   wanted_mobs: ReadonlySet<string>
+  loot_focus?: Readonly<{
+    item_type: string
+    mob_type: string
+    have: number
+    need: number
+    distance: number
+  }> | null
 }>
 
 export type ActionContext = Readonly<{

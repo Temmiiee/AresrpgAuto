@@ -32,15 +32,12 @@ import type { Mover } from './travel.ts'
  *  dead rendezvous to a fifth of the old wait. */
 const STAGE_TIMEOUT_MS = 300_000
 /** How long a rendezvous waits for a still-un-staged follower before writing it off as a straggler
- *  and re-planning for the members that DID arrive. A follower that has simply not caught up (a
- *  world-join drops it at the map centre, ~14k blocks and ~20 min out) would otherwise hold the
- *  whole party idle for the full stage timeout, so no fight ever starts. Measured from the moment the
- *  LEADER is itself in position (`in_position_at_ms`), not from the rendezvous being planned.
- *  60s, not 120s: the live watch caught a follower that had walked ~720 blocks to a demanded pack
- *  while the group staged -- it stalled the rendezvous for 108s and was written off anyway. A normal
- *  rally closes in 7-40s, so 60s covers every honest catch-up while halving the worst case; the
- *  write-off re-plans the side honestly and the straggler rejoins the moment it stages. */
-const STAGE_GRACE_MS = 60_000
+ *  and re-planning for the members that DID arrive. Measured from the moment the LEADER is itself in
+ *  position (`in_position_at_ms`), not from the rendezvous being planned. A live run showed followers
+ *  needing roughly 190s to catch up over two checkpoint-backed legs (~1,850 blocks); the old 60s
+ *  grace wrote them off while they were still travelling. The 240s grace covers that real path while
+ *  the overall rendezvous remains bounded by `STAGE_TIMEOUT_MS`. */
+const STAGE_GRACE_MS = 240_000
 /** How long an active group fight may be invisible to the roster/indexer before we conclude it ended. */
 const ACTIVE_GRACE_MS = 60_000
 /** How far (in blocks) a gatherer may range from a pack and still call its specialty "available". */
@@ -380,7 +377,7 @@ export const join_followers = async (ctx: ActionContext, followers: readonly str
     })
   } catch (error) {
     if (is_version_assert_error(error)) {
-      log_warn('party', `join ${followers.length} partner(s) to ${fight} — object versions stale or game paused`)
+      log_warn('party', `join ${followers.length} partner(s) to ${fight} — MoveAbort 601 (package version mismatch or paused version gate)`)
       return 0
     }
     throw error
@@ -409,7 +406,7 @@ export const join_dungeon_followers = async (
       joined.push(id)
     } catch (error) {
       if (is_version_assert_error(error)) {
-        log_warn('party', `dungeon seat join failed for ${id} — object versions stale or game paused`)
+        log_warn('party', `dungeon seat join failed for ${id} — MoveAbort 601 (package version mismatch or paused version gate)`)
         continue
       }
       log_warn('party', `dungeon seat join failed for ${id}: ${error instanceof Error ? error.message : String(error)}`)
@@ -499,7 +496,7 @@ export const leader_group_step = async (
           await join_followers(ctx, followers, outcome.fight)
         } catch (error) {
           if (is_version_assert_error(error)) {
-            log_warn('party', `join failed — object versions stale or game paused`)
+            log_warn('party', `join failed — MoveAbort 601 (package version mismatch or paused version gate)`)
           } else {
             log_warn('party', `join failed: ${error instanceof Error ? error.message : String(error)}`)
           }

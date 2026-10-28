@@ -22,8 +22,7 @@ import { zone_key, type ChainClock, type GameState } from './store.ts'
 export const MAX_INDEXING_LAG = 300
 
 /** The freshness gate will not pass until the projection has folded at least this many packets —
- *  prevents submitting txs against a still-empty/partial projection right after connect, which
- *  would abort with `version::assert_latest` (stale object versions). */
+ *  preventing actions against a still-empty/partial projection right after connect. */
 export const MIN_PACKETS_SEEN = 10
 
 export type Freshness = Readonly<{ ok: true }> | Readonly<{ ok: false; reason: string }>
@@ -42,9 +41,8 @@ export const chain_now = (clock: ChainClock, monotonic_ms: number): number | nul
 }
 
 /** The pre-transaction gate: connected, gameplay unfrozen, projection caught up, chain clock live.
- *  Unknown indexing lag is a warning, not a hard block — the chain will reject truly stale txs with
- *  `version::assert_latest` (which we handle), so holding forever against a slow network is worse
- *  than occasionally racing. */
+ *  Unknown indexing lag is a warning, not a hard block — holding forever against a slow network is
+ *  worse than occasionally racing. */
 export const freshness = (state: GameState, now_ms: number): Freshness => {
   if (!state.connected) return Object.freeze({ ok: false, reason: 'link not authenticated' })
   if (state.frozen === null) return Object.freeze({ ok: false, reason: 'gameplay state unknown' })
@@ -59,10 +57,8 @@ export const freshness = (state: GameState, now_ms: number): Freshness => {
   return Object.freeze({ ok: true })
 }
 
-/** A transaction that failed with `version::assert_latest` abort 601: the chain rejected the tx
- *  because our object versions were stale (the projection hasn't caught up), OR the game server is
- *  paused. Distinguish: if `state.frozen` is true it's a paused game; otherwise it's stale state.
- *  The bot should hold and wait either way — never retry blindly (which only burns gas). */
+/** A transaction that failed the on-chain package-version gate (`version::assert_latest`, abort 601).
+ *  This is a deployment-pin mismatch or a paused version gate, not a stale Sui object reference. */
 export const is_version_assert_error = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error)
   return message.includes('::version::assert_latest') && /abort code:\s*601\b/i.test(message)

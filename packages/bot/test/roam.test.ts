@@ -79,6 +79,15 @@ describe('roam plan_roam', () => {
     expect(plan.kind).toBe('stay')
   })
 
+  it('moves toward a needed-loot band even when the current window already pays', () => {
+    const plan = plan_roam(30, thebes, nauvis, assess_window(30, [group('bramble', 100)]), 2_500, true, 15_000, 10_000)
+    expect(plan.kind).toBe('advance')
+    if (plan.kind === 'advance') {
+      expect(plan.distance).toBe(432 + 2_500)
+      expect(plan.reason).toBe('needed monster loot')
+    }
+  })
+
   it('advances on undiscovered ground', () => {
     const plan = plan_roam(30, thebes, nauvis, assess_window(30, []))
     expect(plan.kind).toBe('advance')

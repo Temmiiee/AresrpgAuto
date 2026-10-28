@@ -71,7 +71,7 @@ import {
   type Excursion,
 } from '../actions/excursion.ts'
 import { safe_travel_to } from '../actions/roam.ts'
-import { maybe_craft_dungeon_key, DUNGEON_KEYS, should_run_dungeons } from '../actions/dungeon.ts'
+import { dungeon_key_targets, maybe_craft_dungeon_key, should_run_dungeons } from '../actions/dungeon.ts'
 import { create_dungeon_runner, follower_dungeon_step, type DungeonRunner } from '../actions/dungeon_run.ts'
 import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions/cross_world.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
@@ -170,10 +170,6 @@ const DIGEST_INTERVAL_MS = config.digest_minutes * 60_000
 /** How far (in blocks) a party member may wander for a node while the party is grouping. Two zones is
  *  about 90s of travel under the speed law, cheap enough that the next rendezvous still lands. */
 const PARTY_GATHER_RADIUS = 1_024
-/** The dungeon key outputs folded into the gather demand: their materials are the ones a key run
- *  needs, and asking for them here means they gather on the same nodes the jobs already want. */
-const KEY_OUTPUTS: readonly string[] = Object.freeze(DUNGEON_KEYS.map(({ key }) => key))
-
 type XpMark = Readonly<{ experience: bigint; jobs: Readonly<Record<string, bigint>> }>
 
 const xp_snapshot = (character: CharacterRow): XpMark =>
@@ -913,7 +909,8 @@ export const play_loop = async (
           effectiveLevel,
           PARTY_RADIUS,
           window_viable(party_state),
-          strategy_ref?.farm?.distance ?? null
+          strategy_ref?.farm?.distance ?? null,
+          strategy_ref?.loot_focus ?? null
         )
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
@@ -992,7 +989,8 @@ export const play_loop = async (
           effectiveLevel,
           undefined,
           undefined,
-          strategy_ref?.farm?.distance ?? null
+          strategy_ref?.farm?.distance ?? null,
+          strategy_ref?.loot_focus ?? null
         )
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
@@ -1054,9 +1052,16 @@ export const play_loop = async (
       // leader's job levels decide which inputs the rotations still owe — every gatherer then
       // walks toward those (and the dungeon-key materials) instead of the tier ladder alone.
       const crafter = game_state.characters.find((c) => c.id === party_state.leader_id)
+      const key_outputs = crafter
+        ? dungeon_key_targets(
+            game_state.inventory,
+            unavailable_item_ids(game_state),
+            rt.ctx.dungeon_blacklist
+          )
+        : []
       const demand = crafter
         ? craft_gather_demand(crafter, game_state.inventory, unavailable_item_ids(game_state), [
-            ...KEY_OUTPUTS,
+            ...key_outputs,
             ...current_gear_goals(),
           ])
         : undefined
@@ -1105,7 +1110,15 @@ export const play_loop = async (
       // chain. `select_craft_target` drills through the key's missing prerequisites, so the party
       // now mints the flour/powder/weave the keys eat before spending those materials on xp filler.
       // Gear goals follow, then the XP rotation.
-      const craft_priorities = [...KEY_OUTPUTS, ...current_gear_goals()]
+      const leader = game_state.characters.find((c) => c.id === party_state.leader_id)
+      const key_outputs = leader
+        ? dungeon_key_targets(
+            game_state.inventory,
+            unavailable_item_ids(game_state),
+            ctx.dungeon_blacklist
+          )
+        : []
+      const craft_priorities = [...key_outputs, ...current_gear_goals()]
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
         const crafted = await drive_craft(ctx, burned, craft_priorities)
         if (!crafted.success) {
@@ -1219,7 +1232,9 @@ export const play_loop = async (
         const rows = party_rows()
         if (rows.length > 0) {
           const started_ms = Date.now()
-          const plan = compute_strategy(rows, game_state)
+          const plan = compute_strategy(rows, game_state, {
+            dungeon_blacklist: runtimes[0]?.ctx.dungeon_blacklist,
+          })
           strategy_ref = plan
           for (const line of describe_strategy(plan)) log_info('strategy', line)
           log_info('strategy', `pass complete in ${Date.now() - started_ms}ms`)

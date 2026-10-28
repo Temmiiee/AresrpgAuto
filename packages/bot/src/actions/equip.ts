@@ -303,7 +303,7 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
       )
     } catch (error) {
       if (is_version_assert_error(error)) {
-        log_warn('equip', `${character.name}: equip failed — object versions stale or game paused`)
+        log_warn('equip', `${character.name}: equip failed — MoveAbort 601 (package version mismatch or paused version gate)`)
         continue
       }
       log_warn('equip', `${character.name}: equip failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -311,4 +311,3 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
   }
   return Object.freeze({ equipped, blocked })
 }
-
