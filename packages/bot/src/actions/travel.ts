@@ -24,6 +24,7 @@ import {
 
 import { chain_now, checkpoint_of, is_version_assert_error } from '../state/selectors.ts'
 import { log_info, log_warn, sleep } from '../shared/logger.ts'
+import { read_live_checkpoint, should_adopt_checkpoint } from './checkpoint_read.ts'
 import { custody_of, type ActionContext } from './context.ts'
 
 /** One block takes at least this long at the legal speed, with a hair of margin. Mounted, the
@@ -43,6 +44,17 @@ let last_stall_diag_ms = 0
  *  clock); adopting it makes `travel_proof_ready` fail its `now_ms < from_ms` test on EVERY leg, so
  *  the character can never travel, gather, engage or enter a dungeon again. */
 const ANCHOR_FUTURE_SLACK_MS = 30_000
+/** Re-read the live chain checkpoint at most this often (each read is two dynamic-field lookups). */
+const CHAIN_ANCHOR_REFRESH_MS = 3_000
+/** A proof must hold this long BEFORE the estimated chain instant: our chain-clock extrapolation can
+ *  run a beat ahead of the `Clock` the transaction actually executes against. */
+const PROOF_MARGIN_MS = 1_000
+
+/** `world::prove_move` refused the leg (ETravelTooFar 305): the anchor overstated the travel bank. */
+export const is_travel_too_far_error = (error: unknown): boolean => {
+  const text = error instanceof Error ? error.message : String(error)
+  return /prove_move/.test(text) && /\b305\b/.test(text)
+}
 
 export type Pose = Readonly<{ x: number; y: number; z: number }>
 
@@ -65,6 +77,8 @@ export type Mover = Readonly<{
   prove_ready: (to_x: number, to_z: number, timeout_ms?: number) => Promise<boolean>
   /** discover or refresh the zone at the character's chain-proven pose */
   ensure_zone: (refresh: boolean) => Promise<void>
+  /** re-anchor on the live chain checkpoint (rate-limited unless `force`) */
+  refresh_anchor: (force?: boolean) => Promise<void>
 }>
 
 const step_toward = (from: Pose, to_x: number, to_z: number): Pose => {
@@ -157,7 +171,7 @@ export const create_mover = (ctx: ActionContext): Mover => {
       )
   }
 
-  const can_reach = (to_x: number, to_z: number): boolean => {
+  const can_reach = (to_x: number, to_z: number, margin_ms = 0): boolean => {
     if (!anchor) return false
     return travel_proof_ready({
       from_x: anchor.x,
@@ -166,12 +180,48 @@ export const create_mover = (ctx: ActionContext): Mover => {
       pet_at_start: anchor.pet,
       to_x,
       to_z,
-      now_ms: effective_now(),
+      now_ms: effective_now() - margin_ms,
       pet_now,
     })
   }
 
+  let last_chain_read_ms = 0
+  /** Adopt the live chain checkpoint when it is newer than the local anchor — a fight engage/join,
+   *  dungeon entry or any other door moved it behind the mover's back. A transport failure keeps
+   *  the local anchor (logged once per minute). */
+  let last_read_warn_ms = 0
+  const refresh_anchor = async (force = false): Promise<void> => {
+    const world = anchor?.world ?? ctx.state().characters.find((c) => c.id === ctx.character_id)?.world ?? ctx.world
+    if (!world) return
+    const now = Date.now()
+    if (!force && now - last_chain_read_ms < CHAIN_ANCHOR_REFRESH_MS) return
+    last_chain_read_ms = now
+    let live
+    try {
+      live = await read_live_checkpoint(ctx.sdk.sdk.sui_client, ctx.sdk.sdk.game_type_package, ctx.character_id, world)
+    } catch (error) {
+      if (now - last_read_warn_ms > 60_000) {
+        last_read_warn_ms = now
+        log_warn('travel', `live checkpoint read failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      return
+    }
+    if (!live || !should_adopt_checkpoint(anchor, live)) return
+    const chain = chain_now(ctx.state().chain_clock, Date.now())
+    if (chain !== null && live.at_ms > chain + ANCHOR_FUTURE_SLACK_MS) return
+    const previous = anchor
+    anchor = Object.freeze({ world: live.world, x: live.x, z: live.z, at_ms: live.at_ms, pet: live.pet })
+    // date the local wall clock so `effective_now` tracks the chain from this checkpoint on
+    anchor_local_ms = Date.now() - (chain === null ? 0 : Math.max(0, chain - live.at_ms))
+    if (previous && (previous.x !== live.x || previous.z !== live.z)) {
+      const who = ctx.state().characters.find((c) => c.id === ctx.character_id)?.name ?? ctx.character_id.slice(0, 8)
+      log_info('travel', `${who}: re-anchored on the chain checkpoint ${live.x},${live.z} (was ${previous.x},${previous.z})`)
+    }
+  }
+
   const travel_to = async (to_x: number, to_z: number): Promise<void> => {
+    // the presence packets carry the anchor as their checkpoint: start from the chain's real one
+    await refresh_anchor()
     // The step gate (below) only lets one block through per `step_min_ms`, and every ungated poll
     // sleeps `POLL_MS`. Counting LOOPS would therefore abort a legitimate leg after roughly half
     // its steps — the cap must count BLOCKS actually walked. A too-long single leg still throws
@@ -216,12 +266,15 @@ export const create_mover = (ctx: ActionContext): Mover => {
   }
 
   const prove_ready = async (to_x: number, to_z: number, timeout_ms = 30_000): Promise<boolean> => {
+    // Measure from the checkpoint the chain will actually use, not the possibly-stale local one.
+    await refresh_anchor(true)
     const deadline = Date.now() + timeout_ms
     while (Date.now() < deadline) {
-      if (can_reach(to_x, to_z)) return true
+      if (can_reach(to_x, to_z, PROOF_MARGIN_MS)) return true
       await sleep(POLL_MS)
+      await refresh_anchor()
     }
-    return can_reach(to_x, to_z)
+    return can_reach(to_x, to_z, PROOF_MARGIN_MS)
   }
 
   const note_rooted = (duration_ms: number): void => {
@@ -248,6 +301,12 @@ export const create_mover = (ctx: ActionContext): Mover => {
     // The instant this leg is provable is the best local estimate of the checkpoint the chain is
     // about to record (the tx executes a beat later, so this under-estimates by that beat — the
     // safe direction: the travel bank can never look larger than it truly is).
+    // Some callers submit without `prove_ready`: check the leg against the live checkpoint first
+    // so a stale anchor never turns into an on-chain ETravelTooFar (305).
+    if (!(await prove_ready(pose.x, pose.z))) {
+      log_warn('travel', `search_zone ${zx}:${zz} deferred — the chain cannot prove ${pose.x},${pose.z} yet`)
+      return
+    }
     const proven_at_ms = effective_now()
     try {
       await ctx.sdk.character.search_zone({
@@ -261,6 +320,11 @@ export const create_mover = (ctx: ActionContext): Mover => {
     } catch (error) {
     if (is_version_assert_error(error)) {
       log_warn('travel', `search_zone ${zx}:${zz} — MoveAbort 601 (package version mismatch or paused version gate)`)
+      return
+    }
+    if (is_travel_too_far_error(error)) {
+      log_warn('travel', `search_zone ${zx}:${zz} refused (prove_move 305); re-anchoring on the chain checkpoint`)
+      await refresh_anchor(true)
       return
     }
       throw error
@@ -292,5 +356,6 @@ export const create_mover = (ctx: ActionContext): Mover => {
     travel_to,
     prove_ready,
     ensure_zone,
+    refresh_anchor,
   })
 }

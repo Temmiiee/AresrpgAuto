@@ -243,3 +243,27 @@ describe('auto progression', () => {
     expect(plan_stat_spending(character('shugo', 30))).toBeNull()
   })
 })
+
+describe('live checkpoint adoption (prove_move 305)', () => {
+  const { should_adopt_checkpoint } = require('../src/actions/checkpoint_read.ts') as typeof import('../src/actions/checkpoint_read.ts')
+  const { is_travel_too_far_error } = require('../src/actions/travel.ts') as typeof import('../src/actions/travel.ts')
+  const local = { world: 'w', x: 10, z: 10, at_ms: 1_000, pet: false }
+
+  it('adopts a newer chain checkpoint written by a door the mover did not see', () => {
+    expect(should_adopt_checkpoint(local, { world: 'w', x: 50, z: 10, at_ms: 5_000, pet: false })).toBe(true)
+  })
+
+  it('keeps the local anchor when the fullnode still serves an older one', () => {
+    expect(should_adopt_checkpoint(local, { world: 'w', x: 0, z: 0, at_ms: 500, pet: false })).toBe(false)
+  })
+
+  it('adopts when there is no anchor or the world changed', () => {
+    expect(should_adopt_checkpoint(null, { ...local })).toBe(true)
+    expect(should_adopt_checkpoint(local, { ...local, world: 'other', at_ms: 1 })).toBe(true)
+  })
+
+  it('recognises the abort', () => {
+    expect(is_travel_too_far_error(new Error('MoveAbort in 1st command, abort code: 305, in world::prove_move'))).toBe(true)
+    expect(is_travel_too_far_error(new Error('abort code: 304, in world::prove_move'))).toBe(false)
+  })
+})
