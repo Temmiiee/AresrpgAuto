@@ -90,15 +90,27 @@ export const dungeon_key_targets = (
   inventory: readonly ItemRow[],
   unavailable: ReadonlySet<string>,
   blacklist: ReadonlyMap<string, number>,
-  now = Date.now()
+  now = Date.now(),
+  stock = MIN_GROUP_KEYS
 ): readonly string[] => {
+  const wanted = Math.max(MIN_GROUP_KEYS, Math.floor(stock))
   for (const dk of DUNGEON_KEYS) {
     if (key_parked(blacklist, dk.key, now)) continue
-    if (held_key_amount(inventory, unavailable, dk.key) >= MIN_GROUP_KEYS) continue
+    if (held_key_amount(inventory, unavailable, dk.key) >= wanted) continue
     if (!dungeon_key_detail(dk.key)) continue
     return Object.freeze([dk.key])
   }
   return Object.freeze([])
+}
+
+/** How many keys of the focused dungeon the party stocks before moving the key chain on: one per
+ *  active member, so the WHOLE party can enter every run together (never below MIN_GROUP_KEYS). */
+export const party_key_stock = (
+  party: Readonly<{ members: readonly string[]; detached: ReadonlySet<string> }> | null | undefined
+): number => {
+  if (!party) return MIN_GROUP_KEYS
+  const active = party.members.filter((id) => !party.detached.has(id)).length
+  return Math.max(MIN_GROUP_KEYS, active)
 }
 
 /** A one-line "what this key still needs" summary, for the operator log. */
@@ -135,7 +147,7 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
   const unavailable = unavailable_item_ids(state)
   // Shared parked-key map from the dungeon runner (keys whose preview reads unwinnable right now).
   const blacklist = ctx.dungeon_blacklist
-  const targets = new Set(dungeon_key_targets(inventory, unavailable, blacklist))
+  const targets = new Set(dungeon_key_targets(inventory, unavailable, blacklist, Date.now(), party_key_stock(ctx.party_state)))
 
   for (const dk of DUNGEON_KEYS) {
     if (!targets.has(dk.key)) continue

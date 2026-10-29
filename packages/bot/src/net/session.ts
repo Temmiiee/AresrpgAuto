@@ -71,12 +71,13 @@ import {
   type Excursion,
 } from '../actions/excursion.ts'
 import { safe_travel_to } from '../actions/roam.ts'
-import { dungeon_key_targets, maybe_craft_dungeon_key, should_run_dungeons } from '../actions/dungeon.ts'
+import { dungeon_key_targets, maybe_craft_dungeon_key, party_key_stock, should_run_dungeons } from '../actions/dungeon.ts'
 import { create_dungeon_runner, follower_dungeon_step, type DungeonRunner } from '../actions/dungeon_run.ts'
 import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions/cross_world.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, type ActionContext } from '../actions/context.ts'
 import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
+import { maybe_progress } from '../actions/progression.ts'
 import { gear_goal_outputs } from '../actions/gear.ts'
 import { compute_strategy, describe_strategy, type Strategy } from '../actions/strategy.ts'
 import { active_fight_of, freshness, unavailable_item_ids } from '../state/selectors.ts'
@@ -493,6 +494,8 @@ export const play_loop = async (
   // inventory carries worn and held items alike, so "an equipment id the party has never seen" is the
   // drop signal. Runs are COALESCED — four parallel passes schedule at most one party-wide pass — and
   // each character claims its picks so two never reach for the same item.
+  /** party-wide: the last time ANY member attempted the dungeon-key craft */
+  let last_party_key_craft_ms = 0
   let seen_gear_ids = new Set<string>()
   let equip_running = false
   let equip_requested = false
@@ -737,6 +740,10 @@ export const play_loop = async (
       if (outcome.detail === 'versions stale') rt.last_assert_latest_ms = Date.now()
       return FIGHT_POLL_MS
     }
+
+    // 2b. spend stat capital / spell points a level-up granted (out of fight only — the chain
+    // borrows the character from the kiosk, which a seated fighter cannot lend).
+    if (await maybe_progress(ctx, current)) return SETTLE_POLL_MS
 
     // 2b. an engage was just submitted but the roster has not caught up yet: do not re-engage into
     // the indexing window (that is the double-engage that aborts on chain).
@@ -1056,7 +1063,9 @@ export const play_loop = async (
         ? dungeon_key_targets(
             game_state.inventory,
             unavailable_item_ids(game_state),
-            rt.ctx.dungeon_blacklist
+            rt.ctx.dungeon_blacklist,
+            Date.now(),
+            party_key_stock(party_state)
           )
         : []
       const demand = crafter
@@ -1088,11 +1097,18 @@ export const play_loop = async (
     // owns this pass's crafting; the rotation resumes whenever no key can be made. Rate-limited so a
     // key that keeps failing cannot starve the rotation.
     let key_crafted = false
-    if (crafts && should_run_dungeons(character, ctx)) {
+    // ANY crafting member may mint the key (the leader's own trade is often not the key's job);
+    // a party-wide spacing keeps two crafters from spending the same projected stack at once.
+    if (crafts && party_state.members.includes(character.id)) {
       const KEY_CRAFT_COOLDOWN_MS = 60_000
+      const PARTY_KEY_CRAFT_SPACING_MS = 20_000
       const now = Date.now()
-      if ((now - (rt.last_key_craft_attempt_ms ?? 0)) >= KEY_CRAFT_COOLDOWN_MS) {
+      if (
+        now - (rt.last_key_craft_attempt_ms ?? 0) >= KEY_CRAFT_COOLDOWN_MS &&
+        now - last_party_key_craft_ms >= PARTY_KEY_CRAFT_SPACING_MS
+      ) {
         rt.last_key_craft_attempt_ms = now
+        last_party_key_craft_ms = now
         key_crafted = await maybe_craft_dungeon_key(ctx)
         if (key_crafted) acted = true
       }
@@ -1115,7 +1131,9 @@ export const play_loop = async (
         ? dungeon_key_targets(
             game_state.inventory,
             unavailable_item_ids(game_state),
-            ctx.dungeon_blacklist
+            ctx.dungeon_blacklist,
+            Date.now(),
+            party_key_stock(party_state)
           )
         : []
       const craft_priorities = [...key_outputs, ...current_gear_goals()]

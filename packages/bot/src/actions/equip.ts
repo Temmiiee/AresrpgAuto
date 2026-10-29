@@ -31,6 +31,7 @@ import { freshness, is_version_assert_error, select_character, unavailable_item_
 import type { GameState } from '../state/store.ts'
 
 import { custody_of, type ActionContext } from './context.ts'
+import { equip_settling, mark_equip_settling, verify_equip_ownership } from './equip_guard.ts'
 
 // ── the elemental model ──────────────────────────────────────────────
 
@@ -205,6 +206,17 @@ export const plan_loadout = (
   )
   const loadout = new Map<CharacterEquipmentSlot, GearItem>()
   for (const slot of combat_equipment_slots) {
+    // No tool preference (fighter, crafter, or a gather_all rotation that swaps tools per job in
+    // the gather step): keep whatever tool is on. Re-picking "the best tool" here fought the gather
+    // step's own swap every pass and kept unequipping a tool the projection had not caught up on.
+    if (slot === 'tool' && options.tool_category === undefined) {
+      const worn_tool = character.equipment.find((worn) => worn.slot === 'tool')
+      if (worn_tool) {
+        loadout.set(slot, worn_tool)
+        used.add(worn_tool.id)
+        continue
+      }
+    }
     let best: GearItem | null = null
     let best_score = Number.NEGATIVE_INFINITY
     for (const item of pool) {
@@ -277,9 +289,27 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
       continue
     }
 
+    // a just-landed equip (or a caught stale plan) — let the projection catch up first
+    if (equip_settling(character.id)) {
+      blocked += 1
+      continue
+    }
+
     const loadout = plan_loadout(character, state, { claimed, tool_category })
     const plan = equip_plan(character, loadout)
     if (!plan.to_equip.length) continue
+
+    // Ownership check: every item to unequip must be worn by THIS character on chain, every item to
+    // equip must still be in the kiosk. The projection lags, and a stale plan is exactly what aborted
+    // with "object … is not Immutable or AddressOwned".
+    const verdict = await verify_equip_ownership(ctx, character.id, plan.to_equip, plan.to_unequip)
+    if (!verdict.ok) {
+      log_warn('equip', `${character.name}: skipping stale equip plan (${verdict.reason}); re-planning after the projection settles`)
+      for (const change of plan.to_equip) claimed.add(change.item_id)
+      mark_equip_settling(character.id)
+      blocked += 1
+      continue
+    }
 
     try {
       const receipt = await ctx.sdk.character.equip({
@@ -289,6 +319,7 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
         custody: custody_of(character),
       })
       for (const change of plan.to_equip) claimed.add(change.item_id)
+      mark_equip_settling(character.id)
       equipped += plan.to_equip.length
       ctx.ledger.append({
         kind: 'equip',

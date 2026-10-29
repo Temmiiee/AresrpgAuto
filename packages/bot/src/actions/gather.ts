@@ -11,6 +11,7 @@ import { gatherable_of, tool_category_of_job, tier_unlock_level, type Gatherable
 import { log_info, log_warn } from '../shared/logger.ts'
 import { is_version_assert_error, select_character, select_window_resource_packs, unavailable_item_ids } from '../state/selectors.ts'
 import { custody_of, type ActionContext } from './context.ts'
+import { EQUIP_SETTLE_MS, equip_settling, mark_equip_settling, verify_equip_ownership } from './equip_guard.ts'
 import type { Mover } from './travel.ts'
 
 export type GatherOutcome =
@@ -69,6 +70,9 @@ const tool_ready = (
  *  false when the character owns no equippable tool of that category (the gather would be refused
  *  anyway). Listed/worn tools are un-equippable (their kiosk extraction would abort on chain), so
  *  they are never chosen; a failed swap is logged and skipped rather than aborting the whole pass. */
+/** character id → the tool this process swapped in last (bridges the projection lag) */
+const recent_tool_swaps = new Map<string, { category: string; item_id: string; at_ms: number }>()
+
 const ensure_tool = async (
   ctx: ActionContext,
   character: CharacterRow,
@@ -77,16 +81,38 @@ const ensure_tool = async (
 ): Promise<boolean> => {
   const category = tool_category_of_job(job)
   if (character.equipment.some((worn) => worn.category === category)) return true
+  // The projection trails our own receipts: a tool we swapped in moments ago is worn on chain even
+  // though the row still shows the old one. Trust the recent swap instead of re-sending it (the
+  // re-send would try to unequip the OLD tool, which is already back in the kiosk).
+  const recent = recent_tool_swaps.get(character.id)
+  if (recent && Date.now() - recent.at_ms < EQUIP_SETTLE_MS) {
+    if (recent.category === category) return true
+  }
+  if (equip_settling(character.id)) return false
   const tool = ctx.state().inventory.find((item) => item.category === category && !unavailable.has(item.id))
   if (!tool) return false
   const current = character.equipment.find((worn) => worn.slot === 'tool')
+  const to_equip = [{ slot: 'tool', item_id: tool.id }] as const
+  const to_unequip = current ? [{ slot: 'tool', item_id: current.id }] : []
+  const verdict = await verify_equip_ownership(ctx, character.id, to_equip, to_unequip)
+  if (verdict.already_worn.includes(tool.id)) {
+    recent_tool_swaps.set(character.id, { category, item_id: tool.id, at_ms: Date.now() })
+    return true
+  }
+  if (!verdict.ok) {
+    log_warn('gather', `${character.name}: skipping stale ${category} swap (${verdict.reason}); retrying once the projection settles`)
+    mark_equip_settling(character.id)
+    return false
+  }
   try {
     await ctx.sdk.character.equip({
       character_id: ctx.character_id,
-      to_equip: [{ slot: 'tool', item_id: tool.id }],
-      to_unequip: current ? [{ slot: 'tool', item_id: current.id }] : [],
+      to_equip: [...to_equip],
+      to_unequip,
       custody: custody_of(character),
     })
+    recent_tool_swaps.set(character.id, { category, item_id: tool.id, at_ms: Date.now() })
+    mark_equip_settling(character.id)
   } catch (error) {
     if (is_version_assert_error(error)) {
       log_warn('gather', `could not equip ${category} (${tool.id}) — MoveAbort 601 (package version mismatch or paused version gate)`)
@@ -132,29 +158,53 @@ export const gather_once = async (
   // counts are INDEPENDENT (a pack can fail several) and the window's item histogram is included, so
   // one line names both the requested specialty and what the local window actually grows.
   const window_packs = select_window_resource_packs(state).filter(({ zone }) => zone.world === world)
-  let job_out = 0
-  let tier_out = 0
-  let tool_out = 0
-  const item_counts = new Map<string, number>()
-  const candidates = rank_gather_candidates(
-    window_packs
-      .flatMap(({ pack }) => {
-        const gatherable = gatherable_of(pack.item_type)
-        if (!gatherable) return []
-        item_counts.set(pack.item_type, (item_counts.get(pack.item_type) ?? 0) + 1)
-        const job_ok = job === undefined || gatherable.job === job
-        const tier_ok = tier_unlock_level(gatherable.tier) <= job_level_from_xp(Number(jobs[gatherable.job] ?? 0))
-        const tool_ok = tool_ready(character, held, gatherable.job, unavailable)
-        if (!job_ok) job_out += 1
-        if (!tier_ok) tier_out += 1
-        if (!tool_ok) tool_out += 1
-        if (!job_ok || !tier_ok || !tool_ok) return []
-        return [{ pack, gatherable }]
-      })
-      .filter(({ pack }) => max_distance === undefined || distance_to(pose, pack.x, pack.z) <= max_distance),
-    demand,
-    pose
-  )
+  const pick = (wanted: GatheringJob | undefined) => {
+    let job_out = 0
+    let tier_out = 0
+    let tool_out = 0
+    const item_counts = new Map<string, number>()
+    const candidates = rank_gather_candidates(
+      window_packs
+        .flatMap(({ pack }) => {
+          const gatherable = gatherable_of(pack.item_type)
+          if (!gatherable) return []
+          item_counts.set(pack.item_type, (item_counts.get(pack.item_type) ?? 0) + 1)
+          const job_ok = wanted === undefined || gatherable.job === wanted
+          const tier_ok = tier_unlock_level(gatherable.tier) <= job_level_from_xp(Number(jobs[gatherable.job] ?? 0))
+          const tool_ok = tool_ready(character, held, gatherable.job, unavailable)
+          if (!job_ok) job_out += 1
+          if (!tier_ok) tier_out += 1
+          if (!tool_ok) tool_out += 1
+          if (!job_ok || !tier_ok || !tool_ok) return []
+          return [{ pack, gatherable }]
+        })
+        .filter(({ pack }) => max_distance === undefined || distance_to(pose, pack.x, pack.z) <= max_distance),
+      demand,
+      pose
+    )
+    return { candidates, job_out, tier_out, tool_out, item_counts }
+  }
+
+  let picked = pick(job)
+  // The specialty has nothing harvestable HERE (every pack of that job is above its tier, or its
+  // tool is missing): harvest whatever this character CAN work in the window instead of idling.
+  // The xp still lands on a gathering job, and the excursion planner keeps relocating the party
+  // toward the specialty's own tier-1 packs.
+  if (!picked.candidates[0] && job !== undefined) {
+    const fallback = pick(undefined)
+    // prefer a job whose tool is already on, so the fallback does not churn tool swaps every pass
+    const worn_tool = character.equipment.find((worn) => worn.slot === 'tool')?.category
+    const same_tool = fallback.candidates.filter(({ gatherable }) => tool_category_of_job(gatherable.job) === worn_tool)
+    if (same_tool.length) fallback.candidates = same_tool
+    if (fallback.candidates[0]) {
+      log_info(
+        'gather',
+        `${character.name}: no workable ${job} pack here (${job} lvl ${job_level_from_xp(Number(jobs[job] ?? 0))}, tier-locked=${picked.tier_out} no-tool=${picked.tool_out}); harvesting ${fallback.candidates[0].gatherable.job} meanwhile`
+      )
+      picked = fallback
+    }
+  }
+  const { candidates, job_out, tier_out, tool_out, item_counts } = picked
 
   const target = candidates[0]
   if (!target) {
@@ -163,8 +213,9 @@ export const gather_once = async (
       .slice(0, 6)
       .map(([item, n]) => `${item}×${n}`)
       .join(' ')
+    const levels = job ? ` ${job}=lvl${job_level_from_xp(Number(jobs[job] ?? 0))}` : ''
     return skipped(
-      `no tool-ready unlocked live packs in the tracked window (want=${job ?? 'any'} window=${window_packs.length} job≠${job_out} tier-locked=${tier_out} no-tool=${tool_out} holds[${holds}])`
+      `no tool-ready unlocked live packs in the tracked window (want=${job ?? 'any'}${levels} window=${window_packs.length} job≠${job_out} tier-locked=${tier_out} no-tool=${tool_out} holds[${holds}])`
     )
   }
 

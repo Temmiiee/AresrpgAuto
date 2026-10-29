@@ -40,9 +40,28 @@ import type { Mover } from './travel.ts'
 const ENTER_GRACE_MS = 30_000
 /** After a successful `start_fight`, wait this long for the live fight to surface before retrying. */
 const START_GRACE_MS = 20_000
-/** How long the leader waits for the other key-holders to enter the run before starting room 1
- *  anyway. Anyone still walking joins a later room; the wait only bounds room 1. */
-const GROUP_ENTER_WAIT_MS = 90_000
+/** Room 1 waits for EVERY committed seat to enter. These are only deadlock breakers: the leader
+ *  starts with whoever is present once nobody new has entered for GROUP_ENTER_STALL_MS, or after
+ *  GROUP_ENTER_MAX_WAIT_MS in total. The clock starts when the LEADER's run first appears (not at
+ *  commit time — the leader's own walk to the portal used to eat the whole window). */
+export const GROUP_ENTER_STALL_MS = 6 * 60_000
+export const GROUP_ENTER_MAX_WAIT_MS = 15 * 60_000
+const GROUP_WAIT_LOG_MS = 30_000
+
+export type Room1Gate = 'start' | 'wait' | 'start_partial'
+
+/** Pure room-1 gate: start only when every expected entrant is in, unless the wait has stalled. */
+export const room1_gate = (input: {
+  present: number
+  expected: number
+  waited_ms: number
+  since_last_arrival_ms: number
+}): Room1Gate => {
+  if (input.present >= input.expected) return 'start'
+  if (input.waited_ms >= GROUP_ENTER_MAX_WAIT_MS || input.since_last_arrival_ms >= GROUP_ENTER_STALL_MS)
+    return 'start_partial'
+  return 'wait'
+}
 /** A group run needs at least this many keys (one per entrant). Fewer is a solo run, which the party
  *  has stopped doing -- dungeon fights are only worth it fought as a stack. */
 /** The win rate below which a room is not worth committing to. */
@@ -122,6 +141,23 @@ const planning_allies = (
 }
 
 /** How many party members have entered `dungeon` and are sitting on `room` right now. */
+/** Followers that could still enter this run: active, in the run's world, not already in it. */
+const party_missing_names = (ctx: ActionContext, dungeon: string, world: string): string[] => {
+  const state = ctx.state()
+  const party = ctx.party_state
+  if (!party) return []
+  const out: string[] = []
+  for (const id of party.members) {
+    if (party.detached.has(id) || id === party.leader_id) continue
+    const row = select_character(state, id)
+    if (!row) continue
+    if (row.dungeon_run?.dungeon === dungeon) continue
+    if ((row.world ?? ctx.world) !== world) continue
+    out.push(row.name)
+  }
+  return out
+}
+
 const party_entered_count = (ctx: ActionContext, dungeon: string, room: number): number => {
   const state = ctx.state()
   const party = ctx.party_state
@@ -295,8 +331,13 @@ const plan_group_dungeon = (
         `${character.name}: ${dk.dungeon} room ${ri + 1} group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${chosen_seats}, scored=${allies.length + 1}, keys=${keys}`
       )
     }
-    log_info('dungeon', `${character.name}: ${dk.dungeon} MINIMUM seats to clear all rooms = ${chosen_seats} (of ${max_seats} available)`)
-    return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats: chosen_seats })
+    // The preview proved `chosen_seats` is ENOUGH; the party then runs it TOGETHER — every member
+    // the held keys cover enters (more seats only raise the win rate, and nobody idles outside).
+    log_info(
+      'dungeon',
+      `${character.name}: ${dk.dungeon} clears with ${chosen_seats} seat(s); running it with the whole party (${max_seats} seat(s), ${keys} key(s))`
+    )
+    return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats: max_seats })
   }
   return null
 }
@@ -343,6 +384,8 @@ export const follower_dungeon_step = async (ctx: ActionContext, mover: Mover): P
   const dk = DUNGEON_KEYS.find((row) => row.dungeon === group.dungeon)
   if (!dk) return false
   if (held_key_amount(ctx.state().inventory, unavailable_item_ids(ctx.state()), dk.key) <= 0) return false
+  // every committed seat is already taken: don't burn a surplus key on a run nobody planned for
+  if (party_entered_count(ctx, group.dungeon, 1) >= group.seats) return false
   const result = await enter_run(ctx, mover, character, group.dungeon)
   return result !== null
 }
@@ -354,6 +397,8 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
   /** True once THIS runner has entered the committed group run, so a null `dungeon_run` reads as
    *  "the run ended" rather than "we have not entered yet". */
   let entered_group = false
+  /** room-1 wait bookkeeping for the run currently gating (keyed by dungeon + commit time) */
+  let room1_wait: { key: string; since: number; present: number; last_arrival: number; last_log: number } | null = null
 
   /** Stage the run's current room: birth its fight (the turns are driven elsewhere). */
   const start_room = async (character: CharacterRow): Promise<DungeonOutcome> => {
@@ -433,12 +478,44 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       // Room 1 of a group run: give the other key-holders a bounded window to walk over and enter,
       // so the room is fought at the committed seat count instead of solo.
       if (group && group.dungeon === run.dungeon && run.room === 1) {
+        const now = Date.now()
         const present = party_entered_count(ctx, run.dungeon, 1)
-        if (present < group.seats && Date.now() - group.committed_ms < GROUP_ENTER_WAIT_MS) {
-          return outcome('waiting', `waiting for ${group.seats - present} more enterer(s) in ${run.dungeon}`)
+        const key = `${group.dungeon}@${group.committed_ms}`
+        if (!room1_wait || room1_wait.key !== key)
+          room1_wait = { key, since: now, present, last_arrival: now, last_log: 0 }
+        if (present > room1_wait.present) {
+          room1_wait.present = present
+          room1_wait.last_arrival = now
         }
-        if (present < group.seats) {
-          log_warn('dungeon', `${character.name}: ${group.seats - present} enterer(s) never arrived; starting ${run.dungeon} room 1 with ${present}`)
+        // expected = the committed seats, capped by who can still physically come (same world,
+        // active) — a member that left the world is not waited for.
+        const missing = party_missing_names(ctx, run.dungeon, group.world)
+        const run_key = DUNGEON_KEYS.find((row) => row.dungeon === run.dungeon)?.key
+        const keys_left = run_key
+          ? held_key_amount(ctx.state().inventory, unavailable_item_ids(ctx.state()), run_key)
+          : missing.length
+        const expected = Math.min(group.seats, present + Math.min(missing.length, keys_left))
+        const gate = room1_gate({
+          present,
+          expected,
+          waited_ms: now - room1_wait.since,
+          since_last_arrival_ms: now - room1_wait.last_arrival,
+        })
+        if (gate === 'wait') {
+          if (now - room1_wait.last_log >= GROUP_WAIT_LOG_MS) {
+            room1_wait.last_log = now
+            log_info(
+              'dungeon',
+              `${character.name}: holding ${run.dungeon} room 1 — ${present}/${expected} entered, waiting for ${missing.join(', ') || 'the rest'} (${Math.round((now - room1_wait.since) / 1000)}s)`
+            )
+          }
+          return outcome('waiting', `waiting for ${expected - present} more enterer(s) in ${run.dungeon}`)
+        }
+        if (gate === 'start_partial') {
+          log_warn(
+            'dungeon',
+            `${character.name}: ${expected - present} enterer(s) stalled (${missing.join(', ')}) after ${Math.round((now - room1_wait.since) / 1000)}s; starting ${run.dungeon} room 1 with ${present}`
+          )
         }
       }
       return await start_room(character)
