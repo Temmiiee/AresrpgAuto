@@ -47,6 +47,27 @@ export const create_group_claims = (): GroupClaims => {
   })
 }
 
+/** FIFO queue for operations that mutate the party's shared kiosk inventory. */
+export type SerialQueue = Readonly<{ run: <T>(task: () => Promise<T>) => Promise<T> }>
+
+export const create_serial_queue = (): SerialQueue => {
+  let tail: Promise<void> = Promise.resolve()
+  return Object.freeze({
+    run: async <T>(task: () => Promise<T>): Promise<T> => {
+      let release!: () => void
+      const turn = new Promise<void>((resolve) => { release = resolve })
+      const previous = tail
+      tail = previous.then(() => turn)
+      await previous
+      try {
+        return await task()
+      } finally {
+        release()
+      }
+    },
+  })
+}
+
 export type StrategyHint = Readonly<{
   wanted_mobs: ReadonlySet<string>
   loot_focus?: Readonly<{

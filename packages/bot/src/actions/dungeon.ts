@@ -68,7 +68,10 @@ export const can_craft_key = (key: string, inventory: readonly ItemRow[], unavai
   const detail = dungeon_key_detail(key)
   if (!detail) return false
   for (const ing of detail.ingredients) {
-    const held = inventory.find((item) => item.item_type === ing.item_type && !unavailable.has(item.id))
+    const held = inventory
+      .filter((item) => item.item_type === ing.item_type && !unavailable.has(item.id))
+      .reduce<ItemRow | undefined>((best, item) =>
+        !best || Number(item.amount) > Number(best.amount) ? item : best, undefined)
     if (!held || held.amount < ing.quantity) return false
   }
   return true
@@ -123,7 +126,10 @@ const describe_key_gap = (
   if (!detail) return `${key}: no recipe`
   const missing = detail.ingredients
     .map((ing) => {
-      const held = inventory.find((item) => item.item_type === ing.item_type && !unavailable.has(item.id))
+      const held = inventory
+        .filter((item) => item.item_type === ing.item_type && !unavailable.has(item.id))
+        .reduce<ItemRow | undefined>((best, item) =>
+          !best || Number(item.amount) > Number(best.amount) ? item : best, undefined)
       return { item_type: ing.item_type, have: held?.amount ?? 0, need: ing.quantity }
     })
     .filter((row) => row.have < row.need)
@@ -139,12 +145,15 @@ const describe_key_gap = (
 const KEY_ALLOW_ZERO_XP = true
 
 /** Plan and craft a dungeon key if ingredients are available. Returns true if crafted. */
-export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boolean> => {
+export const maybe_craft_dungeon_key = async (
+  ctx: ActionContext,
+  party_burned: Set<string> = new Set()
+): Promise<boolean> => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
   if (!character) return false
   const inventory = state.inventory
-  const unavailable = unavailable_item_ids(state)
+  const unavailable = new Set([...unavailable_item_ids(state), ...party_burned])
   // Shared parked-key map from the dungeon runner (keys whose preview reads unwinnable right now).
   const blacklist = ctx.dungeon_blacklist
   const targets = new Set(dungeon_key_targets(inventory, unavailable, blacklist, Date.now(), party_key_stock(ctx.party_state)))
@@ -185,6 +194,7 @@ export const maybe_craft_dungeon_key = async (ctx: ActionContext): Promise<boole
     log_info('dungeon', `${character.name}: attempting key craft ${dk.key}`)
     const result = await craft_once(ctx, plan)
     if (result.success) {
+      for (const id of result.input_item_ids) party_burned.add(id)
       log_info('dungeon', `crafted ${dk.key} for ${dk.dungeon}`)
       return true
     }

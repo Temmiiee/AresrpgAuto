@@ -42,7 +42,11 @@ const held = (
   inventory: readonly ItemRow[],
   item_type: string,
   unavailable: ReadonlySet<string>
-): ItemRow | undefined => inventory.find((item) => item.item_type === item_type && !unavailable.has(item.id))
+): ItemRow | undefined =>
+  inventory.reduce<ItemRow | undefined>((best, item) => {
+    if (item.item_type !== item_type || unavailable.has(item.id)) return best
+    return !best || Number(item.amount) > Number(best.amount) ? item : best
+  }, undefined)
 
 /** A shared empty set so the common "no extra exclusions" call allocates nothing. */
 const EMPTY_IDS: ReadonlySet<string> = Object.freeze(new Set<string>())
@@ -187,7 +191,8 @@ const craft_prerequisite = (
 ): RecipeDetail | null => {
   if (is_craft_blacklisted(detail.output_type)) return null
   for (const ingredient of detail.ingredients) {
-    if (held(inventory, ingredient.item_type, unavailable)) continue
+    const available = held(inventory, ingredient.item_type, unavailable)
+    if (available && Number(available.amount) >= ingredient.quantity) continue
     const recipe = recipes_by_output[ingredient.item_type]
     if (!recipe) continue
     const sub = recipe_detail(recipe)
@@ -353,8 +358,12 @@ export const craft_gather_demand = (
 
   const demand = new Map<string, number>()
   for (const [item_type, rank] of leverage) {
-    const stack = inventory.find((row) => row.item_type === item_type && !unavailable.has(row.id))
-    if ((stack?.amount ?? 0) < DEMAND_STOCK) demand.set(item_type, rank)
+    const stock = inventory.reduce(
+      (total, row) =>
+        row.item_type === item_type && !unavailable.has(row.id) ? total + Number(row.amount) : total,
+      0
+    )
+    if (stock < DEMAND_STOCK) demand.set(item_type, rank)
   }
   return demand
 }

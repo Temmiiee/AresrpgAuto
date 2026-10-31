@@ -75,7 +75,7 @@ import { dungeon_key_targets, maybe_craft_dungeon_key, party_key_stock, should_r
 import { create_dungeon_runner, follower_dungeon_step, type DungeonRunner } from '../actions/dungeon_run.ts'
 import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions/cross_world.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
-import { create_group_claims, type ActionContext } from '../actions/context.ts'
+import { create_group_claims, create_serial_queue, type ActionContext } from '../actions/context.ts'
 import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
 import { maybe_progress } from '../actions/progression.ts'
 import { gear_goal_outputs } from '../actions/gear.ts'
@@ -285,6 +285,14 @@ export const play_loop = async (
   const ledger = create_ledger(join(config.state_dir, 'activity.log'))
   const fight_runtimes = create_fight_runtimes()
   const claims = create_group_claims()
+  /** Serialize planning and submission against the party's shared kiosk inventory. */
+  const craft_queue = create_serial_queue()
+  /** Kiosk object ids already consumed while the websocket inventory projection catches up. */
+  const party_craft_burned = new Set<string>()
+  const prune_party_craft_burned = (): void => {
+    const live_ids = new Set(game_state.inventory.map((item) => item.id))
+    for (const id of party_craft_burned) if (!live_ids.has(id)) party_craft_burned.delete(id)
+  }
   /** The shared group-fight rendezvous, filled in once the roster is known. */
   const party_state = create_party()
 
@@ -582,6 +590,11 @@ export const play_loop = async (
   // then the bot enters its normal play loop.
   const bulkArgs = process.argv.slice(2)
   if (bulkArgs[0] === 'bulk-craft') {
+    await craft_queue.run(async () => {
+    prune_party_craft_burned()
+    // All characters share one kiosk inventory. Until the websocket projection catches up,
+    // never submit a kiosk object id consumed by an earlier bulk-craft transaction.
+    const bulkBurned = new Set<string>()
     for (const rt of runtimes) {
       const results: Array<{ output_type: string; success: boolean; message: string }> = []
       for (let i = 1; i + 1 < bulkArgs.length; i += 2) {
@@ -616,7 +629,9 @@ export const play_loop = async (
             })
             break
           }
-          const plan = plan_recipe(character, detail, game_state.inventory, unavailable_item_ids(game_state))
+          prune_party_craft_burned()
+          const unavailable = new Set([...unavailable_item_ids(game_state), ...bulkBurned, ...party_craft_burned])
+          const plan = plan_recipe(character, detail, game_state.inventory, unavailable)
           if (!plan) {
             results.push({
               output_type: outputType,
@@ -627,7 +642,9 @@ export const play_loop = async (
           }
           const result = await craft_once(rt.ctx, plan)
           if (result.success) {
+            for (const id of result.input_item_ids) party_craft_burned.add(id)
             crafted += result.successes
+            for (const id of result.input_item_ids) bulkBurned.add(id)
             results.push({
               output_type: outputType,
               success: true,
@@ -650,6 +667,7 @@ export const play_loop = async (
         : `${rt.character.name}: bulk-craft: all ${failCount} failed`
       log_info('session', summary)
     }
+    })
     return
   }
 
@@ -1109,7 +1127,10 @@ export const play_loop = async (
       ) {
         rt.last_key_craft_attempt_ms = now
         last_party_key_craft_ms = now
-        key_crafted = await maybe_craft_dungeon_key(ctx)
+        key_crafted = await craft_queue.run(async () => {
+          prune_party_craft_burned()
+          return maybe_craft_dungeon_key(ctx, party_craft_burned)
+        })
         if (key_crafted) acted = true
       }
     }
@@ -1138,7 +1159,13 @@ export const play_loop = async (
         : []
       const craft_priorities = [...key_outputs, ...current_gear_goals()]
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
-        const crafted = await drive_craft(ctx, burned, craft_priorities)
+        const crafted = await craft_queue.run(async () => {
+          prune_party_craft_burned()
+          const shared_unavailable = new Set([...burned, ...party_craft_burned])
+          const result = await drive_craft(ctx, shared_unavailable, craft_priorities)
+          if (result.success) for (const id of result.input_item_ids) party_craft_burned.add(id)
+          return result
+        })
         if (!crafted.success) {
           if (crafted.outcome === 'paused') rt.last_assert_latest_ms = Date.now()
           break

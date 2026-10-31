@@ -120,6 +120,35 @@ describe('plan_recipe output target', () => {
   })
 })
 
+describe('craft inventory stack selection', () => {
+  it('chooses the largest usable stack instead of the first matching stack', () => {
+    const recipe = Object.values(recipes_by_output).find(
+      (row) => item_is_stackable(items_by_type[row.output_type]?.category ?? '') && Object.keys(row.inputs).length > 0
+    )
+    expect(recipe).toBeDefined()
+    const detail = recipe_detail(recipe!)
+    const first = detail.ingredients[0]!
+    const inventory: any[] = detail.ingredients.map((ingredient, index) => ({
+      id: `ingredient-${index}`,
+      item_type: ingredient.item_type,
+      amount: ingredient.quantity * 5,
+      category: 'resource',
+    }))
+    inventory[0]!.amount = 1
+    inventory.push({
+      id: 'larger-stack',
+      item_type: first.item_type,
+      amount: first.quantity * 5,
+      category: 'resource',
+    })
+
+    const plan = plan_recipe(character_for(detail.job), detail, inventory, new Set())
+    expect(plan).not.toBeNull()
+    expect(plan!.input_item_ids[0]).toBe('larger-stack')
+    expect(plan!.attempts).toBeGreaterThan(0)
+  })
+})
+
 describe('craft drive_craft', () => {
   it('reports nothing craftable when the roster is empty', async () => {
     const ctx: any = {
