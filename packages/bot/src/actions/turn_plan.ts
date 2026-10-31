@@ -10,6 +10,7 @@
 // state the next step plans against.
 import {
   CONTRACT_CONSTANTS,
+  board_zone_cells,
   create_fight,
   fight_path_to,
   player_max_hp,
@@ -22,11 +23,12 @@ import {
   weapon_level_of,
   weapon_target_cells,
   type FightCommand,
+  type BoardZone,
   type Fighter,
   type HydratedFightCheckpoint,
   type SpellTurnProjection,
 } from '@aresrpg/fight'
-import { AREA_SHAPES, CHANNELS, EFFECT_KINDS } from '@aresrpg/fight/move_contract'
+import { AREA_SHAPES, CHANNELS, EFFECT_KINDS, TARGET_FILTERS } from '@aresrpg/fight/move_contract'
 
 import { log_debug } from '../shared/logger.ts'
 
@@ -66,8 +68,22 @@ const fighter_max_hp = (cp: HydratedFightCheckpoint, fighter: Fighter): number =
 }
 
 /** Check if a spell is a heal (targets allies, restores HP). */
-const is_heal_spell = (name: string): boolean =>
-  name.toLowerCase().includes('soothe') || name.toLowerCase().includes('heal') || name.toLowerCase().includes('bramble')
+/**
+ * Detect healing from the actual spell projection.
+ * This avoids treating damaging spells such as Aggressive Brambles as heals.
+ */
+const is_heal_spell = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  name: string
+): boolean => {
+  const projection = project_spell_turn(cp, BigInt(seat), name)
+  return projection?.effects.some(
+    (effect) =>
+      effect.stat === CHANNELS.hp &&
+      effect.kind === EFFECT_KINDS.add
+  ) ?? false
+}
 
 // ── damage scoring ───────────────────────────────────────────────────
 // What decides how long a fight lasts is how much enemy HP a turn REMOVES, never how fast the
@@ -180,6 +196,574 @@ const best_damage_action = (cp: HydratedFightCheckpoint, seat: number, enemies: 
 }
 
 /** The longest legal path (bounded by the fighter's MP) ending closest to the nearest enemy. */
+
+// ─────────────────────────────────────────────────────────────────────
+// CLASS-AWARE TACTICAL EVALUATION
+// ─────────────────────────────────────────────────────────────────────
+
+type TacticalProfile = Readonly<{
+  healing: number
+  buff: number
+  control: number
+  zone: number
+  mobility: number
+}>
+
+const tactical_profile = (
+  cp: HydratedFightCheckpoint,
+  seat: number
+): TacticalProfile | null => {
+  const fighter = cp.contract.fighters[seat]
+  if (!fighter || fighter.kind.type !== 'player') return null
+
+  const source = cp.sources.players[fighter.kind.character]
+  const name = source?.classe.toLowerCase().replace(/[^a-z]/g, '') ?? ''
+
+  if (name.includes('tomoda')) {
+    return {
+      healing: 1.45,
+      buff: 1.35,
+      control: 1.0,
+      zone: 1.15,
+      mobility: 1.0,
+    }
+  }
+
+  if (name.includes('yajin')) {
+    return {
+      healing: 1.0,
+      buff: 1.1,
+      control: 1.55,
+      zone: 1.5,
+      mobility: 1.5,
+    }
+  }
+
+  if (name.includes('mori')) {
+    return {
+      healing: 1.6,
+      buff: 1.0,
+      control: 1.4,
+      zone: 1.2,
+      mobility: 0.8,
+    }
+  }
+
+  return null
+}
+
+const TACTICAL_CANDIDATE_LIMIT = 6
+
+const beneficial_effect_kinds: readonly bigint[] = [
+  EFFECT_KINDS.add,
+  EFFECT_KINDS.reduce,
+  EFFECT_KINDS.reflect,
+  EFFECT_KINDS.redirect,
+  EFFECT_KINDS.return,
+  EFFECT_KINDS.invis,
+  EFFECT_KINDS.chatiment,
+]
+
+const distance_to_group = (
+  cell: bigint,
+  fighters: readonly Fighter[]
+): number => {
+  if (fighters.length === 0) return 999
+
+  return Math.min(
+    ...fighters.map((fighter) => manhattan(cell, fighter.cell))
+  )
+}
+
+/**
+ * Estimate the tactical value of a zone payload against one fighter.
+ * This is used for traps and glyphs, whose placement may not immediately
+ * affect a fighter and therefore cannot be evaluated only by HP changes.
+ */
+const zone_target_score = (
+  zone: BoardZone,
+  owner: Fighter,
+  owner_seat: number,
+  target: Fighter,
+  target_seat: number,
+  profile: TacticalProfile
+): number => {
+  let total = 0
+  const ally = owner.team === target.team
+
+  for (const row of zone.effects) {
+    if (row.target_filter === TARGET_FILTERS.not_team && ally) continue
+    if (row.target_filter === TARGET_FILTERS.not_self && owner_seat === target_seat) continue
+    if (row.target_filter === TARGET_FILTERS.not_enemy && !ally) continue
+    if (row.target_filter === TARGET_FILTERS.only_caster && owner_seat !== target_seat) continue
+
+    const value = Math.min(100, Math.abs(Number(row.value)))
+    const duration = Math.max(1, Math.min(3, Number(row.turns)))
+    const chance = Number(row.chance_bp) / 10000
+
+    let magnitude = 0
+
+    if (row.stat === CHANNELS.hp) {
+      magnitude = value * 0.65 * duration
+    } else if (row.stat === CHANNELS.ap) {
+      magnitude = value * 4
+    } else if (row.stat === CHANNELS.mp) {
+      magnitude = value * 1.6
+    } else {
+      magnitude = 2 + value * 0.08 * duration
+    }
+
+    if (
+      row.kind === EFFECT_KINDS.push ||
+      row.kind === EFFECT_KINDS.pull
+    ) {
+      magnitude *= profile.control
+    }
+
+    const helps_target = beneficial_effect_kinds.includes(row.kind)
+    const helps_party = ally === helps_target
+
+    const weight = row.stat === CHANNELS.hp
+      ? profile.healing
+      : row.stat === CHANNELS.ap || row.stat === CHANNELS.mp
+        ? profile.control
+        : helps_target
+          ? profile.buff
+          : profile.control
+
+    total += (helps_party ? magnitude : -magnitude) * weight * chance
+  }
+
+  return total
+}
+
+/**
+ * Score newly placed traps and glyphs.
+ *
+ * Glyphs trigger at the beginning of a fighter's turn while that fighter
+ * remains inside the zone.
+ *
+ * Traps trigger on entering the zone, not merely standing inside it.
+ * Their score is therefore discounted and considers nearby enemies and allies.
+ */
+const score_new_zones = (
+  before: HydratedFightCheckpoint,
+  after: HydratedFightCheckpoint,
+  seat: number,
+  profile: TacticalProfile
+): number => {
+  const owner = before.contract.fighters[seat]
+  if (!owner) return 0
+
+  const old_zones = before.contract.zones
+  const new_zones = after.contract.zones.filter(
+    (zone) =>
+      !old_zones.some(
+        (old) =>
+          old.owner_fighter === zone.owner_fighter &&
+          old.anchor === zone.anchor &&
+          old.trap === zone.trap
+      )
+  )
+
+  let score = 0
+
+  for (const zone of new_zones) {
+    const cells = board_zone_cells(zone)
+    if (cells.length === 0) continue
+
+    const occupied = before.contract.fighters.flatMap((fighter, index) =>
+      !fighter.dead && cells.includes(fighter.cell)
+        ? [{ fighter, index }]
+        : []
+    )
+
+    if (!zone.trap) {
+      // Glyph: score actual occupants, discounted by uncertainty that
+      // they will still be there when their next turn begins.
+      for (const { fighter, index } of occupied) {
+        score +=
+          zone_target_score(
+            zone,
+            owner,
+            seat,
+            fighter,
+            index,
+            profile
+          ) *
+          Math.min(3, Math.max(1, Number(zone.turns_left))) *
+          0.25
+      }
+
+      continue
+    }
+
+    // Trap: only a fighter entering the zone triggers it.
+    const enemies = before.contract.fighters.flatMap((fighter, index) =>
+      !fighter.dead && fighter.team !== owner.team
+        ? [{ fighter, index }]
+        : []
+    )
+
+    const nearby_allies = before.contract.fighters.flatMap((fighter, index) =>
+      !fighter.dead &&
+      fighter.team === owner.team &&
+      index !== seat
+        ? [{ fighter, index }]
+        : []
+    )
+
+    const distance_to_zone = (fighter: Fighter): number =>
+      Math.min(...cells.map((cell) => manhattan(cell, fighter.cell)))
+
+    const nearest_enemy = [...enemies].sort(
+      (a, b) => distance_to_zone(a.fighter) - distance_to_zone(b.fighter)
+    )[0]
+
+    const nearest_ally = [...nearby_allies].sort(
+      (a, b) => distance_to_zone(a.fighter) - distance_to_zone(b.fighter)
+    )[0]
+
+    if (nearest_enemy) {
+      const enemy_distance = distance_to_zone(nearest_enemy.fighter)
+
+      if (enemy_distance <= 3) {
+        score +=
+          zone_target_score(
+            zone,
+            owner,
+            seat,
+            nearest_enemy.fighter,
+            nearest_enemy.index,
+            profile
+          ) *
+          profile.zone *
+          (0.3 / (1 + enemy_distance * 0.2))
+      }
+
+      // A nearby ally may consume the trap before an enemy reaches it.
+      if (nearest_ally) {
+        const ally_distance = distance_to_zone(nearest_ally.fighter)
+
+        if (ally_distance <= 3 && ally_distance <= enemy_distance) {
+          score -= 3 / (1 + ally_distance * 0.2)
+        }
+      }
+    }
+  }
+
+  return score
+}
+
+/**
+ * Evaluate one candidate cast by applying it to a disposable local fight.
+ *
+ * This uses the same resolver as the real fight:
+ * - damage and healing
+ * - AP/MP grants and removals
+ * - status effects
+ * - dispels
+ * - teleport, push, pull and swaps
+ * - trap and glyph placement
+ */
+const evaluate_tactical_cast = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  spell: string,
+  cell: bigint,
+  profile: TacticalProfile
+): number | null => {
+  const actor = BigInt(seat)
+  const caster = cp.contract.fighters[seat]
+  if (!caster || caster.dead) return null
+
+  const cost = spell_ap_cost(cp, seat, spell)
+  if (Number(caster.ap) < cost) return null
+
+  const simulation = create_fight({ state: cp, mode: 'local' })
+  const result = simulation.apply({
+    type: 'cast_spell',
+    fighter: actor,
+    spell,
+    target_cell: cell,
+  })
+
+  if (result.error) return null
+
+  const after = result.state
+  const friends = cp.contract.fighters.filter(
+    (fighter) => !fighter.dead && fighter.team === caster.team
+  )
+  const enemies = cp.contract.fighters.filter(
+    (fighter) => !fighter.dead && fighter.team !== caster.team
+  )
+
+  let utility = 0
+
+  // 1. Actual HP changes, including resisted damage and healing.
+  for (let index = 0; index < cp.contract.fighters.length; index++) {
+    const before_fighter = cp.contract.fighters[index]
+    const after_fighter = after.contract.fighters[index]
+
+    if (!before_fighter || !after_fighter || before_fighter.dead) continue
+
+    const delta = Number(after_fighter.hp - before_fighter.hp)
+    const ally = before_fighter.team === caster.team
+
+    if (delta > 0) {
+      if (ally) {
+        const missing = Math.max(
+          0,
+          fighter_max_hp(cp, before_fighter) - fighter_hp(before_fighter)
+        )
+
+        utility +=
+          Math.min(delta, missing) * profile.healing
+      } else {
+        utility -= Math.min(delta, fighter_hp(before_fighter))
+      }
+    } else if (delta < 0) {
+      if (ally) {
+        utility += delta * 1.4
+      } else {
+        utility += Math.min(-delta, fighter_hp(before_fighter))
+      }
+    }
+  }
+
+  // 2. AP and MP changes from effects.
+  // Cast costs are deliberately excluded.
+  for (const event of result.events) {
+    if (event.type !== 'ap_mp_change') continue
+    if (event.payload.reason === 'cast_cost') continue
+
+    const target = cp.contract.fighters[Number(event.payload.fighter)]
+    if (!target) continue
+
+    const ally = target.team === caster.team
+    const ap_delta = Number(
+      event.payload.ap_after - event.payload.ap_before
+    )
+    const mp_delta = Number(
+      event.payload.mp_after - event.payload.mp_before
+    )
+
+    utility += (ally ? ap_delta : -ap_delta) * 3.5
+    utility += (ally ? mp_delta : -mp_delta) * 1.5
+  }
+
+  // 3. Persistent effects, shields, buffs, debuffs, poison and invisibility.
+  for (const event of result.events) {
+    if (event.type !== 'effect_applied') continue
+
+    const payload = event.payload
+    const index = Number(payload.target)
+    const target = cp.contract.fighters[index]
+    if (!target) continue
+
+    const ally = target.team === caster.team
+    const kind = payload.kind
+    const channel = payload.channel
+    const value = Math.min(100, Math.abs(Number(payload.value)))
+    const duration = Math.max(1, Math.min(4, Number(payload.turns)))
+
+    const positive = beneficial_effect_kinds.includes(kind)
+    const helps_party = ally === positive
+
+    let magnitude = 0
+
+    if (channel === CHANNELS.hp) {
+      // Regeneration and poison can matter even though they do not
+      // immediately change HP when first applied.
+      magnitude = value * duration * 0.45
+    } else if (channel === CHANNELS.ap) {
+      magnitude = value * duration * 0.9
+    } else if (channel === CHANNELS.mp) {
+      magnitude = value * duration * 0.4
+    } else {
+      magnitude = 2 + value * 0.06 * duration
+    }
+
+    if (kind === EFFECT_KINDS.invis) {
+      magnitude = 8 + duration * 2
+    } else if (kind === EFFECT_KINDS.reduce) {
+      magnitude = 3 + value * duration * 0.12
+    }
+
+    const duplicate = target.effects.some(
+      (effect) =>
+        effect.kind === kind &&
+        effect.stat === channel &&
+        effect.element === payload.element &&
+        effect.turns_left > 0n
+    )
+
+    if (duplicate) magnitude *= 0.18
+
+    const weight =
+      channel === CHANNELS.hp
+        ? profile.healing
+        : helps_party
+          ? profile.buff
+          : profile.control
+
+    utility += (helps_party ? magnitude : -magnitude) * weight
+  }
+
+  // 4. Dispel effects.
+  for (const event of result.events) {
+    if (event.type !== 'effects_dispelled') continue
+
+    const target = cp.contract.fighters[Number(event.payload.target)]
+    if (!target) continue
+
+    const ally = target.team === caster.team
+    const count = event.payload.removed_effect_ids.length
+
+    utility += (ally ? -count : count) * 3 * profile.control
+  }
+
+  // 5. Non-walking movement: teleport, push, pull and swap.
+  for (const event of result.events) {
+    if (event.type !== 'fighter_moved') continue
+    if (event.payload.mode === 'walk') continue
+
+    const index = Number(event.payload.fighter)
+    const before_fighter = cp.contract.fighters[index]
+    const after_fighter = after.contract.fighters[index]
+
+    if (!before_fighter || !after_fighter) continue
+
+    if (index === seat) {
+      const old_distance = distance_to_group(
+        before_fighter.cell,
+        enemies
+      )
+      const new_distance = distance_to_group(
+        after_fighter.cell,
+        enemies
+      )
+
+      utility +=
+        Math.max(0, old_distance - new_distance) *
+        profile.mobility
+    } else if (before_fighter.team !== caster.team) {
+      const old_distance = distance_to_group(
+        before_fighter.cell,
+        friends
+      )
+      const new_distance = distance_to_group(
+        after_fighter.cell,
+        friends
+      )
+
+      if (event.payload.mode === 'push') {
+        utility +=
+          Math.max(0, new_distance - old_distance) *
+          0.6 *
+          profile.control
+      } else if (event.payload.mode === 'pull') {
+        utility +=
+          Math.max(0, old_distance - new_distance) *
+          0.45 *
+          profile.control
+      }
+    }
+  }
+
+  // 6. Placement-only spells.
+  utility += score_new_zones(cp, after, seat, profile)
+
+  return utility / Math.max(1, cost)
+}
+
+/**
+ * Pick the best class-aware spell only when it beats the existing
+ * damage planner. This prevents support spells from replacing a much
+ * stronger available attack.
+ */
+const best_class_tactical_action = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  _party_allies: readonly Fighter[],
+  enemies: readonly Fighter[]
+): TurnAction | null => {
+  const profile = tactical_profile(cp, seat)
+  const me = cp.contract.fighters[seat]
+
+  if (!profile || !me || me.dead || enemies.length === 0) return null
+
+  const actor = BigInt(seat)
+  const living = cp.contract.fighters.filter((fighter) => !fighter.dead)
+
+  let best: { action: TurnAction; score: number } | null = null
+
+  for (const spell of spell_names_for(cp, seat)) {
+    if (spell_ap_cost(cp, seat, spell) > Number(me.ap)) continue
+
+    const legal = spell_target_cells(cp, actor, spell).targetable
+    if (legal.length === 0) continue
+
+    // Always include occupied target cells first, then nearby legal cells.
+    // This keeps the number of expensive local simulations bounded.
+    const occupied = legal.filter((cell) =>
+      living.some((fighter) => fighter.cell === cell)
+    )
+
+    const nearby = [...legal].sort(
+      (a, b) =>
+        distance_to_group(a, living) - distance_to_group(b, living)
+    )
+
+    const candidates = [...new Set([...occupied, ...nearby])]
+      .slice(0, TACTICAL_CANDIDATE_LIMIT)
+
+    for (const cell of candidates) {
+      const score = evaluate_tactical_cast(
+        cp,
+        seat,
+        spell,
+        cell,
+        profile
+      )
+
+      if (score === null || score <= 0) continue
+
+      if (!best || score > best.score) {
+        best = {
+          action: {
+            type: 'cast',
+            fighter_idx: actor,
+            spell,
+            target_cell: cell,
+          },
+          score,
+        }
+      }
+    }
+  }
+
+  if (!best) return null
+
+  // The old damage scorer remains the fallback and comparison baseline.
+  const damage_baseline = Math.max(
+    0,
+    ...damage_options(cp, seat, enemies).map((option) => option.score)
+  )
+
+  const required_score = Math.max(0.65, damage_baseline * 1.08)
+
+  if (best.score <= required_score) return null
+
+  log_debug(
+    'combat',
+    `seat ${seat}: CLASS TACTICAL ${describe_actions([best.action])} score=${best.score.toFixed(2)} baseline=${damage_baseline.toFixed(2)}`
+  )
+
+  return best.action
+}
+
+
 const step_toward_enemy = (
   cp: HydratedFightCheckpoint,
   seat: number,
@@ -217,16 +801,20 @@ const next_action_party = (
   if (enemies.length === 0) return null
   const allies = cp.contract.fighters.filter((f, i) => !f.dead && f.team === me.team && ally_seats.includes(i))
 
+  const class_aware = tactical_profile(cp, seat) !== null
+  const tactical = best_class_tactical_action(cp, seat, allies, enemies)
+  if (tactical !== null) return tactical
+
   // 1. HEAL PRIORITY: any ally BELOW HALF of its OWN max HP and I have a heal → heal the most
   //    hurt one. (The old filter read `hp > 0` — ANY living ally — so supports wasted every cast
   //    on healthy targets, in the live door AND this twin's replay of it.)
-  const hurt_ally = allies
+  const hurt_ally = class_aware ? undefined : allies
     .map((ally) => ({ ally, hp: fighter_hp(ally), max: fighter_max_hp(cp, ally) }))
     .filter(({ hp, max }) => hp > 0 && hp * 2 < max)
     .sort((left, right) => left.hp / left.max - right.hp / right.max)[0]
   if (hurt_ally) {
     for (const name of spell_names_for(cp, seat)) {
-      if (!is_heal_spell(name)) continue
+      if (!is_heal_spell(cp, seat, name)) continue
       const targets = spell_target_cells(cp, actor, name).targetable
       if (targets.includes(hurt_ally.ally.cell)) {
         log_debug(
@@ -269,7 +857,7 @@ const assign_roles = (cp: HydratedFightCheckpoint, seats: readonly number[]): Ma
     const fighter = cp.contract.fighters[seat]
     const source = fighter?.kind.type === 'player' ? cp.sources.players[fighter.kind.character] : null
     const vit = source ? Number(source.vitality ?? 0n) : 0
-    const has_heal = spell_names_for(cp, seat).some(is_heal_spell)
+    const has_heal = spell_names_for(cp, seat).some((name) => is_heal_spell(cp, seat, name))
     return { seat, vit, has_heal }
   })
   
@@ -293,6 +881,9 @@ const next_action = (cp: HydratedFightCheckpoint, seat: number): TurnAction | nu
   if (!me || me.dead) return null
   const enemies = cp.contract.fighters.filter((fighter) => !fighter.dead && fighter.team !== me.team)
   if (enemies.length === 0) return null
+
+  const tactical = best_class_tactical_action(cp, seat, [], enemies)
+  if (tactical !== null) return tactical
 
   const damage = best_damage_action(cp, seat, enemies)
   if (damage !== null) return damage
