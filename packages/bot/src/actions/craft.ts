@@ -314,7 +314,7 @@ export const select_craft_target = (
 /** A gatherable input is demanded only while its held stock sits under this line: enough that the
  *  crafter's next batch never drains it straight to zero, low enough that a well-fed gatherer hands
  *  its priority back and climbs the tier ladder instead of pinning on one staple forever. */
-const DEMAND_STOCK = 60
+export const GATHER_DEMAND_STOCK = 60
 
 /** Recipe-driven gathering: the gatherable inputs the crafting rotation still OWES, ranked.
  *
@@ -329,7 +329,7 @@ const DEMAND_STOCK = 60
  *  craft). The returned rank is the leaf's TOTAL one-craft requirement across those recipes, not
  *  its tier: wheat feeds the flour chain AND a dozen low-tier TAILOR/JEWELER recipes, so it must
  *  outrank the narrow wheat_barley beside it rather than lose to it on tier. A leaf drops out once
- *  its stock reaches {@link DEMAND_STOCK}. `extra_outputs` folds in recipes that are not part of the
+ *  its stock reaches {@link GATHER_DEMAND_STOCK}. `extra_outputs` folds in recipes that are not part of the
  *  rotation but whose inputs the party must still stock: the dungeon keys AND the gear upgrade goals
  *  (whose crafts may pay no XP, so they bypass the rotation's xp gate). */
 export const craft_gather_demand = (
@@ -363,7 +363,7 @@ export const craft_gather_demand = (
         row.item_type === item_type && !unavailable.has(row.id) ? total + Number(row.amount) : total,
       0
     )
-    if (stock < DEMAND_STOCK) demand.set(item_type, rank)
+    if (stock < GATHER_DEMAND_STOCK) demand.set(item_type, rank)
   }
   return demand
 }

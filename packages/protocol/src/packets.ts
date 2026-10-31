@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
 // © 2026 Sceat — All rights reserved. See LICENSE.
-/* eslint-disable complexity, max-lines -- the wire keeps packet shapes and their exhaustive parser in one auditable contract. */
+/* eslint-disable max-lines -- the wire keeps packet shapes and their exhaustive parser in one auditable contract. */
 // THE WIRE CONTRACT (owner 2026-08-12, legacy model): every packet is a REAL shape with a
 // `packet/<name>` discriminant — no generic envelopes, no `kind: string`. The app and the
 // server both import THIS module; a packet that isn't declared here does not exist.
@@ -14,6 +14,11 @@ import { cosmetic_slots } from '@aresrpg/immutable'
 import { experience_progress } from '@aresrpg/immutable'
 import { parse_fight_wire_action, type FightWireAction } from '@aresrpg/fight'
 
+import type { TournamentLink, TournamentRow } from './tournament.ts'
+import { valid_allocation_request, type AllocationRequest, type AllocationResult } from './allocation.ts'
+export type { TournamentLink, TournamentRow, TournamentTeam, TournamentSeat, TournamentMatch } from './tournament.ts'
+export { coin_share, tournament_coin_claims, TOURNAMENT_RESULTS_MS, recent_tournament_result } from './tournament.ts'
+export type { AllocationRequest, AllocationResult } from './allocation.ts'
 import { parse_inspection_request, type InspectionQuery, type InspectionResult } from './inspection.ts'
 import { parse_leaderboard_observation, type LeaderboardObservation, type LeaderboardSnapshot } from './leaderboards.ts'
 import {
@@ -184,6 +189,7 @@ export type ResourcePackRow = {
  *  `placement_ms` is the chain's birth wall-clock (u64 as string): it drives the join-window
  *  clock every surface derives (the sword's sink, join/spectate gating). */
 export type FightRow = {
+  tournament?: string | null
   id: string
   world: string
   x: number
@@ -261,6 +267,7 @@ export type FightStateRow = {
   players: Record<string, FightPlayerSourceRow>
   /** Immutable wager terms stay beside, never inside, the wager-blind fight core. */
   kolizeum: Readonly<{ id: string; pledge_mist: string }> | null
+  tournament?: TournamentLink | null
 }
 
 /** The equipment slots OTHER players can see (owner 2026-08-12) — everything else is
@@ -293,6 +300,8 @@ export type PresenceRow = Record<VisibleSlot, string | null> & {
   /** actually mounted right now — rides the position stream (one flag, no extra packets);
    *  only meaningful while `pet` is non-null (the server clamps a petless claim) */
   riding: boolean
+  /** Active mounted descent, rather than the held jump input. */
+  gliding: boolean
   x: number
   y: number
   z: number
@@ -512,6 +521,7 @@ export type FightResolutionRow = {
   dungeon: string | null
   dungeon_room: number | null
   kolizeum: string | null
+  tournament?: TournamentLink | null
   fighter: number
   character: string
   team: number
@@ -550,7 +560,7 @@ export type KolizeumLobbyRow = Readonly<{
   fighters: readonly KolizeumFighterRow[]
 }>
 
-export type ClosableFightRow = Readonly<{ fight: string; kolizeum: string | null }>
+export type ClosableFightRow = Readonly<{ fight: string; kolizeum: string | null; tournament?: TournamentLink | null }>
 
 /** Zones are 512-block squares (zone.move ZONE_SIZE) — the tracking unit for everything. */
 export const ZONE_SIZE = 512
@@ -719,12 +729,21 @@ export const DEFAULT_ADMIN_ADDRESS = '0x3d1342fb7de99c69ce821183bcfc5b6374d81453
 // ╔════════════════ [ client → server (intents, never queries) ] ══════════════ ]
 
 export type ClientPackets = {
+  'packet/allocation_request': { id: number; request: AllocationRequest }
   /** The sole pre-auth packet: proof over the challenge issued by this exact socket. */
   'packet/signature_response': { bytes: string; signature: string }
   /** Deprecated rolling-compatibility no-op. The server tracks its capped roster itself. */
   'packet/track_character': { character_id: string; tracked: boolean }
   /** The player's live position — drives zone tracking, visibility, and the presence mesh. */
-  'packet/position': { character_id: string; checkpoint: string; x: number; y: number; z: number; riding: boolean }
+  'packet/position': {
+    character_id: string
+    checkpoint: string
+    x: number
+    y: number
+    z: number
+    riding: boolean
+    gliding: boolean
+  }
   /** World chat — heard by everyone standing in the same world, never stored. */
   'packet/chat': { character_id: string; parts: readonly ChatMessagePart[] }
   /** Party chat — rides the party's channel; refused when partyless. */
@@ -740,6 +759,7 @@ export type ClientPackets = {
   /** Browse intent — folds the observed category into state; the server pushes the slice and
    *  streams its deltas while observed. Null stops observing. Not a query: state, then push. */
   'packet/leaderboard_observe': { observation: LeaderboardObservation | null }
+  'packet/market_floor_request': { id: number; item_type: string }
   'packet/market_prices_observe': { observation: MarketPriceObservation | null }
   'packet/market_observe': { observation: MarketObservation | null }
   /** Commit this character as a spectator of one nearby fight. */
@@ -771,6 +791,7 @@ export type ClientPackets = {
 // ╔════════════════ [ server → client (the push stream) ] ═════════════════════ ]
 
 export type ServerPackets = {
+  'packet/allocation_response': { id: number; result: AllocationResult }
   /** Pre-auth challenge. No player state exists until its matching proof verifies. */
   'packet/signature_request': { payload: string }
   'packet/connection_accepted': { address: string }
@@ -894,6 +915,7 @@ export type ServerPackets = {
   'packet/inspection_error': { id: number }
   'packet/leaderboard': { snapshot: LeaderboardSnapshot }
   'packet/leaderboard_error': { observation: LeaderboardObservation; reason: 'unavailable' }
+  'packet/market_floor': { id: number; prices: Readonly<Record<string, string>> }
   'packet/market_slice': MarketPage & { observation: MarketObservation }
   'packet/market_counts': { observation: MarketObservation; counts: MarketTypeCounts | null }
   'packet/market_types': { observation: MarketObservation; items: readonly MarketType[] }
@@ -909,6 +931,8 @@ export type ServerPackets = {
 
   // ── kolizeum live directory ──
   'packet/kolizeums': { lobbies: KolizeumLobbyRow[] }
+  'packet/tournaments': { tournaments: readonly TournamentRow[] }
+  'packet/tournaments_error': { reason: 'unavailable' }
 
   // ── admin ──
   'packet/admin_response':
@@ -975,6 +999,7 @@ export const FIGHT_PACKETS = [
 ] as const
 
 export const MARKET_PACKETS = [
+  'packet/market_floor',
   'packet/listings',
   'packet/market_slice',
   'packet/market_counts',
@@ -991,13 +1016,13 @@ export const LEADERBOARD_PACKETS = [
   'packet/inspection_error',
 ] as const
 
-export const KOLIZEUM_PACKETS = ['packet/kolizeums'] as const
+export const KOLIZEUM_PACKETS = ['packet/kolizeums', 'packet/tournaments', 'packet/tournaments_error'] as const
 export const FRIEND_PACKETS = ['packet/friends'] as const
 export const PARTY_PACKETS = ['packet/party', 'packet/party_invites'] as const
 export const TRADE_PACKETS = ['packet/trades', 'packet/trade_destroyed'] as const
 
-/** Parseable but folded by NO store — arrives only on surfaces without a UI yet. */
-export const IGNORED_PACKETS = ['packet/admin_response'] as const
+/** Consumed outside game-domain stores by the admin dashboard or standalone campaign. */
+export const IGNORED_PACKETS = ['packet/admin_response', 'packet/allocation_response'] as const
 
 /** Consumed at the transport boundary before packets enter a domain reducer. */
 export const TRANSPORT_PACKETS = ['packet/pong'] as const
@@ -1049,6 +1074,8 @@ void UNROUTED_SERVER_PACKETS
 
 /** Every declared client packet type — the parse door's allowlist. */
 export const CLIENT_PACKET_TYPES = [
+  'packet/market_floor_request',
+  'packet/allocation_request',
   'packet/signature_response',
   'packet/track_character',
   'packet/position',
@@ -1251,6 +1278,33 @@ const OBSERVATION_PARSERS: ReadonlyMap<string, ObservationParser> = new Map<stri
   ],
 ])
 
+const REQUEST_PARSERS = new Map<string, (packet: Record<string, unknown>) => ClientPacket>([
+  [
+    'packet/market_floor_request',
+    (packet) => {
+      const query = parse_market_price_observation({ id: packet.id, item_type: packet.item_type })!
+      return { type: 'packet/market_floor_request', ...query }
+    },
+  ],
+  ['packet/character_owner_request', parse_character_owner_request],
+  ['packet/admin_request', parse_admin_request_packet],
+  [
+    'packet/ping',
+    (packet) => {
+      if (!Number.isSafeInteger(packet.id) || Number(packet.id) < 0) throw new Error('packet/ping needs a safe id')
+      return packet as ClientPacket
+    },
+  ],
+  [
+    'packet/allocation_request',
+    (packet) => {
+      if (!Number.isSafeInteger(packet.id) || Number(packet.id) < 0 || !valid_allocation_request(packet.request))
+        throw new Error('invalid allocation request')
+      return packet as ClientPacket
+    },
+  ],
+])
+
 /** Parse one raw client message into a declared packet, or throw — never coerce. The server
  *  calls this at its door; an undeclared or malformed packet is refused before any module. */
 export function parse_client_packet(raw: string | Buffer): ClientPacket {
@@ -1271,15 +1325,15 @@ export function parse_client_packet(raw: string | Buffer): ClientPacket {
     return packet as ClientPacket
   }
   if (type === 'packet/position') {
-    const { character_id, checkpoint, x, y, z, riding } = packet
+    const { character_id, checkpoint, x, y, z, riding, gliding } = packet
     if (
       !is_id(character_id) ||
       typeof checkpoint !== 'string' ||
       !/^.{1,256}$/.test(checkpoint) ||
       ![x, y, z].every(is_finite_number) ||
-      typeof riding !== 'boolean'
+      ![riding, gliding].every((value) => typeof value === 'boolean')
     )
-      throw new Error('packet/position needs { character_id, checkpoint, x, y, z, riding }')
+      throw new Error('packet/position needs { character_id, checkpoint, x, y, z, riding, gliding }')
     return packet as ClientPacket
   }
   if (type === 'packet/chat' || type === 'packet/chat_party') {
@@ -1303,12 +1357,8 @@ export function parse_client_packet(raw: string | Buffer): ClientPacket {
     if (packet.fight !== null && !is_id(packet.fight)) throw new Error('packet/spectate needs a fight id or null')
     return packet as ClientPacket
   }
-  if (type === 'packet/character_owner_request') return parse_character_owner_request(packet)
-  if (type === 'packet/admin_request') return parse_admin_request_packet(packet)
-  if (type === 'packet/ping') {
-    if (!Number.isSafeInteger(packet.id) || Number(packet.id) < 0) throw new Error('packet/ping needs a safe id')
-    return packet as ClientPacket
-  }
+  const parse = REQUEST_PARSERS.get(String(type))
+  if (parse) return parse(packet)
   throw new Error(`unknown packet type "${String(type)}"`)
 }
 

@@ -281,41 +281,51 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
   let equipped = 0
   let blocked = 0
   for (const { ctx, tool_category } of targets) {
+    await ctx.equipment_queue.run(async () => {
     const state = ctx.state()
     const character = select_character(state, ctx.character_id)
-    if (!character) continue
+    if (!character) return
     if (character.active_fight || character.custody === 'fight' || !freshness(state, Date.now()).ok) {
       blocked += 1
-      continue
+      return
     }
 
     // a just-landed equip (or a caught stale plan) — let the projection catch up first
     if (equip_settling(character.id)) {
       blocked += 1
-      continue
+      return
     }
 
     const loadout = plan_loadout(character, state, { claimed, tool_category })
     const plan = equip_plan(character, loadout)
-    if (!plan.to_equip.length) continue
+    if (!plan.to_equip.length) return
 
     // Ownership check: every item to unequip must be worn by THIS character on chain, every item to
     // equip must still be in the kiosk. The projection lags, and a stale plan is exactly what aborted
     // with "object … is not Immutable or AddressOwned".
-    const verdict = await verify_equip_ownership(ctx, character.id, plan.to_equip, plan.to_unequip)
+    let to_unequip = plan.to_unequip
+    let verdict = await verify_equip_ownership(ctx, character.id, plan.to_equip, to_unequip)
+    if (!verdict.ok && verdict.stale_unequip.length > 0) {
+      // A gather/tool swap can return an item to the kiosk before the character projection updates.
+      // It is already absent from this character on-chain, so asking the equip PTB to return it
+      // again is invalid. Omit only those proven-stale unequips, then validate the reduced plan.
+      const stale = new Set(verdict.stale_unequip)
+      to_unequip = Object.freeze(to_unequip.filter((change) => !stale.has(change.item_id)))
+      verdict = await verify_equip_ownership(ctx, character.id, plan.to_equip, to_unequip)
+    }
     if (!verdict.ok) {
       log_warn('equip', `${character.name}: skipping stale equip plan (${verdict.reason}); re-planning after the projection settles`)
       for (const change of plan.to_equip) claimed.add(change.item_id)
       mark_equip_settling(character.id)
       blocked += 1
-      continue
+      return
     }
 
     try {
       const receipt = await ctx.sdk.character.equip({
         character_id: character.id,
         to_equip: plan.to_equip,
-        to_unequip: plan.to_unequip,
+        to_unequip,
         custody: custody_of(character),
       })
       for (const change of plan.to_equip) claimed.add(change.item_id)
@@ -324,7 +334,7 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
       ctx.ledger.append({
         kind: 'equip',
         digest: receipt.digest,
-        detail: { character: character.name, to_equip: plan.to_equip, to_unequip: plan.to_unequip },
+        detail: { character: character.name, to_equip: plan.to_equip, to_unequip },
       })
       log_info(
         'equip',
@@ -335,10 +345,22 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
     } catch (error) {
       if (is_version_assert_error(error)) {
         log_warn('equip', `${character.name}: equip failed — MoveAbort 601 (package version mismatch or paused version gate)`)
-        continue
+        return
       }
-      log_warn('equip', `${character.name}: equip failed: ${error instanceof Error ? error.message : String(error)}`)
+      const detail = error instanceof Error ? error.message : String(error)
+      if (/equipment::equip/.test(detail) && /abort code:\s*1004\b/.test(detail)) {
+        // Another chain action filled the slot while this projection was stale. All bot-side
+        // gather tool swaps and auto-equip writes share this per-character queue; this can now only
+        // be an external or indexer race. Wait for the roster projection before rebuilding.
+        for (const change of plan.to_equip) claimed.add(change.item_id)
+        mark_equip_settling(character.id)
+        blocked += 1
+        log_warn('equip', `${character.name}: slot already occupied (MoveAbort 1004); waiting for projection before re-planning`)
+        return
+      }
+      log_warn('equip', `${character.name}: equip failed: ${detail}`)
     }
+    })
   }
   return Object.freeze({ equipped, blocked })
 }

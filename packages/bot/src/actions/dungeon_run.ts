@@ -31,7 +31,14 @@ import {
   should_run_dungeons,
 } from './dungeon.ts'
 import { safe_travel_to } from './roam.ts'
-import { describe_score, DUNGEON_ROUNDS, score_group, type MobGroupRow } from './fight_preview.ts'
+import {
+  character_max_hp,
+  describe_score,
+  DUNGEON_ROUNDS,
+  projected_character_hp,
+  score_group,
+  type MobGroupRow,
+} from './fight_preview.ts'
 import { plan_mastery_dungeon, is_mastery_dungeon } from './mastery.ts'
 import type { Mover } from './travel.ts'
 
@@ -40,6 +47,8 @@ import type { Mover } from './travel.ts'
 const ENTER_GRACE_MS = 30_000
 /** After a successful `start_fight`, wait this long for the live fight to surface before retrying. */
 const START_GRACE_MS = 20_000
+const ROOM_HP_LOG_INTERVAL_MS = 30_000
+const room_hp_wait_log_ms = new Map<string, number>()
 /** Room 1 waits for EVERY committed seat to enter. These are only deadlock breakers: the leader
  *  starts with whoever is present once nobody new has entered for GROUP_ENTER_STALL_MS, or after
  *  GROUP_ENTER_MAX_WAIT_MS in total. The clock starts when the LEADER's run first appears (not at
@@ -414,6 +423,20 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     }
 
     const allies = dungeon_allies(ctx, character).filter((ally) => ally.dungeon_run?.dungeon === run.dungeon)
+    const wounded = [character, ...allies]
+      .map((member) => ({ member, hp: projected_character_hp(member), max: character_max_hp(member) }))
+      .filter(({ hp, max }) => hp < max)
+    if (wounded.length > 0) {
+      const now = Date.now()
+      const key = `${run.dungeon}:${run.room}`
+      if (now - (room_hp_wait_log_ms.get(key) ?? 0) >= ROOM_HP_LOG_INTERVAL_MS) {
+        room_hp_wait_log_ms.set(key, now)
+        const status = wounded.map(({ member, hp, max }) => `${member.name}:${hp}/${max}`).join(' ')
+        const slowest_seconds = Math.max(...wounded.map(({ hp, max }) => max - hp))
+        log_info('dungeon', `holding ${run.dungeon} room ${run.room} for health regeneration (${status}; ~${slowest_seconds}s)`)
+      }
+      return outcome('waiting', 'waiting for party health to regenerate')
+    }
     const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
     if (preview.win_rate < MIN_WIN_RATE) {
       log_warn(

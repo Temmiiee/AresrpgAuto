@@ -8,7 +8,9 @@ import { SuiGrpcClient } from '@mysten/sui/grpc'
 import { isValidSuiAddress } from '@mysten/sui/utils'
 import type { GiftcardRow, TradeRow } from '@aresrpg/protocol'
 import { getWallets, type Wallet, type WalletAccount } from '@mysten/wallet-standard'
+import { registerSlushWallet, SLUSH_WALLET_NAME } from '@mysten/slush-wallet'
 
+import { tournament_actions, type TournamentActions } from './tournament.ts'
 import { canonical_suins_name } from './suins.ts'
 import { suins_actions, type SuinsActions } from './suins_actions.ts'
 import { character_claim_id, character_create, character_id, type CharacterCreateInput } from './character.ts'
@@ -30,6 +32,7 @@ import { friends_actions, type FriendsActions } from './friends.ts'
 import { party_actions, type PartyActions } from './party.ts'
 import { mastery_actions, type MasteryActions } from './mastery.ts'
 import { kares_actions, type KaresActions } from './kares_actions.ts'
+import { blast_purchase_actions, type BlastPurchaseActions } from './blast_purchase.ts'
 import {
   create_wallet_binding,
   installed_wallets,
@@ -55,10 +58,9 @@ export type { SuinsActions, SuinsSnapshot, SuinsSelection } from './suins_action
 const select_personal_kiosk = (caps: readonly KioskOwnerCap[], kiosk_id?: string): KioskOwnerCap | null =>
   (kiosk_id ? caps.find(({ kioskId }) => kioskId === kiosk_id) : caps[0]) ?? null
 
-const receipt_fresh_kiosk_cap = (sdk: ReturnType<typeof SDK>, cap: KioskOwnerCap, fresh: boolean): KioskOwnerCap => {
-  if (fresh) return cap
+const receipt_fresh_kiosk_cap = (sdk: ReturnType<typeof SDK>, cap: KioskOwnerCap): KioskOwnerCap => {
   const current = sdk.ref(cap.objectId)
-  return current ? Object.freeze({ ...cap, ...current }) : cap
+  return current && BigInt(current.version) > BigInt(cap.version) ? Object.freeze({ ...cap, ...current }) : cap
 }
 
 export type AuthSession = Readonly<{
@@ -66,9 +68,11 @@ export type AuthSession = Readonly<{
   wallet_name: string
   identity: 'zklogin' | 'wallet'
   sign_personal_message: (message: Uint8Array) => Promise<{ bytes: string; signature: string }>
+  blast: BlastPurchaseActions
   read_sui_balance: () => Promise<bigint>
   read_kares_balance: () => Promise<bigint | null>
   gas_spent_24h: () => bigint
+  is_transaction_idle: ReturnType<typeof SDK>['is_transaction_idle']
   on_transaction: ReturnType<typeof SDK>['on_transaction']
   derive_character_id: (name: string) => string
   is_character_name_claimed: (name: string) => Promise<boolean>
@@ -79,6 +83,7 @@ export type AuthSession = Readonly<{
   /** the remote-fight chain hand — duels and PvM share it (local vs remote is the ONLY split) */
   fight: FightActions
   dungeon: DungeonActions
+  tournament: TournamentActions
   kolizeum: KolizeumActions
   friends: FriendsActions
   party: PartyActions
@@ -178,7 +183,7 @@ const create_wallet_session = (
   const registry_pin = (sdk.pins.name_registry as { id?: string | null } | undefined)?.id
   let kiosk_caps: ReturnType<typeof sdk.get_owned_kiosks> | null = null
   const kiosk_cap = async (kiosk_id?: string, fresh = false) => {
-    const request = fresh || !kiosk_caps ? sdk.get_owned_kiosks(account.address) : kiosk_caps
+    const request = kiosk_caps ?? sdk.get_owned_kiosks(account.address)
     kiosk_caps = request
     try {
       const { kioskOwnerCaps } = await request
@@ -190,7 +195,8 @@ const create_wallet_session = (
         kiosk_caps = null
         return null
       }
-      return receipt_fresh_kiosk_cap(sdk, cap, fresh)
+      if (fresh) await sdk.hydrate([cap.objectId])
+      return receipt_fresh_kiosk_cap(sdk, cap)
     } catch (error) {
       kiosk_caps = null
       throw error
@@ -210,6 +216,7 @@ const create_wallet_session = (
     read_sui_balance: sdk.read_sui_balance,
     read_kares_balance: sdk.read_kares_balance,
     gas_spent_24h: sdk.gas_spent_24h,
+    is_transaction_idle: sdk.is_transaction_idle,
     on_transaction: sdk.on_transaction,
     derive_character_id: (name: string) => character_id(require_registry(), name),
     is_character_name_claimed: async (name: string) => {
@@ -219,11 +226,13 @@ const create_wallet_session = (
     },
     fight: fight_actions(sdk, { kiosk_cap }),
     dungeon: dungeon_actions(sdk, { kiosk_cap }),
+    tournament: tournament_actions(sdk, { kiosk_cap }),
     kolizeum: kolizeum_actions(sdk, { kiosk_cap, address: account.address }),
     friends: friends_actions(sdk, { address: account.address }),
     party: party_actions(sdk, { kiosk_cap }),
     mastery: mastery_actions(sdk, { address: account.address, kiosk_cap }),
     kares: kares_actions({ sdk, client: resolution_client, address: account.address }),
+    blast: blast_purchase_actions({ sdk, client: resolution_client, address: account.address }),
     character: character_actions(sdk, { kiosk_cap }),
     read_character_checkpoint: (id, world) => read_checkpoint(client, sdk.game_type_package, id, world),
     read_item,
@@ -363,6 +372,8 @@ export const create_browser_auth = (options: BrowserAuthOptions) => {
 }
 
 export const create_wallet_auth = (options: WalletAuthOptions) => {
+  if (typeof window !== 'undefined' && !installed_wallets().some((wallet) => wallet.name === SLUSH_WALLET_NAME))
+    registerSlushWallet('AresRPG')
   const client = new SuiGraphQLClient({ network: options.network, url: options.graphql_url })
   const resolution_client = new SuiGrpcClient({
     network: options.network,

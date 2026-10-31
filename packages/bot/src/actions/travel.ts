@@ -116,6 +116,7 @@ export const create_mover = (ctx: ActionContext): Mover => {
         y: pose.y,
         z: pose.z,
         riding: pet_now,
+        gliding: false,
       })
     )
     last_report_ms = Date.now()
@@ -211,6 +212,9 @@ export const create_mover = (ctx: ActionContext): Mover => {
     if (chain !== null && live.at_ms > chain + ANCHOR_FUTURE_SLACK_MS) return
     const previous = anchor
     anchor = Object.freeze({ world: live.world, x: live.x, z: live.z, at_ms: live.at_ms, pet: live.pet })
+    // External position writes such as consumable teleports move both the chain checkpoint and the
+    // authoritative character pose. Never stream another packet from the pre-teleport local pose.
+    pose = anchor_pose(live)
     // date the local wall clock so `effective_now` tracks the chain from this checkpoint on
     anchor_local_ms = Date.now() - (chain === null ? 0 : Math.max(0, chain - live.at_ms))
     if (previous && (previous.x !== live.x || previous.z !== live.z)) {
@@ -231,6 +235,7 @@ export const create_mover = (ctx: ActionContext): Mover => {
     const leg_from = Object.freeze({ x: pose.x, z: pose.z })
     const deadline = Date.now() + step_min_ms(false) * Math.min(total, MAX_LEG_STEPS) * 4 + 30_000
     let steps = 0
+    let reanchor_attempt_pose = ''
     // Wall instant of the last block actually streamed. The gate below is shut on most polls (a step
     // is allowed once per `step_min_ms`), so a stuck-ness warning must key off "no block moved", not
     // "this poll was gated" — otherwise a healthy walk spams a false "no step".
@@ -241,6 +246,17 @@ export const create_mover = (ctx: ActionContext): Mover => {
       const next = step_toward(pose, to_x, to_z)
       const mounted = anchor !== null && anchor.pet && pet_now
       const wall_ok = Date.now() - last_report_ms >= step_min_ms(mounted)
+      // A streamed walk does not move the chain checkpoint. Long legs can therefore spend the
+      // whole travel bank before reaching their target; waiting cannot restore that bank, and the
+      // leg eventually times out a few blocks short. Re-anchor at the last streamed pose when the
+      // next block is no longer provable, then continue the same leg from the refreshed checkpoint.
+      const reanchor_key = `${pose.x},${pose.z}`
+      if (anchor && wall_ok && !can_reach(next.x, next.z) && reanchor_attempt_pose !== reanchor_key) {
+        reanchor_attempt_pose = reanchor_key
+        await ensure_zone(false)
+        await refresh_anchor(true)
+        continue
+      }
       if (!anchor || !wall_ok || !can_reach(next.x, next.z)) {
         const now = Date.now()
         if (now - last_step_ms > STALL_DIAG_MS && now - last_stall_diag_ms > STALL_DIAG_MS) {

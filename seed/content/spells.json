@@ -43969,6 +43969,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 1,
+            "value_max": 1,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ],
         "crit_effects": [
@@ -44007,6 +44019,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 1,
+            "value_max": 1,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ]
       },
@@ -44058,6 +44082,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 2,
+            "value_max": 2,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ],
         "crit_effects": [
@@ -44096,6 +44132,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 2,
+            "value_max": 2,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ]
       },
@@ -44147,6 +44195,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 3,
+            "value_max": 3,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ],
         "crit_effects": [
@@ -44185,6 +44245,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 3,
+            "value_max": 3,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ]
       },
@@ -44236,6 +44308,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 4,
+            "value_max": 4,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ],
         "crit_effects": [
@@ -44274,6 +44358,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 4,
+            "value_max": 4,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ]
       },
@@ -44325,6 +44421,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 5,
+            "value_max": 5,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ],
         "crit_effects": [
@@ -44363,6 +44471,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 5,
+            "value_max": 5,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ]
       },
@@ -44414,6 +44534,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 10,
+            "value_max": 10,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ],
         "crit_effects": [
@@ -44452,6 +44584,18 @@
             "chance_bp": 10000,
             "turns": 1,
             "stat": 7
+          },
+          {
+            "kind": 4,
+            "element": "",
+            "value": 10,
+            "value_max": 10,
+            "area_shape": 0,
+            "area_size": 0,
+            "target_filter": 4,
+            "chance_bp": 10000,
+            "turns": 1,
+            "stat": 9
           }
         ]
       }
@@ -49152,9 +49296,9 @@
         "line_of_sight": true,
         "line_launch": false,
         "free_cell": false,
-        "casts_per_turn": 1,
+        "casts_per_turn": 0,
         "casts_per_target": 0,
-        "cooldown_turns": 0,
+        "cooldown_turns": 3,
         "crit_1_in": 50,
         "effects": [
           {
@@ -49193,9 +49337,9 @@
         "line_of_sight": true,
         "line_launch": false,
         "free_cell": false,
-        "casts_per_turn": 1,
+        "casts_per_turn": 0,
         "casts_per_target": 0,
-        "cooldown_turns": 0,
+        "cooldown_turns": 3,
         "crit_1_in": 50,
         "effects": [
           {
@@ -49234,9 +49378,9 @@
         "line_of_sight": true,
         "line_launch": false,
         "free_cell": false,
-        "casts_per_turn": 1,
+        "casts_per_turn": 0,
         "casts_per_target": 0,
-        "cooldown_turns": 0,
+        "cooldown_turns": 3,
         "crit_1_in": 50,
         "effects": [
           {
@@ -49275,9 +49419,9 @@
         "line_of_sight": true,
         "line_launch": false,
         "free_cell": false,
-        "casts_per_turn": 1,
+        "casts_per_turn": 0,
         "casts_per_target": 0,
-        "cooldown_turns": 0,
+        "cooldown_turns": 2,
         "crit_1_in": 50,
         "effects": [
           {
@@ -49316,9 +49460,9 @@
         "line_of_sight": true,
         "line_launch": false,
         "free_cell": false,
-        "casts_per_turn": 1,
+        "casts_per_turn": 0,
         "casts_per_target": 0,
-        "cooldown_turns": 0,
+        "cooldown_turns": 2,
         "crit_1_in": 50,
         "effects": [
           {
@@ -49338,8 +49482,8 @@
           {
             "kind": 6,
             "element": "air",
-            "value": 31,
-            "value_max": 35,
+            "value": 35,
+            "value_max": 40,
             "area_shape": 0,
             "area_size": 0,
             "target_filter": 1,
@@ -49350,23 +49494,23 @@
         ]
       },
       {
-        "ap_cost": 2,
+        "ap_cost": 3,
         "range_min": 1,
         "range_max": 3,
         "modifiable_range": false,
         "line_of_sight": true,
         "line_launch": false,
         "free_cell": false,
-        "casts_per_turn": 1,
+        "casts_per_turn": 0,
         "casts_per_target": 0,
-        "cooldown_turns": 0,
+        "cooldown_turns": 2,
         "crit_1_in": 50,
         "effects": [
           {
             "kind": 6,
             "element": "air",
-            "value": 41,
-            "value_max": 45,
+            "value": 30,
+            "value_max": 35,
             "area_shape": 0,
             "area_size": 0,
             "target_filter": 1,
@@ -73491,8 +73635,8 @@
             "element": "fire",
             "value": 3,
             "value_max": 5,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73503,8 +73647,8 @@
             "element": "water",
             "value": 3,
             "value_max": 5,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73517,8 +73661,8 @@
             "element": "fire",
             "value": 6,
             "value_max": 6,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73529,8 +73673,8 @@
             "element": "water",
             "value": 6,
             "value_max": 6,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73556,8 +73700,8 @@
             "element": "fire",
             "value": 3,
             "value_max": 6,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73568,8 +73712,8 @@
             "element": "water",
             "value": 3,
             "value_max": 6,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73582,8 +73726,8 @@
             "element": "fire",
             "value": 7,
             "value_max": 7,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73594,8 +73738,8 @@
             "element": "water",
             "value": 7,
             "value_max": 7,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73621,8 +73765,8 @@
             "element": "fire",
             "value": 3,
             "value_max": 7,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73633,8 +73777,8 @@
             "element": "water",
             "value": 3,
             "value_max": 7,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73647,8 +73791,8 @@
             "element": "fire",
             "value": 8,
             "value_max": 8,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73659,8 +73803,8 @@
             "element": "water",
             "value": 8,
             "value_max": 8,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73686,8 +73830,8 @@
             "element": "fire",
             "value": 4,
             "value_max": 8,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73698,8 +73842,8 @@
             "element": "water",
             "value": 4,
             "value_max": 8,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73712,8 +73856,8 @@
             "element": "fire",
             "value": 9,
             "value_max": 9,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73724,8 +73868,8 @@
             "element": "water",
             "value": 9,
             "value_max": 9,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73751,8 +73895,8 @@
             "element": "fire",
             "value": 6,
             "value_max": 10,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73763,8 +73907,8 @@
             "element": "water",
             "value": 6,
             "value_max": 10,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73777,8 +73921,8 @@
             "element": "fire",
             "value": 11,
             "value_max": 11,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73789,8 +73933,8 @@
             "element": "water",
             "value": 11,
             "value_max": 11,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73816,8 +73960,8 @@
             "element": "fire",
             "value": 6,
             "value_max": 10,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73828,8 +73972,8 @@
             "element": "water",
             "value": 6,
             "value_max": 10,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73842,8 +73986,8 @@
             "element": "fire",
             "value": 11,
             "value_max": 11,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,
@@ -73854,8 +73998,8 @@
             "element": "water",
             "value": 11,
             "value_max": 11,
-            "area_shape": 0,
-            "area_size": 0,
+            "area_shape": 1,
+            "area_size": 2,
             "target_filter": 1,
             "chance_bp": 10000,
             "turns": 0,

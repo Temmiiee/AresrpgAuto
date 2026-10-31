@@ -63,6 +63,7 @@
         "@aresrpg/protocol": "workspace:*",
         "@mysten/enoki": "^1.2.24",
         "@mysten/kiosk": "1.4.13",
+        "@mysten/slush-wallet": "1.2.5",
         "@mysten/sui": "2.31.3",
         "@mysten/suins": "2.0.9",
         "@mysten/wallet-standard": "^0.21.27",
@@ -100,6 +101,8 @@
     "@mysten/enoki": ["@mysten/enoki@1.2.31", "", { "dependencies": { "@mysten/utils": "^0.4.1", "@mysten/wallet-standard": "^0.21.33", "@mysten/webcrypto-signer": "^0.2.33", "@nanostores/react": "^1.0.0", "@wallet-standard/ui": "^1.0.3", "idb-keyval": "^6.3.0", "nanostores": "^1.4.2" }, "peerDependencies": { "@mysten/sui": "^2.35.0", "@types/react": ">=17.0.0", "react": ">=17.0.0" }, "optionalPeers": ["@types/react", "react"] }, "sha512-3n+xNfNtepjJH50wOoPZN/dzLIL2E0pAiK1jqgYDf2+7nTLzN9H++qfLXEX7ldap2O+iM6yuCwWtzF8c3Jdj8w=="],
 
     "@mysten/kiosk": ["@mysten/kiosk@1.4.13", "", { "dependencies": { "@mysten/bcs": "^2.1.1" }, "peerDependencies": { "@mysten/sui": "^2.31.3" } }, "sha512-5i/mSXT4okrt4/54BPMGqj9gTY3C0ndOxZ7eXdExmHnxLhkdtyDMHQbdvCk8wsNM0ktiRePUYDDXLqtQmc6WQw=="],
+
+    "@mysten/slush-wallet": ["@mysten/slush-wallet@1.2.5", "", { "dependencies": { "@mysten/utils": "^0.4.1", "@mysten/wallet-standard": "^0.21.27", "@mysten/window-wallet-core": "^0.3.0", "valibot": "^1.4.2" }, "peerDependencies": { "@mysten/sui": "^2.31.3" } }, "sha512-4gs3rT80l1dnL/vTn4Z6uV3vQAFnQJHXAwTg///9RYobuW0PnFJqfSeUYYEGP+rTLjd4YNkdlwy9qARL7YHU4A=="],
 
     "@mysten/sui": ["@mysten/sui@2.31.3", "", { "dependencies": { "@graphql-typed-document-node/core": "^3.2.0", "@mysten/bcs": "^2.1.1", "@mysten/utils": "^0.4.1", "@noble/curves": "^2.3.0", "@noble/hashes": "^2.3.0", "@protobuf-ts/grpcweb-transport": "^2.11.1", "@protobuf-ts/runtime": "^2.11.1", "@protobuf-ts/runtime-rpc": "^2.11.1", "@scure/base": "^2.3.0", "@scure/bip32": "^2.3.0", "@scure/bip39": "^2.3.0", "gql.tada": "^1.11.3", "graphql": "^17.0.2", "poseidon-lite": "0.3.0", "valibot": "^1.4.2" } }, "sha512-O5gzylHkfMLj1yPdWLMJAty4DdNoSi35L5fh5fpTS4FgfrJyUdk8oweIoNie/7O9cJsV2tGC4jrgiJhLTHxmHw=="],
 
@@ -246,5 +249,7 @@
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
     "valibot": ["valibot@1.5.0", "", { "peerDependencies": { "typescript": ">=5" }, "optionalPeers": ["typescript"] }, "sha512-nil6AkP2TChWL43Z5uJ6GTxX01CUA+g8LWUM+N/rB9NBbkUMaUsi9PUNzlUPgoKASgmx9f7eGOYpJ04/fSa6FQ=="],
+
+    "@mysten/slush-wallet/@mysten/utils": ["@mysten/utils@0.4.2", "", {}, "sha512-K/5eBuYKxUFCrYcic1lvYvWE9OVSH581cjVjwsSJGUqPit91nZq2acUwes+B4lo98VE/CILIUeBcyEIvuNxMhA=="],
   }
 }

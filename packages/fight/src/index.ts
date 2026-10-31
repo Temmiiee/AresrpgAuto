@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-AresRPG-Source-Available
 // © 2026 Sceat — All rights reserved. See LICENSE.
 
+export { CARDINAL_DIRECTIONS, step_cell } from './combat_grid.ts'
 export { create_fight } from './fight.ts'
 export {
   create_character_source,
@@ -17,7 +18,7 @@ export {
 export { point_removal_chance, tackle_contest } from './fight_math.ts'
 export { generate_board } from './board_gen.ts'
 export { project_board_cells } from './board.ts'
-export { spell_target_cells, weapon_target_cells } from './effects.ts'
+export { spell_target_cells, weapon_target_cells, split_placements } from './effects.ts'
 export type { SpellCellProjection } from './effects.ts'
 export { preview_spell_cast, preview_weapon_strike } from './spell_preview.ts'
 export type { SpellCastPreview, SpellPreviewEffect, SpellPreviewMovement, SpellTargetPreview } from './spell_preview.ts'
@@ -25,6 +26,7 @@ export {
   project_spell_turn,
   project_weapon_turn,
   spell_area_cells,
+  spell_effect_area_cells,
   weapon_area_cells,
 } from './spell_turn_projection.ts'
 export type { SpellTurnProjection } from './spell_turn_projection.ts'

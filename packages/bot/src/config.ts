@@ -136,6 +136,11 @@ export type BotConfig = Readonly<{
   strategy: boolean
   /** how long between strategy passes (ms); 0 disables the periodic recompute */
   strategy_interval_ms: number
+  /** periodically compare bundled game content with aresrpg/aresrpg:edge */
+  content_watch: boolean
+  content_watch_interval_ms: number
+  /** write complete per-fight JSONL diagnostics under packages/bot/logs/fights */
+  combat_analytics: boolean
 }>
 
 export const config: BotConfig = Object.freeze({
@@ -182,4 +187,7 @@ export const config: BotConfig = Object.freeze({
   // route. 30 minutes reacts to level/gear moves without hammering the shared loop with sim bursts.
   strategy: env_flag(process.env.BOT_STRATEGY, true),
   strategy_interval_ms: Math.max(0, env_int(process.env.BOT_STRATEGY_INTERVAL_MS) ?? 30 * 60_000),
+  content_watch: env_flag(process.env.BOT_CONTENT_WATCH, true),
+  content_watch_interval_ms: Math.max(env_int(process.env.BOT_CONTENT_WATCH_INTERVAL_MS) ?? 21_600_000, 60_000),
+  combat_analytics: env_flag(process.env.BOT_COMBAT_ANALYTICS, false),
 })

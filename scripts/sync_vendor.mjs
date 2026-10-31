@@ -15,13 +15,16 @@
 //
 // Usage:  bun scripts/sync_vendor.mjs          (re-copy everything from ../aresrpg)
 //         bun scripts/sync_vendor.mjs --check  (report drift without writing)
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const V2_ROOT = resolve(HERE, '..')
-const SOURCE_ROOT = resolve(V2_ROOT, '..', 'aresrpg')
+const SIBLING_SOURCE_ROOT = resolve(V2_ROOT, '..', 'aresrpg')
+const LOCAL_SOURCE_ROOT = join(V2_ROOT, 'aresrpg')
+const SOURCE_ROOT = existsSync(SIBLING_SOURCE_ROOT) ? SIBLING_SOURCE_ROOT : LOCAL_SOURCE_ROOT
 const DEST_PACKAGES = join(V2_ROOT, 'packages')
 
 const CHECK_ONLY = process.argv.includes('--check')
@@ -40,6 +43,8 @@ const PACKAGES = {
 // `snapshots/` (historical chain dumps) and empty `journal/` are intentionally excluded.
 const SEED_FILES = [
   'items.json',
+  'allocation_campaign.json',
+  'dungeons.json',
   'recipes.json',
   'mobs.json',
   'worlds.json',
@@ -105,9 +110,17 @@ const main = () => {
       }
       const source_files = collect_files(source)
       const dest_files = collect_files(dest)
-      const changed = source_files.length !== dest_files.length
+      const source_hashes = new Map(
+        source_files.map((file) => [relative(source, file), file_hash(file)])
+      )
+      const dest_hashes = new Map(
+        dest_files.map((file) => [relative(dest, file), file_hash(file)])
+      )
+      const changed =
+        source_hashes.size !== dest_hashes.size ||
+        [...source_hashes].some(([file, hash]) => dest_hashes.get(file) !== hash)
       if (changed) {
-        log(`DRIFT (file count): ${relative(V2_ROOT, dest)}`)
+        log(`DRIFT (content): ${relative(V2_ROOT, dest)}`)
         drift += 1
       }
     }
@@ -130,5 +143,7 @@ const collect_files = (root) => {
   }
   return found
 }
+
+const file_hash = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
 
 main()

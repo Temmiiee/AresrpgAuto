@@ -16,6 +16,7 @@ import {
 } from '@aresrpg/protocol'
 
 import { zone_key, type ChainClock, type GameState } from './store.ts'
+export { is_version_assert_error, version_gate_active } from '../shared/version_gate.ts'
 
 /** The server's indexing lag ceiling (slots) above which transaction composition is unsafe: the
  *  chain has moved past what the projection knows, so a race is likely. */
@@ -55,13 +56,6 @@ export const freshness = (state: GameState, now_ms: number): Freshness => {
   if (state.packets_seen < MIN_PACKETS_SEEN)
     return Object.freeze({ ok: false, reason: `projection still syncing (${state.packets_seen} packets)` })
   return Object.freeze({ ok: true })
-}
-
-/** A transaction that failed the on-chain package-version gate (`version::assert_latest`, abort 601).
- *  This is a deployment-pin mismatch or a paused version gate, not a stale Sui object reference. */
-export const is_version_assert_error = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.includes('::version::assert_latest') && /abort code:\s*601\b/i.test(message)
 }
 
 /** The character the bot drives: the configured id when set, else the first row in the roster the

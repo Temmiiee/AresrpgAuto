@@ -67,6 +67,81 @@ const fighter_max_hp = (cp: HydratedFightCheckpoint, fighter: Fighter): number =
   return source ? Number(player_max_hp(source)) : Number(fighter.hp ?? 0n)
 }
 
+type EnemyResponse = Readonly<{
+  party_damage: number
+  seat_damage: number
+  party_deaths: number
+  seat_dies: boolean
+  fighter_damage: readonly number[]
+}>
+const response_cache = new WeakMap<object, Map<number, EnemyResponse>>()
+
+/** Replay the engine's deterministic enemy segment after this player's turn. The local twin runs the
+ * actual mob AI (including target selection, movement, spells, cooldowns and zones), so safety is
+ * estimated from the current fight state instead of a fixed distance-to-mob guess. */
+const enemy_response = (cp: HydratedFightCheckpoint, seat: number): EnemyResponse => {
+  let by_seat = response_cache.get(cp)
+  if (!by_seat) {
+    by_seat = new Map()
+    response_cache.set(cp, by_seat)
+  }
+  const cached = by_seat.get(seat)
+  if (cached) return cached
+  const unchanged = Object.freeze({
+    party_damage: 0,
+    seat_damage: 0,
+    party_deaths: 0,
+    seat_dies: false,
+    fighter_damage: Object.freeze(cp.contract.fighters.map(() => 0)),
+  })
+  const actor = BigInt(seat)
+  if (cp.contract.queue[Number(cp.contract.turn_ptr)] !== actor) return unchanged
+  const scratch = create_fight({ state: cp, mode: 'local', seed: 1n })
+  const before = cp.contract.fighters.map((fighter) => Number(fighter.hp))
+  const result = scratch.simulate_turn({
+    observed_ms: cp.contract.turn_started_ms + CONTRACT_CONSTANTS.turn_min_ms,
+  })
+  if (result.error) return unchanged
+  let party_damage = 0
+  let seat_damage = 0
+  let party_deaths = 0
+  const fighter_damage = cp.contract.fighters.map(() => 0)
+  for (let index = 0; index < result.state.contract.fighters.length; index++) {
+    const initial = cp.contract.fighters[index]
+    const final = result.state.contract.fighters[index]
+    if (!initial || !final || initial.team !== cp.contract.fighters[seat]?.team || initial.dead) continue
+    const loss = Math.max(0, before[index]! - Number(final.hp))
+    fighter_damage[index] = loss
+    party_damage += loss
+    if (index === seat) seat_damage += loss
+    if (!initial.dead && final.dead) party_deaths += 1
+  }
+  const response = Object.freeze({
+    party_damage,
+    seat_damage,
+    party_deaths,
+    seat_dies: Boolean(result.state.contract.fighters[seat]?.dead),
+    fighter_damage: Object.freeze(fighter_damage),
+  })
+  by_seat.set(seat, response)
+  return response
+}
+
+/** Apply one candidate action to the same local twin, then measure the enemy segment it leaves. */
+const response_after_action = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  action: TurnAction
+): EnemyResponse => {
+  const scratch = create_fight({ state: cp, mode: 'local', seed: 1n })
+  const applied = scratch.apply(action.type === 'move'
+    ? { type: 'move_to', fighter: BigInt(seat), path: action.path }
+    : action.type === 'cast'
+      ? { type: 'cast_spell', fighter: action.fighter_idx, spell: action.spell, target_cell: action.target_cell }
+      : { type: 'weapon_strike', fighter: action.fighter_idx, target_cell: action.target_cell })
+  return applied.error ? enemy_response(cp, seat) : enemy_response(applied.state, seat)
+}
+
 /** Check if a spell is a heal (targets allies, restores HP). */
 /**
  * Detect healing from the actual spell projection.
@@ -132,7 +207,7 @@ const spell_ap_cost = (cp: HydratedFightCheckpoint, seat: number, name: string):
   return level ? Math.max(1, Number(level.ap_cost)) : 4
 }
 
-type DamageOption = Readonly<{ action: TurnAction; score: number; cost: number }>
+type DamageOption = Readonly<{ action: TurnAction; score: number; cost: number; damage: number }>
 
 /** Every damaging action this seat may take right now, scored by the enemy HP it removes per action
  *  point: the sum, over the card's WHOLE area, of the damage it lands on each enemy (never more
@@ -156,7 +231,7 @@ const damage_options = (cp: HydratedFightCheckpoint, seat: number, enemies: read
       const area = point ? [cell] : area_of(cell)
       let dealt = 0
       for (const enemy of enemies) if (area.includes(enemy.cell)) dealt += Math.min(per_target, fighter_hp(enemy))
-      if (dealt > 0) options.push({ action: make_action(cell), score: dealt / ap, cost: ap })
+      if (dealt > 0) options.push({ action: make_action(cell), score: dealt / ap, cost: ap, damage: dealt })
     }
   }
 
@@ -192,7 +267,30 @@ const best_damage_action = (cp: HydratedFightCheckpoint, seat: number, enemies: 
   const ranked = [...damage_options(cp, seat, enemies)].sort(
     (left, right) => right.score - left.score || left.cost - right.cost
   )
-  return ranked[0]?.action ?? null
+  if (ranked.length <= 1) return ranked[0]?.action ?? null
+
+  // Damage per AP remains the baseline, but when two attacks are close prefer the one that leaves
+  // the simulated enemy segment less dangerous. This makes lethal/focus-fire hits count without
+  // letting a defensive bonus routinely displace a much stronger attack.
+  const baseline = enemy_response(cp, seat)
+  const safety_score = (option: DamageOption): number => {
+    const after = response_after_action(cp, seat, option.action)
+    const prevented = Math.max(0, baseline.party_damage - after.party_damage)
+    const deaths_prevented = Math.max(0, baseline.party_deaths - after.party_deaths)
+    return option.score + prevented * 0.08 + deaths_prevented * 8
+  }
+  let best = ranked[0]!
+  let best_score = safety_score(best)
+  // Bound extra engine replays: options outside the top four by raw damage efficiency cannot
+  // displace the baseline enough to justify the simulation cost.
+  for (const option of ranked.slice(1, 4)) {
+    const score = safety_score(option)
+    if (score > best_score) {
+      best = option
+      best_score = score
+    }
+  }
+  return best.action
 }
 
 /** The longest legal path (bounded by the fighter's MP) ending closest to the nearest enemy. */
@@ -674,6 +772,19 @@ const evaluate_tactical_cast = (
   // 6. Placement-only spells.
   utility += score_new_zones(cp, after, seat, profile)
 
+  // 7. Survival through the next enemy segment. A locally replayed mob turn captures the effects
+  // of damage, kills, control, healing and displacement. Reward casts that reduce party damage and
+  // heavily reject a cast that leaves this caster dead before its next turn.
+  const baseline_response = enemy_response(cp, seat)
+  const caster_hp_ratio = fighter_hp(caster) / Math.max(1, fighter_max_hp(cp, caster))
+  if (baseline_response.party_damage > 0 || caster_hp_ratio < 0.7) {
+    const candidate_response = enemy_response(after, seat)
+    utility += (baseline_response.party_damage - candidate_response.party_damage) * 0.8
+    utility += (baseline_response.party_deaths - candidate_response.party_deaths) * 160
+    if (!baseline_response.seat_dies && candidate_response.seat_dies) utility -= 500
+    else if (baseline_response.seat_dies && !candidate_response.seat_dies) utility += 500
+  }
+
   return utility / Math.max(1, cost)
 }
 
@@ -787,6 +898,82 @@ const step_toward_enemy = (
   return path && path.length > 0 ? path : null
 }
 
+/** Party movement balances closing distance against the mob damage that the engine predicts before
+ * this seat acts again. Include holding position and a few flank/retreat cells so the planner can
+ * avoid walking the most durable member into a lethal focus-fire lane. */
+const safe_step_toward_enemy = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  enemies: readonly Fighter[]
+): readonly bigint[] | null => {
+  const me = cp.contract.fighters[seat]
+  if (!me) return null
+  const occupied = new Set(cp.contract.fighters.filter((fighter) => !fighter.dead).map((fighter) => fighter.cell))
+  const distance = (cell: bigint): number => distance_to_group(cell, enemies)
+  const reachable = reachable_fight_cells(cp, BigInt(seat)).filter((cell) => !occupied.has(cell))
+  const nearest = [...reachable].sort((a, b) => distance(a) - distance(b)).slice(0, 8)
+  const farthest = [...reachable].sort((a, b) => distance(b) - distance(a)).slice(0, 4)
+  const options = [...new Set([...nearest, ...farthest])]
+    .flatMap((cell) => {
+      const path = fight_path_to(cp, BigInt(seat), cell)
+      return path?.length ? [{ cell, path }] : []
+    })
+  const current_hp = fighter_hp(me)
+  const max_hp = Math.max(1, fighter_max_hp(cp, me))
+  const danger_weight = 0.01 + (1 - Math.min(1, current_hp / max_hp)) * 0.25
+  const score = (cell: bigint, response: EnemyResponse): number =>
+    distance(cell) + response.seat_damage * danger_weight + (response.seat_dies ? 10_000 : 0)
+
+  let best_path: readonly bigint[] | null = null
+  let best_score = score(me.cell, enemy_response(cp, seat))
+  for (const option of options) {
+    const action: TurnAction = { type: 'move', path: option.path }
+    const candidate_score = score(option.cell, response_after_action(cp, seat, action))
+    if (candidate_score < best_score) {
+      best_score = candidate_score
+      best_path = option.path
+    }
+  }
+  return best_path
+}
+
+/** A heal that can prevent a near-term party casualty outranks damage and ordinary class utility. */
+const critical_heal_action = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  allies: readonly Fighter[]
+): TurnAction | null => {
+  const actor = BigInt(seat)
+  const me = cp.contract.fighters[seat]
+  if (!me) return null
+  const forecast = enemy_response(cp, seat).fighter_damage
+  const endangered = [...allies]
+    .map((ally) => {
+      const ally_seat = cp.contract.fighters.indexOf(ally)
+      const hp = fighter_hp(ally)
+      const max = fighter_max_hp(cp, ally)
+      const projected_hp = Math.max(0, hp - (forecast[ally_seat] ?? 0))
+      return { ally, hp, max, projected_hp }
+    })
+    .filter(({ hp, max, projected_hp }) =>
+      hp > 0 && (hp / Math.max(1, max) <= 0.4 || projected_hp === 0 || projected_hp / Math.max(1, max) <= 0.25)
+    )
+    .sort((a, b) => a.projected_hp / Math.max(1, a.max) - b.projected_hp / Math.max(1, b.max))
+  if (!endangered.length) return null
+  for (const { ally, hp, max, projected_hp } of endangered) {
+    for (const name of spell_names_for(cp, seat)) {
+      if (spell_ap_cost(cp, seat, name) > Number(me.ap) || !is_heal_spell(cp, seat, name)) continue
+      if (!spell_target_cells(cp, actor, name).targetable.includes(ally.cell)) continue
+      log_debug(
+        'combat',
+        `seat ${seat}: EMERGENCY HEAL ${name} on ally at ${ally.cell} (HP ${hp}/${max}, forecast ${projected_hp}/${max})`
+      )
+      return { type: 'cast', fighter_idx: actor, spell: name, target_cell: ally.cell }
+    }
+  }
+  return null
+}
+
 /** The best action for ONE seat given a SHARED party context (focus fire, heal priority, positioning). */
 const next_action_party = (
   cp: HydratedFightCheckpoint,
@@ -800,6 +987,9 @@ const next_action_party = (
   const enemies = cp.contract.fighters.filter((fighter) => !fighter.dead && fighter.team !== me.team)
   if (enemies.length === 0) return null
   const allies = cp.contract.fighters.filter((f, i) => !f.dead && f.team === me.team && ally_seats.includes(i))
+
+  const emergency_heal = critical_heal_action(cp, seat, allies)
+  if (emergency_heal) return emergency_heal
 
   const class_aware = tactical_profile(cp, seat) !== null
   const tactical = best_class_tactical_action(cp, seat, allies, enemies)
@@ -838,15 +1028,15 @@ const next_action_party = (
   //    earlier "supports hold back when an ally is ahead" rule returned a null action, which made a
   //    whole turn empty: the character wasted its turn AND, before the pass guard existed, froze the
   //    fight on a no-op turn. Closing distance gets every seat into range and can never deadlock.)
-  const path = step_toward_enemy(cp, seat, enemies)
+  const path = safe_step_toward_enemy(cp, seat, enemies)
   if (path === null) {
     log_debug(
       'plan',
-      `seat ${seat}: no path — enemies=${enemies.length} weapon=${weapon_target_cells(cp, actor).targetable.length} reachable=${reachable_fight_cells(cp, actor).length} spells=${spell_names_for(cp, seat).join('|')}`
+      `seat ${seat}: holding position — no safe advance; enemies=${enemies.length} weapon=${weapon_target_cells(cp, actor).targetable.length} reachable=${reachable_fight_cells(cp, actor).length} spells=${spell_names_for(cp, seat).join('|')}`
     )
     return null
   }
-  log_debug('plan', `seat ${seat} (${party_role}): MOVE forward ${path.length}`)
+  log_debug('plan', `seat ${seat} (${party_role}): MOVE after enemy-response check ${path.length}`)
   return { type: 'move', path }
 }
 
@@ -938,6 +1128,139 @@ export const plan_turn_party = (
     `plan_turn_party seat=${seat} role=${my_role} allies=[${party_seats.join(',')}] actions=${actions.length} ap=${cp.contract.fighters[seat]?.ap} mp=${cp.contract.fighters[seat]?.mp}`
   )
   return actions
+}
+
+/** Structured snapshot of the planner's main constraints and top attack candidates for analytics. */
+export const inspect_turn_plan = (
+  cp: HydratedFightCheckpoint,
+  seat: number,
+  actions: readonly TurnAction[] = []
+): Readonly<Record<string, unknown>> => {
+  const me = cp.contract.fighters[seat]
+  if (!me || me.kind.type !== 'player') return Object.freeze({ reason: 'seat_missing_or_not_player' })
+  const actor = BigInt(seat)
+  const enemies = cp.contract.fighters.filter((fighter) => !fighter.dead && fighter.team !== me.team)
+  const player = cp.sources.players[me.kind.character]
+  const damage = [...damage_options(cp, seat, enemies)]
+    .sort((left, right) => right.score - left.score || left.cost - right.cost)
+    .slice(0, 8)
+    .map((option) => ({ action: option.action, expected_damage: option.damage, ap_cost: option.cost, damage_per_ap: option.score }))
+  const spells = spell_names_for(cp, seat).map((name) => {
+    const level_index = Number((player?.spell_levels[name] ?? 1n) - 1n)
+    const level = cp.sources.spells[name]?.levels[level_index]
+    const cells = spell_target_cells(cp, actor, name)
+    const enemy_cells = new Set(enemies.map((enemy) => enemy.cell))
+    const legal_enemy_cells = cells.targetable.filter((cell) => enemy_cells.has(cell))
+    const cooldown = me.cooldowns.find((entry) => entry.spell === name)?.left ?? 0n
+    return {
+      name,
+      ap_cost: level ? Number(level.ap_cost) : null,
+      cooldown: Number(cooldown),
+      range_min: level ? Number(level.range_min) : null,
+      range_max: level ? Number(level.range_max) : null,
+      line_of_sight: level?.line_of_sight ?? null,
+      range_cells: cells.range.length,
+      legal_target_cells: cells.targetable.length,
+      legal_enemy_cells: legal_enemy_cells.map(String),
+      unavailable_reason:
+        legal_enemy_cells.length > 0 ? null : cells.range.length === 0 ? 'no_cells_in_range' : 'no_legal_enemy_target',
+    }
+  })
+  const response = enemy_response(cp, seat)
+  const first = actions[0]
+  const first_is_heal = first?.type === 'cast' && is_heal_spell(cp, seat, first.spell)
+  const first_is_raw_damage = first !== undefined && damage.some((option) =>
+    option.action.type === first.type &&
+    (option.action.type === 'move' || first.type === 'move'
+      ? option.action.type === 'move' && first.type === 'move' && option.action.path.join(',') === first.path.join(',')
+      : option.action.type === 'cast' && first.type === 'cast'
+        ? option.action.spell === first.spell && option.action.target_cell === first.target_cell
+        : option.action.type === 'strike' && first.type === 'strike' && option.action.target_cell === first.target_cell)
+  )
+  const first_action_reason = !first
+    ? 'no_legal_action_found'
+    : first.type === 'move'
+      ? actions.length > 1
+        ? 'repositioning_then_followup_action'
+        : 'no_current_attack_or_support_action_selected; repositioning'
+      : first_is_heal
+        ? 'healing_or_emergency_survival'
+        : first_is_raw_damage
+          ? 'damage_option; candidates ranked by damage efficiency and simulated threat reduction'
+          : 'class_tactical_utility (control, buff, zone, displacement, or survival)'
+  const replay = create_fight({ state: cp, mode: 'local', seed: 1n })
+  let replay_state = replay.state()
+  const action_contexts = actions.map((action, index) => {
+    const actor_before = replay_state.contract.fighters[seat]
+    const live_enemies = replay_state.contract.fighters.filter(
+      (fighter) => !fighter.dead && actor_before && fighter.team !== actor_before.team
+    )
+    const options = [...damage_options(replay_state, seat, live_enemies)]
+      .sort((left, right) => right.score - left.score || left.cost - right.cost)
+      .slice(0, 4)
+      .map((option) => ({ action: option.action, expected_damage: option.damage, ap_cost: option.cost, damage_per_ap: option.score }))
+    const spell_targets = spell_names_for(replay_state, seat).map((name) => {
+      const enemy_cells = new Set(live_enemies.map((enemy) => enemy.cell))
+      return {
+        spell: name,
+        legal_enemy_cells: spell_target_cells(replay_state, actor, name).targetable
+          .filter((cell) => enemy_cells.has(cell))
+          .map(String),
+      }
+    })
+    const before = actor_before
+      ? { cell: String(actor_before.cell), hp: Number(actor_before.hp), ap: Number(actor_before.ap), mp: Number(actor_before.mp) }
+      : null
+    const applied = replay.apply(sim_commands([action], actor)[0]!)
+    if (!applied.error) replay_state = applied.state
+    return {
+      index,
+      action,
+      before,
+      legal_enemy_targets: spell_targets.filter((row) => row.legal_enemy_cells.length > 0),
+      top_damage_options: options,
+      apply_error: applied.error ? String(applied.error) : null,
+    }
+  })
+  return Object.freeze({
+    selected_reason: first_action_reason,
+    selected_action: first ?? null,
+    action_contexts,
+    actor: {
+      name: player?.name ?? me.kind.character,
+      classe: player?.classe ?? null,
+      cell: String(me.cell),
+      hp: Number(me.hp),
+      max_hp: fighter_max_hp(cp, me),
+      ap: Number(me.ap),
+      mp: Number(me.mp),
+    },
+    enemies: enemies.map((enemy) => {
+      const enemy_seat = cp.contract.fighters.indexOf(enemy)
+      return {
+        seat: enemy_seat,
+        turn_order: cp.contract.queue.indexOf(BigInt(enemy_seat)),
+        mob_type: enemy.kind.type === 'mob' ? enemy.kind.snapshot.mob_type : enemy.kind.type,
+        cell: String(enemy.cell),
+        hp: Number(enemy.hp),
+        max_hp: enemy.kind.type === 'mob' ? Number(enemy.kind.snapshot.max_hp) : Number(enemy.hp),
+        distance: manhattan(me.cell, enemy.cell),
+      }
+    }),
+    movement: {
+      reachable_cells: reachable_fight_cells(cp, actor).length,
+      actor_turn_order: cp.contract.queue.indexOf(actor),
+    },
+    spells,
+    top_damage_options: damage,
+    predicted_enemy_segment: {
+      party_damage: response.party_damage,
+      actor_damage: response.seat_damage,
+      party_deaths: response.party_deaths,
+      actor_dies: response.seat_dies,
+      fighter_damage: response.fighter_damage.map((hp_loss, fighter_seat) => ({ seat: fighter_seat, hp_loss })).filter((row) => row.hp_loss > 0),
+    },
+  })
 }
 
 export const describe_actions = (actions: readonly TurnAction[]): string =>

@@ -6,6 +6,7 @@
 // a lone seat, plan_turn_party once allies are seated) and records every run's CAUSE — a timeout is
 // "too slow to finish", never a silent loss — so the win rate says how sure, not just how often.
 import {
+  CONTRACT_CONSTANTS,
   create_character_source,
   create_fight,
   player_max_hp,
@@ -124,6 +125,16 @@ export const player_source_of = (character: CharacterRow): PlayerSource =>
     weapon: weapon_source_of(character),
   })
 
+/** Chain progression::touch regen, projected lazily from the last persisted HP write. */
+export const projected_character_hp = (character: CharacterRow, now_ms = Date.now()): number => {
+  const max = Number(player_max_hp(player_source_of(character)))
+  if (character.hp === undefined || character.hp_ms === undefined) return max
+  const elapsed = Math.max(0, now_ms - character.hp_ms)
+  return Math.min(max, Number(character.hp) + Math.floor(elapsed / Number(CONTRACT_CONSTANTS.regen_ms_per_hp)))
+}
+
+export const character_max_hp = (character: CharacterRow): number => Number(player_max_hp(player_source_of(character)))
+
 /** The group's members as local mob inputs. `level_scalar` is the zero..hundred the zone seed drew
  *  (NOT a level): create_mob_snapshot maps it onto the template's level band, exactly as the chain
  *  does. Members whose type is absent from the seed are dropped (the chain refuses them too). */
@@ -217,12 +228,11 @@ const run_once = (
 const average = (values: readonly number[]): number =>
   values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length
 
-/** The player's fight input. HP starts from the character's persisted HP, clamped to the max and to
- *  at least 1: a preview that assumed full HP while the character is hurt would certify a fight the
- *  chain starts at a disadvantage. Regen only ever raises HP, so the stored value is the safe floor. */
+/** The player's fight input. Start at the currently projected chain HP (including lazy regeneration),
+ * clamped to the legal range, so previews reflect both the real wound and the time spent recovering. */
 const player_input = (character: CharacterRow, source: PlayerSource): FightPlayerInput => {
   const max = player_max_hp(source)
-  const stored = character.hp === undefined ? max : BigInt(character.hp)
+  const stored = BigInt(projected_character_hp(character))
   const hp = stored < 1n ? 1n : stored > max ? max : stored
   return { character: character.id, owner: '0x0', team: 0n, ready: true, hp, source }
 }

@@ -15,6 +15,7 @@
 import type { CharacterRow } from '@aresrpg/protocol'
 
 import { config } from '../config.ts'
+import { items_by_type, worlds_by_id } from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
 import { active_fight_of, is_version_assert_error, select_character } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
@@ -77,6 +78,75 @@ const follower_diag_due = (id: string, now: number): boolean => {
   if (now - (follower_diag_ms.get(id) ?? 0) < STAGE_DIAG_MS) return false
   follower_diag_ms.set(id, now)
   return true
+}
+const potion_cooldown_until = new Map<string, number>()
+const CITY_POTIONS = Object.freeze({
+  potion_of_thebes: 'thebes',
+  potion_of_the_ruins: 'the_ruins',
+  potion_of_fuwage: 'fuwage',
+})
+
+/** Use a carried travel potion only when its authored destination saves a substantial walk to this
+ * rendezvous. City destinations come from the same world seed used by the game; recall returns to
+ * the authored world centre. The chain still enforces roots and dungeon confinement atomically. */
+const try_rendezvous_potion = async (
+  ctx: ActionContext,
+  character: CharacterRow,
+  target: Readonly<{ world: string; x: number; z: number }>,
+  pose: Readonly<{ x: number; z: number }>
+): Promise<boolean> => {
+  if (
+    character.active_fight ||
+    character.custody === 'fight' ||
+    character.dungeon_run ||
+    character.ambush ||
+    (potion_cooldown_until.get(character.id) ?? 0) > Date.now()
+  ) return false
+  const world = worlds_by_id[target.world]
+  if (!world) return false
+  const distance = (point: Readonly<{ x: number; z: number }>): number =>
+    Math.max(Math.abs(point.x - target.x), Math.abs(point.z - target.z))
+  const current_distance = distance(pose)
+  if (current_distance < 4_000) return false
+
+  const candidates: { item_id: string; item_type: string; world?: string; destination: { x: number; z: number }; gain: number }[] = []
+  for (const item of ctx.state().inventory) {
+    if (item.category !== 'consumable' || item.amount < 1 || items_by_type[item.item_type]?.category !== 'consumable') continue
+    let destination: { x: number; z: number } | undefined
+    let potion_world: string | undefined
+    if (item.item_type === 'recall_potion') {
+      destination = { x: 50_000, z: 50_000 }
+    } else {
+      const city_slug = CITY_POTIONS[item.item_type as keyof typeof CITY_POTIONS]
+      if (!city_slug) continue
+      const city = world.cities.find((entry) => entry.city === city_slug)
+      if (!city) continue
+      destination = city
+      potion_world = target.world
+    }
+    const gain = current_distance - distance(destination)
+    if (gain >= 4_000) candidates.push({ item_id: item.id, item_type: item.item_type, world: potion_world, destination, gain })
+  }
+  candidates.sort((a, b) => b.gain - a.gain)
+  const potion = candidates[0]
+  if (!potion) return false
+  try {
+    await ctx.sdk.character.use_consumable({
+      character_id: character.id,
+      item_id: potion.item_id,
+      item_type: potion.item_type,
+      ...(potion.world ? { world: potion.world } : {}),
+      custody: custody_of(character),
+    })
+    potion_cooldown_until.set(character.id, Date.now() + 120_000)
+    log_info('party', `${character.name}: used ${potion.item_type} for rendezvous — saves ${Math.round(potion.gain)} blocks`)
+    return true
+  } catch (error) {
+    // The transaction is atomic: a rooted character or other chain restriction does not consume it.
+    potion_cooldown_until.set(character.id, Date.now() + 30_000)
+    log_warn('party', `${character.name}: rendezvous potion unavailable: ${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
 }
 
 export type PartyPhase = 'idle' | 'staging' | 'active'
@@ -490,7 +560,11 @@ export const leader_group_step = async (
     )
     const all_staged = followers.length === 0 || followers.every((id) => party.staged.has(id))
     if (all_staged && mover.can_reach(target.x, target.z)) {
-      const outcome = await engage_target(ctx, mover, target.candidate)
+      const follower_rows = followers.flatMap((id) => {
+        const row = state.characters.find((candidate) => candidate.id === id)
+        return row ? [row] : []
+      })
+      const outcome = await engage_target(ctx, mover, target.candidate, follower_rows)
       if (outcome.kind === 'engaged') {
         try {
           await join_followers(ctx, followers, outcome.fight)
@@ -631,8 +705,19 @@ export const follower_group_step = async (
     // progress, also RE-ANCHOR at the new pose (`search_zone`). The checkpoint then hops toward the
     // group instead of being stranded at wherever this character last acted.
     const before = mover.pose()
+    if (await try_rendezvous_potion(ctx, character, target, before)) {
+      // The teleport transaction writes the new authoritative checkpoint; let the roster/mover
+      // sync that position before planning its next legal travel hop.
+      await mover.refresh_anchor(true)
+      return idle
+    }
+    // A checkpoint only authorizes a bounded travel bank. Walking all the way to a distant group
+    // before calling ensure_zone exhausts that bank partway through the leg; travel_to then waits
+    // forever for reachability that can only be restored by re-anchoring at the streamed pose.
+    // Take one bounded hop, re-anchor it, and let the next party pass choose the next hop.
+    const hop = hop_toward(before, target, PARTY_RADIUS)
     try {
-      await mover.travel_to(target.x, target.z)
+      await mover.travel_to(hop.x, hop.z)
       if (mover.can_reach(target.x, target.z)) {
         mark_staged(party, character.id)
         log_info('party', `${character.name}: staged for group ${target.candidate.group.index}`)

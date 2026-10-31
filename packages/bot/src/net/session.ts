@@ -33,9 +33,9 @@ import { log_info, log_warn, log_error, log_debug, sleep } from '../shared/logge
 import { notify } from '../shared/discord_notify.ts'
 import { create_bot_sdk } from '../auth/sdk_client.ts'
 import { create_ledger } from '../chain/ledger.ts'
-import { create_mover, type Mover } from '../actions/travel.ts'
+import { create_mover, is_travel_too_far_error, type Mover } from '../actions/travel.ts'
 import { create_roamer, type Roamer } from '../actions/roam.ts'
-import { gather_once } from '../actions/gather.ts'
+import { gather_once, resolve_pending_ambush } from '../actions/gather.ts'
 import { drive_craft } from '../actions/craft.ts'
 import {
   empty_stats,
@@ -80,9 +80,9 @@ import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
 import { maybe_progress } from '../actions/progression.ts'
 import { gear_goal_outputs } from '../actions/gear.ts'
 import { compute_strategy, describe_strategy, type Strategy } from '../actions/strategy.ts'
-import { active_fight_of, freshness, unavailable_item_ids } from '../state/selectors.ts'
+import { active_fight_of, freshness, unavailable_item_ids, version_gate_active } from '../state/selectors.ts'
 import { initial_game_state, reduce, type GameState } from '../state/store.ts'
-import { recipe_detail, recipes_by_output, tool_category_of_job } from '../content/catalog.ts'
+import { recipe_detail, recipes_by_output, tool_category_of_job, type GatheringJob } from '../content/catalog.ts'
 import { plan_recipe, craft_gather_demand, craft_once } from '../actions/craft.ts'
 import { is_equipment_category, job_level_from_xp, job_slugs } from '@aresrpg/immutable'
 
@@ -215,10 +215,6 @@ type CharRuntime = {
   /** true on this character's very first pass — auto-equip is deferred past it so the character can
    *  land its first settle/chore/engage before gear swaps start firing. */
   first_pass: boolean
-  /** last time a tx was rejected with `version::assert_latest` abort 601 (stale object versions).
-   *  While within `VERSIONS_STALE_COOLDOWN_MS` of it, the character skips txs so the WebSocket can
-   *  push fresh object versions instead of racing the chain on every 3s pass. */
-  last_assert_latest_ms: number
 }
 
 /** The forced-chore floor: once this character has gone a full interval with NO chore, its pass runs
@@ -227,10 +223,6 @@ type CharRuntime = {
  *  not reset it. Disabled when `BOT_CHORE_INTERVAL_MS` is 0. */
 const chore_due = (rt: CharRuntime): boolean =>
   config.chore_interval_ms > 0 && Date.now() - rt.last_chore_ms >= config.chore_interval_ms
-
-/** How long a character skips txs after an `assert_latest` rejection, giving the WebSocket time to
- *  push fresh object versions before the next attempt. */
-const VERSIONS_STALE_COOLDOWN_MS = 10_000
 
 /** Human-readable one-liner for a chore role, logged at startup so it is obvious what each
  *  character will do with its non-combat time. */
@@ -455,6 +447,7 @@ export const play_loop = async (
       world,
       state: () => game_state,
       send: (packet) => session.send(packet),
+      equipment_queue: create_serial_queue(),
       ledger,
       notify,
       fight_runtimes,
@@ -492,7 +485,6 @@ export const play_loop = async (
       last_key_craft_attempt_ms: null,
       last_chore_ms: Date.now(),
       first_pass: true,
-      last_assert_latest_ms: 0,
     })
   }
 
@@ -524,6 +516,7 @@ export const play_loop = async (
     try {
       do {
         equip_requested = false
+        if (version_gate_active()) break
         let blocked = 0
         try {
           const report = await auto_equip_party(equip_targets())
@@ -531,6 +524,7 @@ export const play_loop = async (
         } catch (error) {
           log_warn('session', `auto-equip failed: ${error instanceof Error ? error.message : String(error)}`)
         }
+        if (version_gate_active()) break
         // A character seated in a fight (or not yet fresh) is reported blocked; a drop that lands
         // mid-fight is thus re-checked until the party is out, instead of being lost until restart.
         if (blocked > 0 && !stopped) {
@@ -564,6 +558,42 @@ export const play_loop = async (
     const outputs = gear_goal_outputs(game_state.characters, game_state)
     gear_goal_cache = Object.freeze({ state: game_state, outputs })
     return outputs
+  }
+  const TOOL_OUTPUT_BY_CATEGORY: Readonly<Record<string, string>> = Object.freeze({
+    tool_farmer: 'old_hoe',
+    tool_herbalist: 'tool_herbalist',
+    tool_miner: 'basic_pickaxe',
+  })
+  let tool_goal_cache: Readonly<{ state: GameState; outputs: readonly string[] }> | null = null
+  const current_tool_goals = (): readonly string[] => {
+    if (tool_goal_cache && tool_goal_cache.state === game_state) return tool_goal_cache.outputs
+    if (!toggles.gather) return Object.freeze([])
+    const unavailable = unavailable_item_ids(game_state)
+    const outputs = new Set<string>()
+    for (const rt of runtimes) {
+      const jobs: readonly GatheringJob[] =
+        rt.chore.kind === 'gather' || rt.chore.kind === 'gather_craft'
+          ? [rt.chore.job]
+          : rt.chore.kind === 'gather_all' || rt.chore.kind === 'gather_all_craft'
+            ? GATHERING_JOBS
+            : []
+      if (jobs.length === 0) continue
+      const character = game_state.characters.find((row) => row.id === rt.character.id)
+      if (!character) continue
+      for (const job of jobs) {
+        const category = tool_category_of_job(job)
+        const worn_here = character.equipment.some((item) => item.category === category)
+        const available_in_kiosk = game_state.inventory.some(
+          (item) => item.category === category && !unavailable.has(item.id)
+        )
+        if (worn_here || available_in_kiosk) continue
+        const output = TOOL_OUTPUT_BY_CATEGORY[category]
+        if (output) outputs.add(output)
+      }
+    }
+    const result = Object.freeze([...outputs])
+    tool_goal_cache = Object.freeze({ state: game_state, outputs: result })
+    return result
   }
   /** true once, on the first pass that sees an equipment id the party has never seen (boot, drop,
    *  craft). The seen set is only advanced when something new appeared, so a removed id re-triggers
@@ -680,6 +710,10 @@ export const play_loop = async (
     const current = game_state.characters.find((c) => c.id === character.id)
     if (!current) return idle_sleep_ms
 
+    // A package-version abort is process-wide and latched. Do not let other characters continue
+    // issuing doomed transactions while the deployment pins / gate are inconsistent.
+    if (version_gate_active()) return idle_sleep_ms
+
     mover.sync(current)
 
     // Verbose trace (BOT_DEBUG=1): log whenever the pose, anchor or roster row changes, so a pose
@@ -713,18 +747,6 @@ export const play_loop = async (
       return idle_sleep_ms
     }
 
-    // Cooldown after a `version::assert_latest` rejection: wait for the WebSocket to push fresh
-    // object versions before retrying txs, instead of racing the chain on every 3s pass.
-    if (Date.now() - rt.last_assert_latest_ms < VERSIONS_STALE_COOLDOWN_MS) {
-      log_debug(
-        'session',
-        `${character.name}: versions stale cooldown — ${Math.round(
-          (VERSIONS_STALE_COOLDOWN_MS - (Date.now() - rt.last_assert_latest_ms)) / 1000
-        )}s left`
-      )
-      return idle_sleep_ms
-    }
-
     // 1. reconcile any ended fight (settle loot, then close the fight object)
     log_debug(
       'pass',
@@ -755,9 +777,14 @@ export const play_loop = async (
       log_debug('pass', `${character.name}: fight outcome=${outcome.kind}${outcome.detail ? ` (${outcome.detail})` : ''}`)
       if (outcome.kind !== 'waiting_turn' && outcome.kind !== 'not_our_turn')
         log_info('session', `${character.name}: fight ${outcome.kind}${outcome.detail ? ` (${outcome.detail})` : ''}`)
-      if (outcome.detail === 'versions stale') rt.last_assert_latest_ms = Date.now()
       return FIGHT_POLL_MS
     }
+
+    // A fired resource-protector verdict roots the character until resolve_ambush succeeds. Recover
+    // it here even if gathering was disabled or the original resolve transaction failed. This must
+    // follow active-fight handling because the projection can show the verdict briefly after the
+    // fight itself has already appeared.
+    if (await resolve_pending_ambush(ctx, current)) return FIGHT_POLL_MS
 
     // 2b. spend stat capital / spell points a level-up granted (out of fight only — the chain
     // borrows the character from the kiosk, which a seated fighter cannot lend).
@@ -1035,7 +1062,6 @@ export const play_loop = async (
           return idle_sleep_ms
         }
         if (engaged.kind === 'traveling') return idle_sleep_ms
-        if (engaged.detail === 'versions stale') rt.last_assert_latest_ms = Date.now()
       }
     }
 
@@ -1089,6 +1115,7 @@ export const play_loop = async (
       const demand = crafter
         ? craft_gather_demand(crafter, game_state.inventory, unavailable_item_ids(game_state), [
             ...key_outputs,
+            ...current_tool_goals(),
             ...current_gear_goals(),
           ])
         : undefined
@@ -1097,11 +1124,16 @@ export const play_loop = async (
         rt.stats = record_gather(rt.stats, gathered.item_type, gathered.quantity)
         digest_stats = record_gather(digest_stats, gathered.item_type, gathered.quantity)
         acted = true
+        if (gathered.protector) {
+          // The resolver has extracted this character into a solo fight. Do not send a craft or
+          // another chore using the now-stale kiosk custody from this same pass.
+          rt.last_chore_ms = Date.now()
+          return true
+        }
       } else {
         // A skip used to be silent, which hid a dead gather pipeline for a whole night (the roster
         // showed zero harvests and nothing said why). One line per chore is cheap next to that.
         log_info('gather', `${character.name}: no harvest — ${gathered.reason}`)
-        if (gathered.reason === 'versions stale') rt.last_assert_latest_ms = Date.now()
       }
       // Advance the rotation so the all-resource gatherer sweeps FARMER → HERBALIST → MINER.
       if (chore.kind === 'gather_all' || chore.kind === 'gather_all_craft') rt.gather_cursor = (rt.gather_cursor + 1) % GATHERING_JOBS.length
@@ -1157,7 +1189,7 @@ export const play_loop = async (
             party_key_stock(party_state)
           )
         : []
-      const craft_priorities = [...key_outputs, ...current_gear_goals()]
+      const craft_priorities = [...key_outputs, ...current_tool_goals(), ...current_gear_goals()]
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
         const crafted = await craft_queue.run(async () => {
           prune_party_craft_burned()
@@ -1167,7 +1199,6 @@ export const play_loop = async (
           return result
         })
         if (!crafted.success) {
-          if (crafted.outcome === 'paused') rt.last_assert_latest_ms = Date.now()
           break
         }
         for (const id of crafted.input_item_ids) burned.add(id)
@@ -1201,6 +1232,19 @@ export const play_loop = async (
             await sleep(passed)
           }
         } catch (error) {
+          if (is_travel_too_far_error(error)) {
+            log_warn('session', `${character.name}: transaction rejected by prove_move (305; not submitted); refreshing the travel anchor`)
+            try {
+              await rt.mover.refresh_anchor(true)
+            } catch (refresh_error) {
+              log_warn(
+                'session',
+                `${character.name}: anchor refresh after prove_move 305 failed: ${refresh_error instanceof Error ? refresh_error.message : String(refresh_error)}`
+              )
+            }
+            await sleep(idle_sleep_ms)
+            continue
+          }
           const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
           log_error('session', `${character.name} pass error: ${detail}`)
           await sleep(idle_sleep_ms)
@@ -1279,6 +1323,7 @@ export const play_loop = async (
           const started_ms = Date.now()
           const plan = compute_strategy(rows, game_state, {
             dungeon_blacklist: runtimes[0]?.ctx.dungeon_blacklist,
+            extra_outputs: current_tool_goals(),
           })
           strategy_ref = plan
           for (const line of describe_strategy(plan)) log_info('strategy', line)

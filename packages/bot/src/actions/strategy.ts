@@ -256,6 +256,8 @@ export type FarmOptions = Readonly<{
   dungeon_blacklist?: ReadonlyMap<string, number>
   /** Shared sample time for deterministic key-target selection. */
   now_ms?: number
+  /** Additional craft outputs with missing loot-only ingredients (for example gathering tools). */
+  extra_outputs?: readonly string[]
 }>
 
 /** Scan every mob family in the fight world across the difficulty bands and pick the distance whose
@@ -427,6 +429,7 @@ export const plan_loot_focus = (
       add_output(target.item_type)
     }
   }
+  for (const output_type of options.extra_outputs ?? []) add_output(output_type)
   for (const output_type of xp_training_outputs(characters)) add_output(output_type)
 
   const world_mobs = new Map(world.mobs.map((entry) => [entry.mob_type, entry]))

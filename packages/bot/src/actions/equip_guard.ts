@@ -21,6 +21,8 @@ export type OwnershipVerdict = Readonly<{
   ok: boolean
   /** the items the plan wants to equip that are ALREADY worn by this character */
   already_worn: readonly string[]
+  /** items the projection says this character wears, but live ownership proves it does not */
+  stale_unequip: readonly string[]
   reason?: string
 }>
 
@@ -50,6 +52,7 @@ export const ownership_verdict = (
   const me = normalizeSuiAddress(character_id)
   const problems: string[] = []
   const already_worn: string[] = []
+  const stale_unequip: string[] = []
   for (const change of to_unequip) {
     const id = normalizeSuiAddress(change.item_id)
     if (!owners.has(id)) {
@@ -57,7 +60,10 @@ export const ownership_verdict = (
       continue
     }
     const holder = address_owner(owners.get(id))
-    if (holder !== me) problems.push(`${change.slot}:${change.item_id.slice(0, 8)} is not worn by this character`)
+    if (holder !== me) {
+      stale_unequip.push(change.item_id)
+      problems.push(`${change.slot}:${change.item_id.slice(0, 8)} is not worn by this character`)
+    }
   }
   for (const change of to_equip) {
     const id = normalizeSuiAddress(change.item_id)
@@ -73,6 +79,7 @@ export const ownership_verdict = (
   return Object.freeze({
     ok: problems.length === 0,
     already_worn: Object.freeze(already_worn),
+    stale_unequip: Object.freeze(stale_unequip),
     reason: problems.length ? problems.join('; ') : undefined,
   })
 }
@@ -86,7 +93,7 @@ export const verify_equip_ownership = async (
   to_unequip: readonly EquipChange[]
 ): Promise<OwnershipVerdict> => {
   const ids = [...new Set([...to_equip, ...to_unequip].map((change) => normalizeSuiAddress(change.item_id)))]
-  if (!ids.length) return Object.freeze({ ok: true, already_worn: Object.freeze([]) })
+  if (!ids.length) return Object.freeze({ ok: true, already_worn: Object.freeze([]), stale_unequip: Object.freeze([]) })
   try {
     const owners = new Map<string, OwnerLike>()
     for (let i = 0; i < ids.length; i += 50) {
@@ -103,7 +110,7 @@ export const verify_equip_ownership = async (
     return verdict
   } catch (error) {
     log_warn('equip', `ownership check skipped: ${error instanceof Error ? error.message : String(error)}`)
-    return Object.freeze({ ok: true, already_worn: Object.freeze([]) })
+    return Object.freeze({ ok: true, already_worn: Object.freeze([]), stale_unequip: Object.freeze([]) })
   }
 }
 

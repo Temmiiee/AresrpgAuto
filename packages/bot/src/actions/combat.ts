@@ -27,14 +27,30 @@ import type {
 } from '@aresrpg/protocol'
 
 import { catalog_spell_sources } from '../content/fight_sources.ts'
+import {
+  analytics_checkpoint,
+  analytics_fight_ended,
+  analytics_fight_started,
+  analytics_turn_planned,
+  analytics_turn_rejected,
+  analytics_turn_submitted,
+  combat_analytics_enabled,
+} from './combat_analytics.ts'
 import { log_info, log_warn, log_debug } from '../shared/logger.ts'
 import { active_fight_of, chain_now, is_version_assert_error, select_character, select_window_mob_groups } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { custody_of, type ActionContext } from './context.ts'
-import { describe_score, screen_groups, viable_ranking, type GroupCandidate } from './fight_preview.ts'
+import {
+  character_max_hp,
+  describe_score,
+  projected_character_hp,
+  screen_groups,
+  viable_ranking,
+  type GroupCandidate,
+} from './fight_preview.ts'
 import type { FightRuntimeStore } from './fight_registry.ts'
-import type { Mover } from './travel.ts'
-import { describe_actions, plan_turn, plan_turn_party, type TurnAction } from './turn_plan.ts'
+import { is_travel_too_far_error, type Mover } from './travel.ts'
+import { describe_actions, inspect_turn_plan, plan_turn, plan_turn_party, type TurnAction } from './turn_plan.ts'
 
 /** Submit end-turn only once the chain clock has passed the turn floor, with a small margin. */
 const TURN_GUARD_MS = 500
@@ -74,12 +90,19 @@ export const handle_fight_packet = (
 ): void => {
   if (packet.type === 'packet/fight_state') {
     const runtime = hydrate_fight(state, packet.fight)
-    if (runtime) runtimes.set(packet.fight, runtime)
+    if (runtime) {
+      runtimes.set(packet.fight, runtime)
+      analytics_checkpoint(packet.fight, runtime.state())
+    }
     return
   }
-  if (packet.type === 'packet/fight_ended')
+  if (packet.type === 'packet/fight_ended') {
+    analytics_fight_ended(packet.fight, packet.winner)
     log_info('combat', `fight ${packet.fight} ended${packet.winner === null ? '' : ` (winner: team ${packet.winner})`}`)
-  else if (packet.type === 'packet/fight_started') log_info('combat', `fight ${packet.fight} started`)
+  } else if (packet.type === 'packet/fight_started') {
+    analytics_fight_started(packet.fight, { queue: packet.queue, started_ms: packet.started_ms ?? null })
+    log_info('combat', `fight ${packet.fight} started`)
+  }
 }
 
 // ── selection ────────────────────────────────────────────────────────
@@ -188,7 +211,8 @@ const drive_turn = async (
   actions: readonly TurnAction[],
   cp: HydratedFightCheckpoint,
   seat: number,
-  fight_id: string
+  fight_id: string,
+  analysis?: unknown
 ): Promise<FightDriveOutcome> => {
   const contract = cp.contract
   const identity = `${contract.round}:${contract.turn_ptr}:${contract.turn_started_ms}`
@@ -200,23 +224,46 @@ const drive_turn = async (
   const floor = Number(contract.turn_started_ms) + Number(CONTRACT_CONSTANTS.turn_min_ms) + TURN_GUARD_MS
   if (observed < floor) return { kind: 'waiting_turn', detail: `turn floor in ${floor - observed}ms` }
 
+  analytics_turn_planned(fight_id, cp, seat, actions, analysis ?? null)
+  let submitted_actions = actions
   let receipt
   try {
     receipt = await ctx.sdk.fight.commit_turn({ fight: contract.id, actions })
   } catch (error) {
+    analytics_turn_rejected(fight_id, cp, seat, actions, error)
     if (is_version_assert_error(error)) {
       log_warn('combat', `commit turn ${identity} — MoveAbort 601 (package version mismatch or paused version gate)`)
       return { kind: 'waiting_turn', detail: 'versions stale' }
     }
-    throw error
+    if (!is_travel_too_far_error(error) || !actions.some((action) => action.type === 'move')) throw error
+
+    // The whole transaction is rejected when any movement fails prove_move (305). Keep only the
+    // legal prefix before the first move; actions after it may rely on the refused position. An
+    // empty prefix passes this turn so the fight advances and the next checkpoint can be replanned.
+    submitted_actions = actions.slice(0, actions.findIndex((action) => action.type === 'move'))
+    log_warn(
+      'combat',
+      `commit turn ${identity} rejected by prove_move (305); retrying safe prefix (${submitted_actions.length}/${actions.length} actions)`
+    )
+    try {
+      receipt = await ctx.sdk.fight.commit_turn({ fight: contract.id, actions: submitted_actions })
+    } catch (retry_error) {
+      analytics_turn_rejected(fight_id, cp, seat, submitted_actions, retry_error)
+      if (is_version_assert_error(retry_error)) {
+        log_warn('combat', `commit turn ${identity} retry — MoveAbort 601 (package version mismatch or paused version gate)`)
+        return { kind: 'waiting_turn', detail: 'versions stale' }
+      }
+      throw retry_error
+    }
   }
   ctx.fight_runtimes.mark_committed(contract.id, identity)
-  const summary = describe_actions(actions) || 'pass'
+  const summary = describe_actions(submitted_actions) || 'pass'
   ctx.ledger.append({
     kind: 'fight_turn',
     digest: receipt.digest,
     detail: { fight: contract.id, seat, actions: summary },
   })
+  analytics_turn_submitted(fight_id, cp, seat, submitted_actions, receipt.digest)
   log_info('combat', `committed turn ${identity}: ${summary}`)
   return { kind: 'committed', detail: summary }
 }
@@ -258,6 +305,7 @@ export const drive_fight = async (ctx: ActionContext): Promise<FightDriveOutcome
   const actions = party_seats.length > 0
     ? plan_turn_party(cp, seat, party_seats)
     : plan_turn(cp, seat)
+  const analysis = combat_analytics_enabled() ? inspect_turn_plan(cp, seat, actions) : undefined
   
   if (actions.length === 0) {
     // It is our turn but the planner found nothing to do. Committing an empty turn (a pass) is the
@@ -270,10 +318,10 @@ export const drive_fight = async (ctx: ActionContext): Promise<FightDriveOutcome
       'combat',
       `seat ${seat} no legal actions — passing (round=${cp.contract.round} ptr=${cp.contract.turn_ptr} dead=${me?.dead} ap=${me?.ap} mp=${me?.mp} enemies=${enemies_alive})`
     )
-    return await drive_turn(ctx, [], cp, seat, fight_id)
+    return await drive_turn(ctx, [], cp, seat, fight_id, analysis)
   }
   
-  return await drive_turn(ctx, actions, cp, seat, fight_id)
+  return await drive_turn(ctx, actions, cp, seat, fight_id, analysis)
 }
 
 // ── engaging a mob group ─────────────────────────────────────────────
@@ -282,6 +330,9 @@ export type EngageOutcome =
   | Readonly<{ kind: 'engaged'; fight: string; detail: string }>
   | Readonly<{ kind: 'traveling'; detail: string }>
   | Readonly<{ kind: 'skipped'; detail: string }>
+
+const hp_wait_log_ms = new Map<string, number>()
+const HP_WAIT_LOG_INTERVAL_MS = 30_000
 
 /** What a screen of the live window found. `viable` is whether ANY group cleared MIN_WIN_RATE,
  *  independent of the claims — the leader uses it to tell "the window is empty/exhausted" from "the
@@ -328,13 +379,32 @@ export const pick_engage_target = (
 export const engage_target = async (
   ctx: ActionContext,
   mover: Mover,
-  candidate: GroupCandidate
+  candidate: GroupCandidate,
+  allies: readonly CharacterRow[] = []
 ): Promise<EngageOutcome> => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
   if (!character) return { kind: 'skipped', detail: 'character not in roster yet' }
   const { zone, group } = candidate
   const claimed = claim_key(candidate)
+  const participants = [character, ...allies.filter((ally) => ally.id !== character.id)]
+  const wounded = participants
+    .map((member) => ({ member, hp: projected_character_hp(member), max: character_max_hp(member) }))
+    .filter(({ hp, max }) => hp < max)
+  if (wounded.length > 0) {
+    // Keep the claim alive while this selected fight waits for natural regeneration.
+    ctx.claims.claim(claimed, ctx.character_id, 300_000)
+    const now = Date.now()
+    if (now - (hp_wait_log_ms.get(ctx.character_id) ?? 0) >= HP_WAIT_LOG_INTERVAL_MS) {
+      hp_wait_log_ms.set(ctx.character_id, now)
+      const status = wounded
+        .map(({ member, hp, max }) => `${member.name}:${hp}/${max}`)
+        .join(' ')
+      const slowest_seconds = Math.max(...wounded.map(({ hp, max }) => max - hp))
+      log_info('combat', `holding group ${group.index} for health regeneration (${status}; ~${slowest_seconds}s)`)
+    }
+    return { kind: 'traveling', detail: 'waiting for party health to regenerate' }
+  }
   try {
     await mover.travel_to(group.x, group.z)
     if (!(await mover.prove_ready(group.x, group.z)))

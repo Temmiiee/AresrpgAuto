@@ -92,6 +92,8 @@ export type ActionContext = Readonly<{
   state: () => GameState
   /** the authenticated intent channel; false when the link is not accepted */
   send: (packet: Readonly<ClientPacket>) => boolean
+  /** serializes gathering tool swaps with party auto-equip for this character */
+  equipment_queue: SerialQueue
   /** durable activity ledger */
   ledger: Ledger
   /** Discord (or console fallback) reporting */

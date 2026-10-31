@@ -7,6 +7,8 @@ import { notify, notify_await } from './shared/discord_notify.ts'
 import { login } from './cli/login.ts'
 import { doctor } from './cli/doctor.ts'
 import { status } from './cli/status.ts'
+import { start_game_content_watch } from './content/update_watch.ts'
+import { analyze_fights } from './cli/fight_analyzer.ts'
 
 // ── CLI parsing ────────────────────────────────────────────────────
 async function run_cli(command: string): Promise<void> {
@@ -15,11 +17,13 @@ async function run_cli(command: string): Promise<void> {
     doctor()
   } else if (command === 'status') {
     status()
+  } else if (command === 'analyze-fights') {
+    await analyze_fights(process.argv[3])
   } else if (command === 'login') {
     login()
   } else {
     log_info('cli', `unknown CLI: ${command}`)
-    log_info('cli', 'available: doctor, status, login, run')
+    log_info('cli', 'available: doctor, status, analyze-fights, login, run')
   }
 }
 
@@ -49,6 +53,7 @@ async function main(): Promise<void> {
   log_info('main', `idle sleep: ${config.idle_sleep_ms}ms`)
   log_info('main', `party: up to ${config.party_size} simultaneous characters`)
   log_info('main', `character: ${address}`)
+  start_game_content_watch()
 
   await play_loop(
     signer,

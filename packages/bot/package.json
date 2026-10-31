@@ -9,6 +9,7 @@
     "login": "bun run src/main.ts login",
     "doctor": "bun run src/main.ts doctor",
     "status": "bun run src/main.ts status",
+    "analyze-fights": "bun run src/main.ts analyze-fights",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
