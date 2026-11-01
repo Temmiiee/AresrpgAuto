@@ -14,18 +14,19 @@ import {
   create_fight,
   fight_path_to,
   player_max_hp,
-  project_spell_turn,
-  project_weapon_turn,
+  project_spell_turn as raw_project_spell_turn,
+  project_weapon_turn as raw_project_weapon_turn,
   reachable_fight_cells,
-  spell_area_cells,
-  spell_target_cells,
-  weapon_area_cells,
+  spell_area_cells as raw_spell_area_cells,
+  spell_target_cells as raw_spell_target_cells,
+  weapon_area_cells as raw_weapon_area_cells,
   weapon_level_of,
-  weapon_target_cells,
+  weapon_target_cells as raw_weapon_target_cells,
   type FightCommand,
   type BoardZone,
   type Fighter,
   type HydratedFightCheckpoint,
+  type SpellCellProjection,
   type SpellTurnProjection,
 } from '@aresrpg/fight'
 import { AREA_SHAPES, CHANNELS, EFFECT_KINDS, TARGET_FILTERS } from '@aresrpg/fight/move_contract'
@@ -46,6 +47,103 @@ const MAX_TURN_ACTIONS = 16
 const cell_x = (cell: bigint): number => Number(cell % GRID_W)
 const cell_y = (cell: bigint): number => Math.floor(Number(cell) / GRID_W_N)
 const manhattan = (a: bigint, b: bigint): number => Math.abs(cell_x(a) - cell_x(b)) + Math.abs(cell_y(a) - cell_y(b))
+
+// Every projection below is PURE for one checkpoint: cells, AP, cooldowns and the turn ledger do
+// not change while a seat decides its next action. A checkpoint is therefore a safe cache key, and
+// one decision pass asks for the same spell ranges/projections several times (tactical scoring,
+// damage ranking, heal checks, the emergency scan). Scans walk the whole 625-cell board and run the
+// legality/crit math per cell, so memoizing them is the difference between a preview pass and a
+// multi-second stall. Entries die with the checkpoint (WeakMap).
+type PlannerCache = Readonly<{
+  targets: Map<string, SpellCellProjection>
+  projections: Map<string, SpellTurnProjection | null>
+  areas: Map<string, readonly bigint[]>
+}>
+const planner_caches = new WeakMap<object, PlannerCache>()
+
+const planner_cache = (cp: HydratedFightCheckpoint): PlannerCache => {
+  let cache = planner_caches.get(cp)
+  if (!cache) {
+    cache = { targets: new Map(), projections: new Map(), areas: new Map() }
+    planner_caches.set(cp, cache)
+  }
+  return cache
+}
+
+const spell_target_cells = (
+  cp: HydratedFightCheckpoint,
+  actor: bigint,
+  name: string
+): SpellCellProjection => {
+  const cache = planner_cache(cp)
+  const key = `s:${actor}:${name}`
+  let value = cache.targets.get(key)
+  if (value === undefined) {
+    value = raw_spell_target_cells(cp, actor, name)
+    cache.targets.set(key, value)
+  }
+  return value
+}
+
+const weapon_target_cells = (cp: HydratedFightCheckpoint, actor: bigint): SpellCellProjection => {
+  const cache = planner_cache(cp)
+  const key = `w:${actor}`
+  let value = cache.targets.get(key)
+  if (value === undefined) {
+    value = raw_weapon_target_cells(cp, actor)
+    cache.targets.set(key, value)
+  }
+  return value
+}
+
+const project_spell_turn = (
+  cp: HydratedFightCheckpoint,
+  actor: bigint,
+  name: string
+): SpellTurnProjection | null => {
+  const cache = planner_cache(cp)
+  const key = `s:${actor}:${name}`
+  if (!cache.projections.has(key)) cache.projections.set(key, raw_project_spell_turn(cp, actor, name))
+  return cache.projections.get(key) ?? null
+}
+
+const project_weapon_turn = (cp: HydratedFightCheckpoint, actor: bigint): SpellTurnProjection | null => {
+  const cache = planner_cache(cp)
+  const key = `w:${actor}`
+  if (!cache.projections.has(key)) cache.projections.set(key, raw_project_weapon_turn(cp, actor))
+  return cache.projections.get(key) ?? null
+}
+
+const spell_area_cells = (
+  cp: HydratedFightCheckpoint,
+  actor: bigint,
+  name: string,
+  cell: bigint
+): readonly bigint[] => {
+  const cache = planner_cache(cp)
+  const key = `s:${actor}:${name}:${cell}`
+  let value = cache.areas.get(key)
+  if (value === undefined) {
+    value = raw_spell_area_cells(cp, actor, name, cell)
+    cache.areas.set(key, value)
+  }
+  return value
+}
+
+const weapon_area_cells = (
+  cp: HydratedFightCheckpoint,
+  actor: bigint,
+  cell: bigint
+): readonly bigint[] => {
+  const cache = planner_cache(cp)
+  const key = `w:${actor}:${cell}`
+  let value = cache.areas.get(key)
+  if (value === undefined) {
+    value = raw_weapon_area_cells(cp, actor, cell)
+    cache.areas.set(key, value)
+  }
+  return value
+}
 
 /** The spells a seated player fighter may cast, from the fight's own replay source. */
 export const spell_names_for = (cp: HydratedFightCheckpoint, seat: number): readonly string[] => {
@@ -157,7 +255,7 @@ const enemy_response = (cp: HydratedFightCheckpoint, seat: number): EnemyRespons
     })
     const actor = BigInt(seat)
     if (cp.contract.queue[Number(cp.contract.turn_ptr)] !== actor) return unchanged
-    const scratch = create_fight({ state: cp, mode: 'local', seed: 1n })
+    const scratch = create_fight({ state: cp, mode: 'local', hydrated: true, seed: 1n })
     const before = cp.contract.fighters.map((fighter) => Number(fighter.hp))
     const simulate_started = performance.now()
     const result = scratch.simulate_turn({
@@ -201,7 +299,7 @@ const response_after_action = (
 ): EnemyResponse => {
   const perf_started = performance.now()
   planner_perf_add('response_after_action_calls')
-  const scratch = create_fight({ state: cp, mode: 'local', seed: 1n })
+  const scratch = create_fight({ state: cp, mode: 'local', hydrated: true, seed: 1n })
   const applied = scratch.apply(action.type === 'move'
     ? { type: 'move_to', fighter: BigInt(seat), path: action.path }
     : action.type === 'cast'
@@ -667,7 +765,7 @@ const evaluate_tactical_cast = (
   if (Number(caster.ap) < cost) return null
 
   const create_started = performance.now()
-  const simulation = create_fight({ state: cp, mode: 'local' })
+  const simulation = create_fight({ state: cp, mode: 'local', hydrated: true })
   if (process.env.BOT_PROFILE_PREVIEW) {
     planner_perf_add('tactical_create_ms', performance.now() - create_started)
   }
@@ -1210,7 +1308,7 @@ const next_action = (cp: HydratedFightCheckpoint, seat: number): TurnAction | nu
 
 /** A full greedy turn: take legal actions until none remain (solo). */
 export const plan_turn = (cp: HydratedFightCheckpoint, seat: number): readonly TurnAction[] => {
-  const scratch = create_fight({ state: cp, mode: 'local' })
+  const scratch = create_fight({ state: cp, mode: 'local', hydrated: true })
   const actions: TurnAction[] = []
   let state = scratch.state()
   while (actions.length < MAX_TURN_ACTIONS) {
@@ -1237,7 +1335,7 @@ export const plan_turn_party = (
   // so include it explicitly when resolving this actor's class role.
   const roles = assign_roles(cp, [seat, ...party_seats])
   const my_role = roles.get(seat) ?? 'dps'
-  const scratch = create_fight({ state: cp, mode: 'local' })
+  const scratch = create_fight({ state: cp, mode: 'local', hydrated: true })
   const actions: TurnAction[] = []
   let state = scratch.state()
   
@@ -1318,7 +1416,7 @@ export const inspect_turn_plan = (
         : first_is_raw_damage
           ? 'damage_option; candidates ranked by damage efficiency and simulated threat reduction'
           : 'class_tactical_utility (control, buff, zone, displacement, or survival)'
-  const replay = create_fight({ state: cp, mode: 'local', seed: 1n })
+  const replay = create_fight({ state: cp, mode: 'local', hydrated: true, seed: 1n })
   let replay_state = replay.state()
   const action_contexts = actions.map((action, index) => {
     const actor_before = replay_state.contract.fighters[seat]

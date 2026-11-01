@@ -45,16 +45,23 @@ export const create_fight = ({
   setup,
   mode = 'remote',
   seed = 1n,
+  hydrated = false,
 }: {
   state?: HydratedFightCheckpoint
   setup?: import('./types.ts').FightSetup
   mode?: FightMode
   seed?: bigint
+  /** `initial_state` already came from this package (normalized bigints, frozen sources), so skip
+   *  the wire decoder and share the immutable sources. The planner forks a checkpoint thousands of
+   *  times; re-normalizing every fork made candidate evaluation dominate the whole preview. */
+  hydrated?: boolean
 }): Fight => {
   if (!initial_state && !setup) throw new Error('create_fight requires state or setup')
   if (initial_state && setup) throw new Error('create_fight accepts state or setup, not both')
   let state = initial_state
-    ? (normalize_checkpoint(initial_state) as HydratedFightCheckpoint)
+    ? hydrated
+      ? { contract: structuredClone(initial_state.contract), sources: initial_state.sources }
+      : (normalize_checkpoint(initial_state) as HydratedFightCheckpoint)
     : create_fight_state(setup!)
   let seed_index = 0n
   let render_ids = create_render_ids(state.contract)
@@ -69,7 +76,12 @@ export const create_fight = ({
     seed_index: bigint
   }> | null = null
 
-  const snapshot = (): HydratedFightCheckpoint => structuredClone(state)
+  // Sources are deeply frozen and never mutated (join REPLACES the map), so every snapshot can
+  // share them. Cloning them on every apply was ~2 ms of pure overhead in a 4-player preview.
+  const snapshot = (): HydratedFightCheckpoint => ({
+    contract: structuredClone(state.contract),
+    sources: state.sources,
+  })
   const capture_turn_boundary = (): void => {
     if (mode !== 'local' || state.contract.round === 0n || state.contract.ended) return
     turn_boundary = Object.freeze({
@@ -181,7 +193,7 @@ export const create_fight = ({
         return { state: snapshot(), events: [], error: { code: 'local_mode_required', detail: null } }
       if (!turn_boundary) return { state: snapshot(), events: [], error: { code: 'no_turn_boundary', detail: null } }
       const { state: boundary_state, render_ids: boundary_render_ids, seed_index: boundary_seed_index } = turn_boundary
-      state = structuredClone(boundary_state)
+      state = { contract: structuredClone(boundary_state.contract), sources: boundary_state.sources }
       render_ids = structuredClone(boundary_render_ids)
       seed_index = boundary_seed_index
       pending_turn = null
