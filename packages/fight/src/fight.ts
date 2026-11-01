@@ -51,16 +51,14 @@ export const create_fight = ({
   setup?: import('./types.ts').FightSetup
   mode?: FightMode
   seed?: bigint
-  /** `initial_state` already came from this package (normalized bigints, frozen sources), so skip
-   *  the wire decoder and share the immutable sources. The planner forks a checkpoint thousands of
-   *  times; re-normalizing every fork made candidate evaluation dominate the whole preview. */
+  /** Skip decoding when the checkpoint already came from this fight package. */
   hydrated?: boolean
 }): Fight => {
   if (!initial_state && !setup) throw new Error('create_fight requires state or setup')
   if (initial_state && setup) throw new Error('create_fight accepts state or setup, not both')
   let state = initial_state
     ? hydrated
-      ? { contract: structuredClone(initial_state.contract), sources: initial_state.sources }
+      ? initial_state
       : (normalize_checkpoint(initial_state) as HydratedFightCheckpoint)
     : create_fight_state(setup!)
   let seed_index = 0n
@@ -76,8 +74,7 @@ export const create_fight = ({
     seed_index: bigint
   }> | null = null
 
-  // Sources are deeply frozen and never mutated (join REPLACES the map), so every snapshot can
-  // share them. Cloning them on every apply was ~2 ms of pure overhead in a 4-player preview.
+  // Fight sources are immutable; clone only the changing contract on planner forks.
   const snapshot = (): HydratedFightCheckpoint => ({
     contract: structuredClone(state.contract),
     sources: state.sources,

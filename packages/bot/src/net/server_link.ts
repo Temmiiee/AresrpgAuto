@@ -152,6 +152,7 @@ export const create_server_link = ({ address, signer, on_packet, on_status }: Se
       return
     }
     if (packet.type === 'packet/signature_request') {
+      report(Object.freeze({ kind: 'awaiting_signature' }))
       void sign_and_answer(packet.payload)
       return
     }

@@ -2,7 +2,7 @@
 import { play_loop } from './net/session.ts'
 import { get_enoki_signer } from './auth/enoki_auth.ts'
 import { config } from './config.ts'
-import { log_info, log_error } from './shared/logger.ts'
+import { log_info, log_error, log_configuration } from './shared/logger.ts'
 import { notify, notify_await } from './shared/discord_notify.ts'
 import { login } from './cli/login.ts'
 import { doctor } from './cli/doctor.ts'
@@ -36,23 +36,28 @@ async function main(): Promise<void> {
     return
   }
 
+  // Emit directly so a restrictive log level cannot hide why ordinary bot messages are missing
+  // while SDK transaction lines remain visible.
+  console.info(`[startup] application logging: ${log_configuration()}`)
+
   // Get zkLogin signer (handles cached session or interactive login). The cached session expires
   // periodically; when it does, the flow needs a real Google sign-in. The ONLY Discord message the
   // bot sends is this link, so an unattended operator is pinged exactly when they must act.
   log_info('main', 'initializing zkLogin session...')
+  const login_started_ms = Date.now()
   const signer = await get_enoki_signer((login_url) => {
     notify(`🔐 AresRPG sign-in required — open this link to reconnect:\n${login_url}`, 'warning')
   })
+  log_info('main', `zkLogin ready in ${((Date.now() - login_started_ms) / 1_000).toFixed(1)}s`)
   const address = signer.toSuiAddress()
 
   log_info('main', 'starting AresRPGAuto...')
-  log_info('main', `config: ${config.network}/${config.rpc_url}`)
-  log_info('main', `WS: ${config.server_ws_url}`)
-  log_info('main', `origin: ${config.origin}`)
-  log_info('main', `play: gather=${config.play.gather}, fight=${config.play.fight}, roam=${config.play.roam}, craft=${config.play.craft}, group=${config.play.group}, cross_world=${config.play.cross_world}`)
-  log_info('main', `idle sleep: ${config.idle_sleep_ms}ms`)
-  log_info('main', `party: up to ${config.party_size} simultaneous characters`)
-  log_info('main', `character: ${address}`)
+  log_info('main', `runtime: network=${config.network}, party≤${config.party_size}`)
+  log_info(
+    'main',
+    `actions: gather=${config.play.gather}, fight=${config.play.fight}, roam=${config.play.roam}, craft=${config.play.craft}, group=${config.play.group}, cross_world=${config.play.cross_world}`
+  )
+  // The upstream check is delayed so its parallel requests cannot contend with startup.
   start_game_content_watch()
 
   await play_loop(

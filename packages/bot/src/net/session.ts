@@ -79,7 +79,8 @@ import { create_group_claims, create_serial_queue, type ActionContext } from '..
 import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
 import { maybe_progress } from '../actions/progression.ts'
 import { gear_goal_outputs } from '../actions/gear.ts'
-import { compute_strategy, describe_strategy, type Strategy } from '../actions/strategy.ts'
+import { describe_strategy, type Strategy } from '../actions/strategy.ts'
+import { compute_strategy_offload } from '../actions/strategy_offload.ts'
 import { active_fight_of, freshness, unavailable_item_ids, version_gate_active } from '../state/selectors.ts'
 import { initial_game_state, reduce, type GameState } from '../state/store.ts'
 import { recipe_detail, recipes_by_output, tool_category_of_job, type GatheringJob } from '../content/catalog.ts'
@@ -168,6 +169,9 @@ const SUMMARY_EVERY_FIGHTS = 10
 const CRAFT_BATCHES_PER_CHORE = 3
 /** How often the party-wide Discord digest is sent (configurable; 0 disables). */
 const DIGEST_INTERVAL_MS = config.digest_minutes * 60_000
+const STRATEGY_STARTUP_DELAY_MS = 90_000
+const HEALTH_HEARTBEAT_MS = 15_000
+const SLOW_PASS_WARN_MS = 60_000
 /** How far (in blocks) a party member may wander for a node while the party is grouping. Two zones is
  *  about 90s of travel under the speed law, cheap enough that the next rendezvous still lands. */
 const PARTY_GATHER_RADIUS = 1_024
@@ -215,6 +219,9 @@ type CharRuntime = {
   /** true on this character's very first pass — auto-equip is deferred past it so the character can
    *  land its first settle/chore/engage before gear swaps start firing. */
   first_pass: boolean
+  pass_started_ms: number | null
+  last_pass_completed_ms: number | null
+  last_pass_error: string | null
 }
 
 /** The forced-chore floor: once this character has gone a full interval with NO chore, its pass runs
@@ -271,9 +278,11 @@ export const play_loop = async (
   }
 
   // ── bot initialization ──────────────────────────────────────────────
+  const sdk_started_ms = Date.now()
   const bot = create_bot_sdk(signer, {
     transaction_storage_path: journal_path,
   })
+  log_info('startup', `SDK ready in ${Date.now() - sdk_started_ms}ms`)
   const ledger = create_ledger(join(config.state_dir, 'activity.log'))
   const fight_runtimes = create_fight_runtimes()
   const claims = create_group_claims()
@@ -327,6 +336,14 @@ export const play_loop = async (
       log_info('session', `connected — driving ${party_label}`)
       return
     }
+    if (status.kind === 'awaiting_signature') {
+      log_info('startup', 'realtime server connected; waiting for its authentication challenge')
+      return
+    }
+    if (status.kind === 'authenticating') {
+      log_info('startup', 'signing realtime server challenge')
+      return
+    }
     if (status.kind === 'replaced') {
       if (stopped) return
       stopped = true
@@ -357,6 +374,8 @@ export const play_loop = async (
   // Poll fast at first (200ms × 10 = 2s) so a responsive server doesn't cost 30s, then fall back
   // to 1s cadence. The server pushes `packet/characters` on connect, so a healthy link populates
   // the roster within a beat.
+  log_info('startup', 'connecting to realtime server and waiting for the character roster')
+  const roster_started_ms = Date.now()
   let roster_ready = false
   for (let i = 0; i < 30; i++) {
     if (game_state.characters.length > 0) {
@@ -366,10 +385,14 @@ export const play_loop = async (
     await sleep(i < 10 ? 200 : 1000)
   }
   if (!roster_ready) {
-    log_error('session', 'no characters found in roster after 30s')
+    log_error('session', `no characters found in roster after ${Date.now() - roster_started_ms}ms`)
     session.dispose()
     return
   }
+  log_info(
+    'startup',
+    `roster ready: ${game_state.characters.length} characters in ${Date.now() - roster_started_ms}ms`
+  )
 
   // Keep the current four in their established order, then prefer a Tomoda as the fifth member.
   // Other owned characters follow deterministically, so the new support joins without requiring a
@@ -462,6 +485,10 @@ export const play_loop = async (
 
   // ── create per-character runtimes (all on the shared socket) ────────
   const runtimes: CharRuntime[] = []
+  // All characters draw tools and stacks from the same kiosk inventory. A queue per runtime still
+  // lets two characters claim the same projected item concurrently, so serialize these mutations
+  // across the whole party.
+  const equipment_queue = create_serial_queue()
 
   for (const character of party) {
     const world = character.world ?? config.world ?? WORLD_FALLBACK
@@ -476,7 +503,7 @@ export const play_loop = async (
       world,
       state: () => game_state,
       send: (packet) => session.send(packet),
-      equipment_queue: create_serial_queue(),
+      equipment_queue,
       ledger,
       notify,
       fight_runtimes,
@@ -516,6 +543,9 @@ export const play_loop = async (
       last_key_craft_attempt_ms: null,
       last_chore_ms: Date.now(),
       first_pass: true,
+      pass_started_ms: null,
+      last_pass_completed_ms: null,
+      last_pass_error: null,
     })
   }
 
@@ -1299,11 +1329,23 @@ export const play_loop = async (
         }
 
         try {
+          const pass_started_ms = Date.now()
+          rt.pass_started_ms = pass_started_ms
           const passed = await run_pass(rt)
+          const pass_completed_ms = Date.now()
+          rt.pass_started_ms = null
+          rt.last_pass_completed_ms = pass_completed_ms
+          rt.last_pass_error = null
+          const pass_duration_ms = pass_completed_ms - pass_started_ms
+          if (pass_duration_ms >= SLOW_PASS_WARN_MS)
+            log_warn('health', `${character.name}: decision pass took ${Math.round(pass_duration_ms / 1_000)}s`)
           if (passed !== undefined) {
             await sleep(passed)
           }
         } catch (error) {
+          rt.pass_started_ms = null
+          rt.last_pass_completed_ms = Date.now()
+          rt.last_pass_error = error instanceof Error ? error.message : String(error)
           if (is_travel_too_far_error(error)) {
             log_warn('session', `${character.name}: transaction rejected by prove_move (305; not submitted); refreshing the travel anchor`)
             try {
@@ -1371,17 +1413,50 @@ export const play_loop = async (
     }
   }
 
+  /** A quiet operational heartbeat: confirms each loop is responsive, shows any active fight or
+   *  stale-state gate, and names the last successful on-chain action. */
+  const health_loop = async (rts: readonly CharRuntime[]): Promise<void> => {
+    while (!stopped) {
+      await sleep(HEALTH_HEARTBEAT_MS)
+      if (stopped) break
+      const now = Date.now()
+      const fresh = freshness(game_state, now)
+      const last_action = ledger.read().at(-1)
+      const action_label = last_action
+        ? `${last_action.kind} ${Math.max(0, Math.floor((now - last_action.at_ms) / 1_000))}s ago`
+        : 'none yet'
+      const characters = rts.map((rt) => {
+        const current = game_state.characters.find((row) => row.id === rt.character.id)
+        const pass = rt.pass_started_ms !== null
+          ? `running ${Math.floor((now - rt.pass_started_ms) / 1_000)}s`
+          : rt.last_pass_completed_ms !== null
+            ? `responsive ${Math.floor((now - rt.last_pass_completed_ms) / 1_000)}s ago`
+            : 'waiting for first pass'
+        const fight = current ? active_fight_of(current) ?? 'none' : 'not in roster'
+        const error = rt.last_pass_error ? ` error=${rt.last_pass_error.slice(0, 100)}` : ''
+        return `${rt.character.name}[${pass},fight=${fight}${error}]`
+      })
+      const state_label = fresh.ok ? 'fresh' : `held:${fresh.reason}`
+      log_info(
+        'health',
+        `link=${link_accepted ? 'online' : session.status().kind} state=${state_label} last_action=${action_label} | ${characters.join(' | ')}`
+      )
+    }
+  }
+
   /** The periodic strategy brain. Every `BOT_STRATEGY_INTERVAL_MS` it re-derives, from the FULL seed
    *  content and each team, the farm distance and gear acquisition routes, logs the verdict, and
    *  publishes a team-local hint for roam (band) and engage (wanted mobs). The
-   *  first pass runs immediately so the very first roam already has a target; a failed pass leaves the
-   *  previous plan in place rather than clearing it. */
+   *  first pass is delayed so full-seed simulations cannot stall the first gameplay actions. */
   const strategy_loop = async (rts: readonly CharRuntime[]): Promise<void> => {
     if (!config.strategy) return
-    // Don't slam `compute_strategy` on the very first tick: let the character loops land their
-    // first actions (settle, chore, engage) before the brain burns CPU on full-seed simulation.
-    // Subsequent passes run on the configured interval.
-    await sleep(Math.min(config.strategy_interval_ms, 5_000))
+    // `compute_strategy` is synchronous and can occupy the main thread for several seconds. Let
+    // characters connect, take their first action, and begin roaming before running the full scan.
+    const startup_delay_ms =
+      config.strategy_interval_ms > 0
+        ? Math.min(config.strategy_interval_ms, STRATEGY_STARTUP_DELAY_MS)
+        : 0
+    await sleep(startup_delay_ms)
     while (!stopped) {
       let ran = false
       try {
@@ -1393,7 +1468,7 @@ export const play_loop = async (
           })
           if (rows.length === 0) continue
           const started_ms = Date.now()
-          const plan = compute_strategy(rows, game_state, {
+          const plan = await compute_strategy_offload(rows, game_state, {
             party_level: Math.max(...rows.map((row) => row.level)),
             dungeon_blacklist: members[0]?.ctx.dungeon_blacklist,
             extra_outputs: current_tool_goals(),
@@ -1415,12 +1490,12 @@ export const play_loop = async (
     }
   }
 
-  // Launch all character loops in parallel. The shared socket requires no heartbeat task: the server
-  // pushes liveness packets continuously, so there is no periodic Discord ping. A party-wide progress
-  // digest and the strategy pass are the only periodic work, each on its own schedule.
+  // Launch all character loops in parallel. The health heartbeat is console-only; Discord still gets
+  // only the configured party digest and actionable authentication/crash notifications.
   await Promise.all([
     ...runtimes.map((rt) => run_character(rt)),
     digest_loop(runtimes),
+    health_loop(runtimes),
     strategy_loop(runtimes),
   ])
 }

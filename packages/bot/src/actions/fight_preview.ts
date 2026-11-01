@@ -35,6 +35,10 @@ const PREVIEW_SEED_POOL: readonly bigint[] = Object.freeze(
 const SEED_BATCHES: readonly number[] = Object.freeze([5, 10])
 /** Sequential seeding never simulates past this many runs. */
 const MAX_PREVIEW_SEEDS = 15
+/** Preview reads repeat while the live window and roster stay unchanged. Keep a bounded memo so
+ *  party screens, strategy passes, and dungeon checks can reuse deterministic fight outcomes. */
+const SCORE_CACHE_LIMIT = 128
+const score_cache = new Map<string, FightScore>()
 /** A group is only engaged when the twin wins at least this share of seeds — "sure to win". */
 export const MIN_WIN_RATE = 0.8
 /** Wins MAX_PREVIEW_SEEDS runs need to clear MIN_WIN_RATE — the horizon both early-locks use. */
@@ -277,6 +281,28 @@ export type ScoreOptions = Readonly<{
   rounds?: number
 }>
 
+const score_cache_key = (
+  players: readonly FightPlayerInput[],
+  mobs: readonly FightMobInput[],
+  spells: Readonly<Record<string, SpellSource>>,
+  rounds: number,
+  seeds: readonly bigint[] | undefined
+): string => JSON.stringify(
+  {
+    players: players.map(({ character, hp, source }) => ({ character, hp: String(hp), source })),
+    mobs: mobs.map(({ team, cell, template, scalar }) => ({
+      team: String(team ?? 0),
+      cell: cell === undefined ? null : String(cell),
+      template,
+      scalar: String(scalar),
+    })),
+    spells,
+    rounds,
+    seeds: seeds?.map(String) ?? null,
+  },
+  (_key, value: unknown) => typeof value === 'bigint' ? value.toString() : value
+)
+
 /** Sequential seeding's stop rule: keep simulating after `ran` runs produced `wins` wins? A read
  *  stops three ways, all inside MAX_PREVIEW_SEEDS: (1) a horizon lock — no finish can flip the
  *  verdict, so both 12-of-15 locks fire early; (2) a batch boundary with a clean read (5/5 or
@@ -330,6 +356,13 @@ export const score_mobs = (
   const rounds = options.rounds ?? roam_rounds(mobs.length)
   const prepare_ms = performance.now() - prepare_started
   const pinned = options.seeds
+  const cache_key = score_cache_key(players, mobs, spells, rounds, pinned)
+  const cached = score_cache.get(cache_key)
+  if (cached) {
+    score_cache.delete(cache_key)
+    score_cache.set(cache_key, cached)
+    return cached
+  }
   const runs: SimRun[] = []
   let sampled_wins = 0
   let total_create_ms = 0
@@ -373,7 +406,7 @@ export const score_mobs = (
   const turns = average(counted.map((run) => run.turns))
   const xp = average(wins.map((run) => run.xp))
   const loot = expected_loot_units(mobs)
-  return Object.freeze({
+  const score = Object.freeze({
     win_rate: runs.length > 0 ? wins.length / runs.length : 0,
     turns,
     xp_per_turn: turns > 0 ? xp / turns : 0,
@@ -383,6 +416,12 @@ export const score_mobs = (
     timeouts: runs.filter((run) => run.cause === 'timeout').length,
     wipes: runs.filter((run) => run.cause === 'wipe').length,
   })
+  if (score_cache.size >= SCORE_CACHE_LIMIT) {
+    const oldest = score_cache.keys().next().value
+    if (oldest !== undefined) score_cache.delete(oldest)
+  }
+  score_cache.set(cache_key, score)
+  return score
 }
 
 /** Score one live group: its members as mob inputs, then the same twin replay. */

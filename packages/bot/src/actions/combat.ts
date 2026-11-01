@@ -43,11 +43,13 @@ import { custody_of, type ActionContext } from './context.ts'
 import {
   character_max_hp,
   describe_score,
+  MIN_WIN_RATE,
   projected_character_hp,
-  screen_groups,
   viable_ranking,
+  type FightScore,
   type GroupCandidate,
 } from './fight_preview.ts'
+import { screen_groups_offload } from './fight_preview_offload.ts'
 import type { FightRuntimeStore } from './fight_registry.ts'
 import { is_travel_too_far_error, type Mover } from './travel.ts'
 import { describe_actions, inspect_turn_plan, plan_turn, plan_turn_party, type TurnAction } from './turn_plan.ts'
@@ -333,29 +335,47 @@ export type EngageOutcome =
 
 const hp_wait_log_ms = new Map<string, number>()
 const HP_WAIT_LOG_INTERVAL_MS = 30_000
+const preview_summary_state = new Map<string, Readonly<{ signature: string; logged_ms: number }>>()
+const PREVIEW_SUMMARY_INTERVAL_MS = 60_000
+
+const log_preview_summary = (character_id: string, signature: string, message: string): void => {
+  const now = Date.now()
+  const previous = preview_summary_state.get(character_id)
+  if (previous?.signature === signature && now - previous.logged_ms < PREVIEW_SUMMARY_INTERVAL_MS) return
+  preview_summary_state.set(character_id, Object.freeze({ signature, logged_ms: now }))
+  log_info('preview', message)
+}
 
 /** What a screen of the live window found. `viable` is whether ANY group cleared MIN_WIN_RATE,
  *  independent of the claims — the leader uses it to tell "the window is empty/exhausted" from "the
  *  window pays by level but nothing in it is beatable", which is the signal to relocate. */
-export type EngageScreen = Readonly<{ candidate: GroupCandidate | null; viable: boolean; groups: number }>
+export type EngageScreen = Readonly<{
+  candidate: GroupCandidate | null
+  score: FightScore | null
+  viable: boolean
+  groups: number
+}>
 
 /** Screen the live mob groups in the tracked window with a local fight preview and CLAIM the best
  *  sure-win one — highest reward per committed turn among groups the twin wins reliably. `allies`
  *  is the party that will join the fight, so the preview scores the whole side. `candidate` is null
  *  when nothing is sure-win (or every sure-win group is claimed); the caller owns releasing the claim
  *  if it never engages. */
-export const pick_engage_target = (
+export const pick_engage_target = async (
   ctx: ActionContext,
   pose: Readonly<{ x: number; z: number }>,
   character: CharacterRow,
   allies: readonly CharacterRow[] = []
-): EngageScreen => {
+): Promise<EngageScreen> => {
   const state = ctx.state()
   const groups = select_window_mob_groups(state)
-  if (groups.length === 0) return Object.freeze({ candidate: null, viable: false, groups: 0 })
-  const scored = screen_groups(pose, groups, character, allies)
+  if (groups.length === 0) {
+    log_preview_summary(ctx.character_id, 'empty-window', `${character.name}: no live mob groups in the tracked window`)
+    return Object.freeze({ candidate: null, score: null, viable: false, groups: 0 })
+  }
+  const scored = await screen_groups_offload(pose, groups, character, allies)
   for (const { candidate, score } of scored)
-    log_info(
+    log_debug(
       'preview',
       `group ${candidate.group.index} (${candidate.group.members.length} mobs): ${Math.round(score.win_rate * 100)}% win (${describe_score(score)}), ${score.turns.toFixed(1)} turns, ${Math.round(score.xp_per_turn)} xp/turn, ${Math.round(score.loot_per_turn * 100) / 100} loot/turn`
     )
@@ -366,11 +386,33 @@ export const pick_engage_target = (
   // carrying a mob whose loot the party wants (a gear upgrade source). Undefined before the first
   // strategy pass, in which case viable_ranking's default empty set changes nothing.
   const ranked = viable_ranking(pose, scored, party_size, ctx.strategy?.()?.wanted_mobs)
-  const winner = ranked.find(({ candidate }) => ctx.claims.claim(claim_key(candidate), ctx.character_id))
+  // The live projection can advance while workers screen the fights. Drop candidates that were
+  // consumed in that interval, and only claim a group that still appears in the latest window.
+  const current_groups = select_window_mob_groups(ctx.state())
+  const current_by_key = new Map(current_groups.map((candidate) => [claim_key(candidate), candidate]))
+  const live_ranked = ranked.flatMap((row) => {
+    const current = current_by_key.get(claim_key(row.candidate))
+    return current ? [{ ...row, candidate: current }] : []
+  })
+  const winner = live_ranked.find(({ candidate }) => ctx.claims.claim(claim_key(candidate), ctx.character_id))
+  const result = winner
+    ? `selected group ${winner.candidate.group.index} (${describe_score(winner.score)})`
+      : live_ranked.length > 0
+      ? `${live_ranked.length} viable group(s), all already claimed`
+      : ranked.length > 0
+        ? 'previewed groups disappeared from the live window; retrying'
+      : `no viable group among ${scored.length} screened`
+  const signature = `${groups.length}:${ranked.map(({ candidate }) => candidate.group.index).join(',')}:${winner?.candidate.group.index ?? '-'}`
+  log_preview_summary(
+    ctx.character_id,
+    signature,
+    `${character.name}: screened ${scored.length}/${groups.length} live groups; ${result}`
+  )
   return Object.freeze({
     candidate: winner ? winner.candidate : null,
-    viable: ranked.length > 0,
-    groups: groups.length,
+    score: winner?.score ?? null,
+    viable: live_ranked.length > 0,
+    groups: current_groups.length,
   })
 }
 
@@ -380,7 +422,8 @@ export const engage_target = async (
   ctx: ActionContext,
   mover: Mover,
   candidate: GroupCandidate,
-  allies: readonly CharacterRow[] = []
+  allies: readonly CharacterRow[] = [],
+  preview_score: FightScore | null = null
 ): Promise<EngageOutcome> => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
@@ -391,7 +434,7 @@ export const engage_target = async (
   const wounded = participants
     .map((member) => ({ member, hp: projected_character_hp(member), max: character_max_hp(member) }))
     .filter(({ hp, max }) => hp < max)
-  if (wounded.length > 0) {
+  if (wounded.length > 0 && (preview_score?.win_rate ?? 0) < MIN_WIN_RATE) {
     // Keep the claim alive while this selected fight waits for natural regeneration.
     ctx.claims.claim(claimed, ctx.character_id, 300_000)
     const now = Date.now()
@@ -405,6 +448,8 @@ export const engage_target = async (
     }
     return { kind: 'traveling', detail: 'waiting for party health to regenerate' }
   }
+  if (wounded.length > 0)
+    log_info('combat', `engaging group ${group.index} at current HP; preview passed ${preview_score!.wins}/${preview_score!.seeds} seeds`)
   try {
     await mover.travel_to(group.x, group.z)
     if (!(await mover.prove_ready(group.x, group.z)))
@@ -458,9 +503,9 @@ export const engage_once = async (ctx: ActionContext, mover: Mover): Promise<Eng
   // seated character and aborts on chain (`dynamic_field::add`, field already exists) — so hold off
   // until custody returns to the kiosk.
   if (character.custody === 'fight') return { kind: 'skipped', detail: 'custody still locked to a fight' }
-  const target = pick_engage_target(ctx, mover.pose(), character)
+  const target = await pick_engage_target(ctx, mover.pose(), character)
   if (!target.candidate) return { kind: 'skipped', detail: 'no sure-win group available' }
-  return engage_target(ctx, mover, target.candidate)
+  return engage_target(ctx, mover, target.candidate, [], target.score)
 }
 
 // ── post-fight settlement ────────────────────────────────────────────

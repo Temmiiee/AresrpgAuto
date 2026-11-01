@@ -11,8 +11,10 @@ import {
   mob_inputs,
   score_mobs,
   MIN_WIN_RATE,
+  score_group,
   viable_ranking,
 } from '../src/actions/fight_preview.ts'
+import { screen_groups_offload } from '../src/actions/fight_preview_offload.ts'
 
 const character = (over: Partial<CharacterRow> = {}): CharacterRow =>
   ({
@@ -96,6 +98,26 @@ describe('keep_sampling', () => {
 })
 
 describe('score_mobs sequential seeding', () => {
+  it('runs combat previews in workers with the same deterministic score', async () => {
+    const party = hero(50, { id: 'preview-worker' })
+    const mob_group = group_of('ant_red', 0, 1)
+    const candidate = { zone: {} as never, group: mob_group }
+    const [offloaded] = await screen_groups_offload({ x: 0, z: 0 }, [candidate], party)
+    expect(offloaded?.candidate).toBe(candidate)
+    expect(offloaded?.score).toEqual(score_group(party, mob_group))
+  })
+
+  it('reuses an identical deterministic preview but keys wounded players separately', () => {
+    const party = hero(50, { id: 'preview-cache' })
+    const mobs = mob_inputs(group_of('ant_red', 0, 1))
+    const options = { seeds: [1n], rounds: 2 }
+    const first = score_mobs(party, mobs, [], options)
+    expect(score_mobs(party, mobs, [], options)).toBe(first)
+
+    const wounded = hero(50, { id: 'preview-cache', hp: 1, hp_ms: Date.now() })
+    expect(score_mobs(wounded, mobs, [], options)).not.toBe(first)
+  })
+
   it('calls a hopeless fight decided early, with every run accounted', () => {
     // A naked level-1 (no weapon, no spells) cannot win a round against six top-band ants — the
     // horizon lock should stop simulating before the first batch of five finishes.

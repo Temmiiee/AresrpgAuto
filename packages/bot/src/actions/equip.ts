@@ -376,7 +376,11 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
         // gather tool swaps and auto-equip writes share this per-character queue; this can now only
         // be an external or indexer race. Wait for the roster projection before rebuilding.
         for (const change of plan.to_equip) claimed.add(change.item_id)
-        mark_equip_settling(character.id)
+        // Slot-occupied usually means the chain advanced but the roster projection has not. The
+        // ordinary settle window is shorter than some indexer delays, causing the same rejected
+        // transaction to be sent again every ~50s. Back off this specific race for five minutes;
+        // successful equips and other stale-plan cases keep the normal shorter window.
+        mark_equip_settling(character.id, 5 * 60_000)
         blocked += 1
         log_warn('equip', `${character.name}: slot already occupied (MoveAbort 1004); waiting for projection before re-planning`)
         return

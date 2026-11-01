@@ -10,8 +10,39 @@ import {
   park_dungeon_key,
   should_run_dungeons,
 } from '../src/actions/dungeon.ts'
-import { DUNGEON_EXPECTED_SCALAR, room_to_mob_group } from '../src/actions/dungeon_run.ts'
+import {
+  DUNGEON_EXPECTED_SCALAR,
+  dungeon_preview_readiness,
+  party_health_status,
+  room_to_mob_group,
+} from '../src/actions/dungeon_run.ts'
 import { dungeon_city, dungeon_rooms, worlds_by_id } from '../src/content/catalog.ts'
+import type { CharacterRow } from '@aresrpg/protocol'
+
+const health_character = (over: Partial<CharacterRow> = {}): CharacterRow => ({
+  id: 'health-test',
+  name: 'health-test',
+  classe: 'mori',
+  sex: 'female',
+  level: 20,
+  experience: '0',
+  color_1: 0,
+  color_2: 0,
+  color_3: 0,
+  vitality: 0,
+  wisdom: 0,
+  strength: 0,
+  intelligence: 0,
+  chance: 0,
+  agility: 0,
+  available_points: 0,
+  spells: {},
+  available_spell_points: 0,
+  jobs: {},
+  kiosk: 'kiosk-1',
+  equipment: [],
+  ...over,
+}) as CharacterRow
 
 describe('dungeon content projection', () => {
   it('exposes the authored room compositions', () => {
@@ -118,6 +149,20 @@ describe('dungeon key helpers', () => {
 })
 
 describe('dungeon room preview', () => {
+  it('waits for HP only when a wounded party fails the current-HP preview', () => {
+    expect(dungeon_preview_readiness(1, false)).toBe('ready')
+    expect(dungeon_preview_readiness(0.6, false)).toBe('recovering')
+    expect(dungeon_preview_readiness(0.6, true)).toBe('unwinnable')
+  })
+
+  it('does not treat missing health as a dungeon difficulty failure', () => {
+    expect(party_health_status([health_character()]).ready).toBe(true)
+    const wounded = party_health_status([health_character({ hp: 1, hp_ms: Date.now() })])
+    expect(wounded.ready).toBe(false)
+    expect(wounded.wounded[0]?.name).toBe('health-test')
+    expect(wounded.missing_hp).toBeGreaterThan(0)
+  })
+
   it('scores a room at the EXPECTED level, not a per-seat ramp', () => {
     // The chain derives each seat's scalar as mix(run_seed, seat) % 101 — a uniform draw over
     // [0,100] (mean 50) the client cannot predict. The preview must use that expectation for

@@ -64,7 +64,8 @@ const RULE_FILES = Object.freeze([
   'packages/move/sources/character.move',
   'packages/move/sources/zone.move',
 ])
-const VENDORED_RULE_PACKAGES = Object.freeze(['fight', 'immutable'])
+const STARTUP_CHECK_DELAY_MS = 60_000
+const VENDORED_RULE_PACKAGES = Object.freeze(['immutable'])
 
 const stable = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -149,7 +150,7 @@ export const check_game_content = async (): Promise<readonly string[] | null> =>
   }
 }
 
-/** Start a non-blocking periodic watcher; errors are logged once until connectivity returns. */
+/** Start a periodic watcher after startup; errors are logged once until connectivity returns. */
 export const start_game_content_watch = (): void => {
   if (!config.content_watch) {
     log_info('content', 'surveillance désactivée (BOT_CONTENT_WATCH=false)')
@@ -160,5 +161,6 @@ export const start_game_content_watch = (): void => {
     const timer = setTimeout(() => void check(), config.content_watch_interval_ms)
     timer.unref()
   }
-  void check()
+  const timer = setTimeout(() => void check(), STARTUP_CHECK_DELAY_MS)
+  timer.unref()
 }

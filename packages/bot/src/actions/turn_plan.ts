@@ -43,6 +43,7 @@ const GRID_W_N = Number(GRID_W)
 
 /** A safety bound on actions per turn, well above any legal AP/MP budget (a runaway guard). */
 const MAX_TURN_ACTIONS = 16
+const PROFILE_PREVIEW = Boolean(process.env.BOT_PROFILE_PREVIEW)
 
 const cell_x = (cell: bigint): number => Number(cell % GRID_W)
 const cell_y = (cell: bigint): number => Math.floor(Number(cell) / GRID_W_N)
@@ -208,10 +209,12 @@ const planner_perf: Record<PlannerPerfKey, number> = {
 }
 
 const planner_perf_add = (key: PlannerPerfKey, value = 1): void => {
+  if (!PROFILE_PREVIEW) return
   planner_perf[key] += value
 }
 
 const planner_perf_report = (label: string): void => {
+  if (!PROFILE_PREVIEW) return
   const values = { ...planner_perf }
   if (Object.values(values).some((value) => value > 0)) {
     log_debug(
@@ -236,7 +239,7 @@ const planner_perf_report = (label: string): void => {
  * actual mob AI (including target selection, movement, spells, cooldowns and zones), so safety is
  * estimated from the current fight state instead of a fixed distance-to-mob guess. */
 const enemy_response = (cp: HydratedFightCheckpoint, seat: number): EnemyResponse => {
-  const perf_started = performance.now()
+  const perf_started = PROFILE_PREVIEW ? performance.now() : 0
   planner_perf_add('enemy_response_calls')
   try {
     let by_seat = response_cache.get(cp)
@@ -257,11 +260,11 @@ const enemy_response = (cp: HydratedFightCheckpoint, seat: number): EnemyRespons
     if (cp.contract.queue[Number(cp.contract.turn_ptr)] !== actor) return unchanged
     const scratch = create_fight({ state: cp, mode: 'local', hydrated: true, seed: 1n })
     const before = cp.contract.fighters.map((fighter) => Number(fighter.hp))
-    const simulate_started = performance.now()
+    const simulate_started = PROFILE_PREVIEW ? performance.now() : 0
     const result = scratch.simulate_turn({
       observed_ms: cp.contract.turn_started_ms + CONTRACT_CONSTANTS.turn_min_ms,
     })
-    planner_perf_add('enemy_simulate_turn_ms', performance.now() - simulate_started)
+    if (PROFILE_PREVIEW) planner_perf_add('enemy_simulate_turn_ms', performance.now() - simulate_started)
     if (result.error) return unchanged
     let party_damage = 0
     let seat_damage = 0
@@ -287,7 +290,7 @@ const enemy_response = (cp: HydratedFightCheckpoint, seat: number): EnemyRespons
     by_seat.set(seat, response)
     return response
   } finally {
-    planner_perf_add('enemy_response_ms', performance.now() - perf_started)
+    if (PROFILE_PREVIEW) planner_perf_add('enemy_response_ms', performance.now() - perf_started)
   }
 }
 
@@ -297,7 +300,7 @@ const response_after_action = (
   seat: number,
   action: TurnAction
 ): EnemyResponse => {
-  const perf_started = performance.now()
+  const perf_started = PROFILE_PREVIEW ? performance.now() : 0
   planner_perf_add('response_after_action_calls')
   const scratch = create_fight({ state: cp, mode: 'local', hydrated: true, seed: 1n })
   const applied = scratch.apply(action.type === 'move'
@@ -306,7 +309,7 @@ const response_after_action = (
       ? { type: 'cast_spell', fighter: action.fighter_idx, spell: action.spell, target_cell: action.target_cell }
       : { type: 'weapon_strike', fighter: action.fighter_idx, target_cell: action.target_cell })
   const response = applied.error ? enemy_response(cp, seat) : enemy_response(applied.state, seat)
-  planner_perf_add('response_after_action_ms', performance.now() - perf_started)
+  if (PROFILE_PREVIEW) planner_perf_add('response_after_action_ms', performance.now() - perf_started)
   return response
 }
 
@@ -377,6 +380,19 @@ const spell_ap_cost = (cp: HydratedFightCheckpoint, seat: number, name: string):
 
 type DamageOption = Readonly<{ action: TurnAction; score: number; cost: number; damage: number }>
 
+/** Legal target cells whose effect area reaches at least one enemy. An area spell may use an empty
+ *  target centre as long as one of the cells in its area contains an enemy. */
+export const damage_target_cells = (
+  targetable: readonly bigint[],
+  projection: SpellTurnProjection | null,
+  enemy_cells: ReadonlySet<bigint>,
+  area_of: (cell: bigint) => readonly bigint[]
+): readonly bigint[] => {
+  if (projection === null) return []
+  if (single_target_card(projection)) return targetable.filter((cell) => enemy_cells.has(cell))
+  return targetable.filter((cell) => area_of(cell).some((area_cell) => enemy_cells.has(area_cell)))
+}
+
 /** Every damaging action this seat may take right now, scored by the enemy HP it removes per action
  *  point: the sum, over the card's WHOLE area, of the damage it lands on each enemy (never more
  *  than that enemy has left, so overkill is not worth chasing) divided by the AP the card costs. */
@@ -396,18 +412,24 @@ const damage_options = (cp: HydratedFightCheckpoint, seat: number, enemies: read
     const point = single_target_card(projection)
     const ap = Math.max(1, cost)
     for (const cell of targets) {
-      const area = point ? [cell] : area_of(cell)
+      const area = new Set(point ? [cell] : area_of(cell))
       let dealt = 0
-      for (const enemy of enemies) if (area.includes(enemy.cell)) dealt += Math.min(per_target, fighter_hp(enemy))
+      for (const enemy of enemies) if (area.has(enemy.cell)) dealt += Math.min(per_target, fighter_hp(enemy))
       if (dealt > 0) options.push({ action: make_action(cell), score: dealt / ap, cost: ap, damage: dealt })
     }
   }
 
-  const strike_targets = weapon_target_cells(cp, actor).targetable.filter((cell) => enemy_cells.has(cell))
+  const weapon_projection = project_weapon_turn(cp, actor)
+  const strike_targets = damage_target_cells(
+    weapon_target_cells(cp, actor).targetable,
+    weapon_projection,
+    enemy_cells,
+    (cell) => weapon_area_cells(cp, actor, cell)
+  )
   if (strike_targets.length > 0) {
     collect(
       (cell) => ({ type: 'strike', fighter_idx: actor, target_cell: cell }),
-      project_weapon_turn(cp, actor),
+      weapon_projection,
       (cell) => weapon_area_cells(cp, actor, cell),
       strike_targets,
       Number(weapon_level_of(cp, actor)?.ap_cost ?? 4n)
@@ -415,11 +437,17 @@ const damage_options = (cp: HydratedFightCheckpoint, seat: number, enemies: read
   }
 
   for (const name of spell_names_for(cp, seat)) {
-    const spell_targets = spell_target_cells(cp, actor, name).targetable.filter((cell) => enemy_cells.has(cell))
+    const projection = project_spell_turn(cp, actor, name)
+    const spell_targets = damage_target_cells(
+      spell_target_cells(cp, actor, name).targetable,
+      projection,
+      enemy_cells,
+      (cell) => spell_area_cells(cp, actor, name, cell)
+    )
     if (spell_targets.length === 0) continue
     collect(
       (cell) => ({ type: 'cast', fighter_idx: actor, spell: name, target_cell: cell }),
-      project_spell_turn(cp, actor, name),
+      projection,
       (cell) => spell_area_cells(cp, actor, name, cell),
       spell_targets,
       spell_ap_cost(cp, seat, name)
@@ -533,7 +561,7 @@ const tactical_profile = (
   return null
 }
 
-const TACTICAL_CANDIDATE_LIMIT = 6
+const TACTICAL_CANDIDATE_LIMIT = 3
 
 const beneficial_effect_kinds: readonly bigint[] = [
   EFFECT_KINDS.add,
@@ -764,20 +792,20 @@ const evaluate_tactical_cast = (
 
   if (Number(caster.ap) < cost) return null
 
-  const create_started = performance.now()
+  const create_started = PROFILE_PREVIEW ? performance.now() : 0
   const simulation = create_fight({ state: cp, mode: 'local', hydrated: true })
-  if (process.env.BOT_PROFILE_PREVIEW) {
+  if (PROFILE_PREVIEW) {
     planner_perf_add('tactical_create_ms', performance.now() - create_started)
   }
 
-  const apply_started = performance.now()
+  const apply_started = PROFILE_PREVIEW ? performance.now() : 0
   const result = simulation.apply({
     type: 'cast_spell',
     fighter: actor,
     spell,
     target_cell: cell,
   })
-  if (process.env.BOT_PROFILE_PREVIEW) {
+  if (PROFILE_PREVIEW) {
     planner_perf_add('tactical_apply_ms', performance.now() - apply_started)
   }
 
@@ -958,9 +986,9 @@ const evaluate_tactical_cast = (
   }
 
   // 6. Placement-only spells.
-  const zones_started = performance.now()
+  const zones_started = PROFILE_PREVIEW ? performance.now() : 0
   utility += score_new_zones(cp, after, seat, profile)
-  if (process.env.BOT_PROFILE_PREVIEW) {
+  if (PROFILE_PREVIEW) {
     planner_perf_add('tactical_zone_ms', performance.now() - zones_started)
   }
 
@@ -969,9 +997,9 @@ const evaluate_tactical_cast = (
   // heavily reject a cast that leaves this caster dead before its next turn.
   const caster_hp_ratio = fighter_hp(caster) / Math.max(1, fighter_max_hp(cp, caster))
   if (baseline_response.party_damage > 0 || caster_hp_ratio < 0.7) {
-    const enemy_started = performance.now()
+    const enemy_started = PROFILE_PREVIEW ? performance.now() : 0
     const candidate_response = enemy_response(after, seat)
-    if (process.env.BOT_PROFILE_PREVIEW) {
+    if (PROFILE_PREVIEW) {
       planner_perf_add('tactical_enemy_ms', performance.now() - enemy_started)
     }
     utility += (baseline_response.party_damage - candidate_response.party_damage) * 0.8
@@ -1035,7 +1063,7 @@ const best_class_tactical_action = (
     baseline_response ??= enemy_response(cp, seat)
 
     for (const cell of candidates) {
-      const cast_started = performance.now()
+      const cast_started = PROFILE_PREVIEW ? performance.now() : 0
       planner_perf_add('tactical_cast_calls')
       const score = evaluate_tactical_cast(
         cp,
@@ -1048,7 +1076,7 @@ const best_class_tactical_action = (
         baseline_response,
         profile
       )
-      planner_perf_add('tactical_cast_ms', performance.now() - cast_started)
+      if (PROFILE_PREVIEW) planner_perf_add('tactical_cast_ms', performance.now() - cast_started)
 
       if (score === null || score <= 0) continue
 
@@ -1126,8 +1154,11 @@ const safe_step_toward_enemy = (
   const occupied = new Set(cp.contract.fighters.filter((fighter) => !fighter.dead).map((fighter) => fighter.cell))
   const distance = (cell: bigint): number => distance_to_group(cell, enemies)
   const reachable = reachable_fight_cells(cp, BigInt(seat)).filter((cell) => !occupied.has(cell))
-  const nearest = [...reachable].sort((a, b) => distance(a) - distance(b)).slice(0, 8)
-  const farthest = [...reachable].sort((a, b) => distance(b) - distance(a)).slice(0, 4)
+  const ranked_cells = reachable
+    .map((cell) => ({ cell, distance: distance(cell) }))
+    .sort((left, right) => left.distance - right.distance)
+  const nearest = ranked_cells.slice(0, 4).map(({ cell }) => cell)
+  const farthest = ranked_cells.slice(-2).reverse().map(({ cell }) => cell)
   const options = [...new Set([...nearest, ...farthest])]
     .flatMap((cell) => {
       const path = fight_path_to(cp, BigInt(seat), cell)
@@ -1161,9 +1192,17 @@ const critical_heal_action = (
 ): TurnAction | null => {
   const actor = BigInt(seat)
   const me = cp.contract.fighters[seat]
-  if (!me) return null
+  if (!me || me.dead) return null
+
+  // Avoid replaying the enemy turn if this actor has no affordable heal. The party ally list
+  // excludes the acting seat, so add the caster as a possible self-heal target.
+  const heal_spells = spell_names_for(cp, seat).filter(
+    (name) => spell_ap_cost(cp, seat, name) <= Number(me.ap) && is_heal_spell(cp, seat, name)
+  )
+  if (heal_spells.length === 0) return null
+
   const forecast = enemy_response(cp, seat).fighter_damage
-  const endangered = [...allies]
+  const endangered = [me, ...allies]
     .map((ally) => {
       const ally_seat = cp.contract.fighters.indexOf(ally)
       const hp = fighter_hp(ally)
@@ -1177,8 +1216,7 @@ const critical_heal_action = (
     .sort((a, b) => a.projected_hp / Math.max(1, a.max) - b.projected_hp / Math.max(1, b.max))
   if (!endangered.length) return null
   for (const { ally, hp, max, projected_hp } of endangered) {
-    for (const name of spell_names_for(cp, seat)) {
-      if (spell_ap_cost(cp, seat, name) > Number(me.ap) || !is_heal_spell(cp, seat, name)) continue
+    for (const name of heal_spells) {
       if (!spell_target_cells(cp, actor, name).targetable.includes(ally.cell)) continue
       log_debug(
         'combat',

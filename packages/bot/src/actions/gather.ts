@@ -347,7 +347,7 @@ export const gather_once = async (
       : false
   })
   if (!ready_to_gather) {
-    log_warn('gather', `no ${target.gatherable.job} tool owned; skipping ${target.pack.item_type}`)
+    log_warn('gather', `could not ready a ${target.gatherable.job} tool; skipping ${target.pack.item_type} until the equipment projection settles`)
     return skipped(`no ${target.gatherable.job} tool`)
   }
 

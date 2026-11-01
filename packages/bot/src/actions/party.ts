@@ -21,7 +21,7 @@ import { active_fight_of, is_version_assert_error, select_character } from '../s
 import type { GameState } from '../state/store.ts'
 import { claim_key, engage_target, pick_engage_target } from './combat.ts'
 import { custody_of, type ActionContext } from './context.ts'
-import type { GroupCandidate } from './fight_preview.ts'
+import type { FightScore, GroupCandidate } from './fight_preview.ts'
 import type { Mover } from './travel.ts'
 
 /** How long a rendezvous may run before the party gives up and falls back to solo play. The 15-minute
@@ -155,6 +155,8 @@ export type PartyTarget = Readonly<{
   /** the world the leader is in; followers must re-home here to join */
   world: string
   candidate: GroupCandidate
+  /** The group passed the live fight simulation using current projected HP. */
+  score: FightScore
   claim_key: string
   /** the group's world-local position every member must be able to reach */
   x: number
@@ -566,7 +568,7 @@ export const leader_group_step = async (
         const row = state.characters.find((candidate) => candidate.id === id)
         return row ? [row] : []
       })
-      const outcome = await engage_target(ctx, mover, target.candidate, follower_rows)
+      const outcome = await engage_target(ctx, mover, target.candidate, follower_rows, target.score)
       if (outcome.kind === 'engaged') {
         try {
           await join_followers(ctx, followers, outcome.fight)
@@ -638,7 +640,7 @@ export const leader_group_step = async (
   // gather there, so the group opens where the side already stands instead of thousands of blocks
   // behind it — which the leader would then walk to alone, stranding them. The leader is guaranteed
   // to be near that centre (the session's regroup gate above), so this stays a short hop.
-  const screen = pick_engage_target(ctx, party_center(party, mover.pose()), character, allies)
+  const screen = await pick_engage_target(ctx, party_center(party, mover.pose()), character, allies)
   // Record whether the window could offer ANY sure-win group. A window that holds groups but no
   // winnable one is a deadlock: the group step finds nothing, the roam would "hold" (the prey is
   // high enough for the XP table), and the party idles. The leader timestamps it so the roam can
@@ -657,6 +659,7 @@ export const leader_group_step = async (
   party.target = Object.freeze({
     world: candidate.zone.world,
     candidate,
+    score: screen.score!,
     claim_key: claim_key(candidate),
     x: candidate.group.x,
     z: candidate.group.z,

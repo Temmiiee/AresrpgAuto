@@ -207,10 +207,13 @@ bottleneck is **ingredients**, not policy. To keep every trade moving:
 So the loop is: **fights (drops) + gather excursions (raw resources) → omori refines & crafts →
 tools/gear back to the party.** With one shared inventory this is automatic.
 
-## 6. Periodic gathering excursions (design)
+## 6. Periodic gathering excursions (design and current status)
 
-The party normally roams/fights together. Add a **gather phase** that runs on a cadence (and/or
-when a gatherer's next tier is reachable but not present at the fight band):
+The party normally roams/fights together. The runtime now runs assigned gathering/crafting chores,
+can detach the configured cross-world gatherer on a timer, and can start a party excursion when
+local gather demand stays blocked. These are distinct mechanisms: `BOT_CROSS_WORLD_*` controls the
+individual detacher; the party excursion planner reacts to demand and its own dwell/return conditions.
+The original planning model below is useful context, but is not a complete account of current behavior:
 
 1. Pick, per gatherer, the target `(job, tier, world, biome)` = highest unlocked tier.
 2. Party (or just the gatherer) relocates to a zone of that biome; gatherers harvest their own
@@ -225,10 +228,9 @@ Implementation hooks already present: `run_chore(rt, local_only)` with `PARTY_GA
 
 ## 7. Open questions
 
-1. **Current job levels** — the bot does not log them today. Confirm them (or add a startup log);
-   the plan adapts, but knowing them sets the starting tier.
-2. **Excursion cadence** — fixed timer (e.g. every N minutes / M fights), or event-driven (a
-   gatherer is "blocked" because its next tier is in another biome/world)?
-3. **Excursion scope** — whole party relocates, or only the gatherer(s) detach and regroup?
-4. **yakutia fights** — should the party also fight in yakutia (level-20+ mobs) so the trip serves
-   both gathering and combat, or keep fights in nauvis and treat yakutia as gather-only?
+1. **Current job levels** — startup logs report the selected characters' job levels. Confirm those
+   against the live roster when diagnosing a tier choice; they determine the starting tier.
+2. **Excursion policy** — current party excursions are demand-driven; tuning their scope and return
+   conditions may still be useful as the gather/craft demand model evolves.
+3. **Yakutia fights** — cross-world gathering and fighting share the normal fight planner, but the
+   desired balance between gathering and combat there remains a gameplay choice.

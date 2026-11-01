@@ -30,6 +30,14 @@ for (const entry of (process.env.BOT_LOG_SCOPES ?? '').split(',')) {
   if (scope && level) scope_levels.set(scope, level)
 }
 
+/** Report active verbosity at process start. The SDK writes transaction lines directly to the
+ *  console, so they remain visible even when BOT_LOG_LEVEL or BOT_LOG_SCOPES filter app logs. */
+export const log_configuration = (): string => {
+  const scopes = [...scope_levels].map(([scope, level]) => `${scope}=${level}`).join(',')
+  const preview = process.env.BOT_PROFILE_PREVIEW ? 'enabled' : 'disabled'
+  return `level=${base_level} profile_preview=${preview}${scopes ? ` scopes=${scopes}` : ''}`
+}
+
 export const log_enabled = (scope: string, level: EmitLevel): boolean =>
   LEVELS[level] <= LEVELS[scope_levels.get(scope) ?? base_level]
 

@@ -11,12 +11,14 @@ import {
   type FightPlayerInput,
   type HydratedFightCheckpoint,
   type SpellSource,
+  type SpellTurnProjection,
 } from '@aresrpg/fight'
+import { AREA_SHAPES } from '@aresrpg/fight/move_contract'
 import type { CharacterRow, MobGroupRow } from '@aresrpg/protocol'
 
 import { mob_inputs, player_source_of, score_mobs } from '../src/actions/fight_preview.ts'
 import { catalog_spell_sources } from '../src/content/fight_sources.ts'
-import { plan_turn, plan_turn_party } from '../src/actions/turn_plan.ts'
+import { damage_target_cells, plan_turn, plan_turn_party } from '../src/actions/turn_plan.ts'
 
 const character = (over: Partial<CharacterRow> = {}): CharacterRow =>
   ({
@@ -133,5 +135,37 @@ describe('turn planner damage ranking', () => {
     expect(bare.win_rate).toBe(0)
     expect(armed.win_rate).toBe(1)
     expect(armed.turns).toBeLessThan(bare.turns)
+  })
+})
+
+const spell_projection = (area_shape: bigint): SpellTurnProjection =>
+  ({ effects: [{ area_shape }] }) as unknown as SpellTurnProjection
+
+describe('damage target cells', () => {
+  const enemy_cells = new Set([12n, 13n])
+
+  it('requires an occupied target cell for point damage', () => {
+    expect(
+      damage_target_cells([10n, 12n, 14n], spell_projection(AREA_SHAPES.point), enemy_cells, () => [])
+    ).toEqual([12n])
+  })
+
+  it('allows an empty legal centre when its area reaches an enemy', () => {
+    expect(
+      damage_target_cells(
+        [10n, 11n, 14n],
+        spell_projection(999n),
+        enemy_cells,
+        (cell) => cell === 10n ? [10n, 12n] : cell === 11n ? [11n, 13n] : [14n]
+      )
+    ).toEqual([10n, 11n])
+  })
+
+  it('rejects area centres that do not hit an enemy', () => {
+    expect(damage_target_cells([10n, 14n], spell_projection(999n), enemy_cells, () => [99n])).toEqual([])
+  })
+
+  it('returns no candidates when the projection is unavailable', () => {
+    expect(damage_target_cells([12n], null, enemy_cells, () => [12n])).toEqual([])
   })
 })

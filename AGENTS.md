@@ -57,6 +57,7 @@ AresRPGAuto/
           gear.ts           craft goals: best craftable weapon/armour per character level
           party.ts          the group-fight rendezvous shared by every character (PartyState)
           fight_preview.ts  local deterministic fight twin: screen_groups / viable_ranking
+          fight_preview_offload.ts bounded worker pool for live combat previews
           turn_plan.ts      plan_turn / next_action / sim_commands
           fight_registry.ts live fight runtime registry, fed by the fight_state stream
           dungeon.ts        dungeon key helpers (screen / park an entrant's key)
@@ -157,9 +158,14 @@ For each character, in order:
 Outside the per-character pass, a coalesced party-wide **auto-equip** run fires when a new equipment
 id appears (see `## Auto-equip` below), retrying every 8 s while any character is seated or stale.
 
-`flush_summary` logs a per-character digest every `SUMMARY_EVERY_FIGHTS = 10` settled fights. Discord
-gets a startup message, exactly ONE party-wide digest per `BOT_DIGEST_MINUTES` (hourly by default; 0
-disables it), a fatal-crash message, and the zkLogin sign-in link — no other chatter.
+`flush_summary` logs a per-character digest every `SUMMARY_EVERY_FIGHTS = 10` settled fights. The
+console also prints startup milestones, action outcomes, meaningful waits/holds, and a health line
+every 15 seconds once the character loops start. That line includes connection and state freshness,
+the last successful ledger action, each character's pass status, and active fight. Passes taking at
+least 60 seconds warn. A one-line logger configuration is printed at process startup even when the
+normal logger is filtered, because SDK transaction output bypasses the app logger. Discord gets a
+startup message, exactly ONE party-wide digest per `BOT_DIGEST_MINUTES` (hourly by default; 0 disables
+it), fatal-crash messages, and the zkLogin sign-in link — no per-action chatter.
 
 ## Group fights (`actions/party.ts`)
 
@@ -364,7 +370,10 @@ never disagree with a live decision about what is winnable:
 | `BOT_CROSS_WORLD_INTERVAL_MS` | `1800000` | ms between cross-world trips (0 disables the cycle) |
 | `BOT_CROSS_WORLD_DWELL_MS` | `600000` | ms the detacher gathers per trip |
 | `BOT_STRATEGY` | `true` | run the periodic whole-content strategy pass |
-| `BOT_STRATEGY_INTERVAL_MS` | `1800000` | ms between strategy passes (0 runs once) |
+| `BOT_STRATEGY_INTERVAL_MS` | `1800000` | ms between strategy passes (0 runs once); first pass is delayed up to 90 s after startup |
+| `BOT_CONTENT_WATCH` | `true` | compare bundled game content/rules with upstream; first check is delayed 60 s |
+| `BOT_CONTENT_WATCH_INTERVAL_MS` | `21600000` | ms between upstream checks (minimum 60000) |
+| `BOT_COMBAT_ANALYTICS` | `false` | write bounded per-fight JSONL diagnostic files |
 | `BOT_IDLE_SLEEP_MS` | `3000` | idle decision-pass sleep |
 | `ARES_CHARACTER_ID` | – | pin one character; otherwise the whole roster is used |
 | `ARES_WORLD` | `nauvis` | fallback world |
@@ -372,7 +381,15 @@ never disagree with a live decision about what is winnable:
 | `BOT_LOG_LEVEL` | `info` | log verbosity: `silent`, `error`, `warn`, `info`, `debug`, `trace` (read in `shared/logger.ts`) |
 | `BOT_LOG_SCOPES` | – | per-scope override, e.g. `dungeon=debug,trace=trace,party=warn` |
 | `BOT_DEBUG` | – | legacy: same as `BOT_LOG_LEVEL=debug` when `BOT_LOG_LEVEL` is unset |
-| `BOT_PROFILE_PREVIEW` | – | print `[PROFILE-PREVIEW]` planner timings (independent of the log level) |
+| `BOT_PROFILE_PREVIEW` | unset | print fight-preview planner timings (independent of the log level); leave unset in normal operation |
+
+At every `run` startup, `main.ts` prints the effective log level, profile-preview status and scope
+overrides directly to the console. SDK `tx` lines bypass the app logger, so this line helps diagnose
+seeing transactions while application messages are filtered. `info` is the operational default;
+`debug` adds decision detail; `trace` prints each awaited decision step. The health heartbeat is every
+15 s after character loops start, and a decision pass taking 60 s or more warns. The whole-content
+strategy scan runs in a worker thread so it cannot freeze the realtime event loop. See the Runtime
+logs section in `README.md`.
 
 ## Vendoring
 

@@ -77,6 +77,15 @@ export const room1_gate = (input: {
 /** The win rate below which a room is not worth committing to. */
 const MIN_WIN_RATE = 0.8
 
+export type DungeonPreviewReadiness = 'ready' | 'recovering' | 'unwinnable'
+
+/** A failed current-HP preview is recoverable only while the party still has HP to regenerate. */
+export const dungeon_preview_readiness = (
+  win_rate: number,
+  party_at_full_hp: boolean
+): DungeonPreviewReadiness =>
+  win_rate >= MIN_WIN_RATE ? 'ready' : party_at_full_hp ? 'unwinnable' : 'recovering'
+
 /** Per-character "last enter submitted" stamp, shared by the leader's runner and the follower step so
  *  a lagging roster never re-issues the same enter door. */
 const last_enter_ms_by_char = new Map<string, number>()
@@ -113,6 +122,35 @@ export const room_to_mob_group = (room: readonly { mob_type: string }[]): MobGro
   x: 0,
   z: 0,
   members: room.map((row) => ({ mob_type: row.mob_type, level_scalar: DUNGEON_EXPECTED_SCALAR })),
+})
+
+export type PartyHealthStatus = Readonly<{
+  ready: boolean
+  wounded: readonly Readonly<{ name: string; hp: number; max_hp: number }>[]
+  missing_hp: number
+}>
+
+/** Current party HP as the chain projects it. Dungeon decisions use the fight twin at this HP; a
+ *  low-HP preview delays entry/room start but never parks the key as a content failure. */
+export const party_health_status = (members: readonly CharacterRow[]): PartyHealthStatus => {
+  const wounded = members.flatMap((member) => {
+    const hp = projected_character_hp(member)
+    const max_hp = character_max_hp(member)
+    return hp < max_hp ? [{ name: member.name, hp, max_hp }] : []
+  })
+  return Object.freeze({
+    ready: wounded.length === 0,
+    wounded: Object.freeze(wounded),
+    missing_hp: wounded.reduce((total, member) => total + member.max_hp - member.hp, 0),
+  })
+}
+
+/** Full-health baseline used to judge whether the party has the levels/build to clear the dungeon
+ *  after reasonable recovery between rooms. The first/current room is separately scored at live HP. */
+const recovered = (member: CharacterRow): CharacterRow => ({
+  ...member,
+  hp: String(character_max_hp(member)),
+  hp_ms: Date.now(),
 })
 
 /** Collect available allies for a dungeon fight: other party members in the same world, not in a fight. */
@@ -290,88 +328,134 @@ const plan_group_dungeon = (
   const world = worlds_by_id[world_name]
   if (!world) return null
   const blacklist = ctx.dungeon_blacklist
+  // Always preview the full active party. Never reject a dungeon using
+  // a smaller temporary roster just because the fifth key is not ready yet.
+  const target_seats = members.length
 
   for (const dk of DUNGEON_KEYS) {
     if (key_parked(blacklist, dk.key)) continue
-    const keys = held_key_amount(ctx.state().inventory, unavailable_item_ids(ctx.state()), dk.key)
-    if (keys < MIN_GROUP_KEYS) continue
+
+    const keys = held_key_amount(
+      ctx.state().inventory,
+      unavailable_item_ids(ctx.state()),
+      dk.key
+    )
+
+    // Wait for the complete key stock instead of screening an undersized party.
+    if (keys < target_seats) {
+      log_debug(
+        'dungeon',
+        `${dk.dungeon}: waiting for full party key stock (${keys}/${target_seats})`
+      )
+      continue
+    }
+
     const city = dungeon_city(world, dk.dungeon)
     if (!city) continue
+
     const all_rooms = dungeon_rooms(dk.dungeon)
     if (all_rooms.length === 0) continue
 
-    // Find MINIMUM seats that clears ALL rooms (key efficiency).
-    const max_seats = Math.min(keys, members.length)
-    let chosen_seats = 0
+    const allies = planning_allies(ctx, character, target_seats)
+    const members = [character, ...allies]
+    const healthy_members = members.map(recovered)
+    const healthy_character = healthy_members[0]!
+    const healthy_allies = healthy_members.slice(1)
     const previews = new Map<string, ReturnType<typeof score_group>>()
-    const preview_room = (seats: number, ri: number) => {
-      const cache_key = `${seats}:${ri}`
-      const cached = previews.get(cache_key)
+
+    const preview_room = (ri: number) => {
+      const cached = previews.get(String(ri))
       if (cached) return cached
-      const allies = planning_allies(ctx, character, seats)
+
       const started_ms = Date.now()
-      const preview = score_group(character, room_to_mob_group(all_rooms[ri]!), allies, { rounds: DUNGEON_ROUNDS })
-      previews.set(cache_key, preview)
-      log_info('dungeon', `[PERF] ${character.name} ${dk.dungeon} seats=${seats} room=${ri + 1} ${Date.now() - started_ms}ms`)
+      const preview = score_group(
+        healthy_character,
+        room_to_mob_group(all_rooms[ri]!),
+        healthy_allies,
+        { rounds: DUNGEON_ROUNDS }
+      )
+
+      previews.set(String(ri), preview)
+
+      log_debug(
+        'dungeon',
+        `[PERF] ${character.name} ${dk.dungeon} seats=${target_seats} room=${ri + 1} ${Date.now() - started_ms}ms`
+      )
+
       return preview
     }
-    for (let seats = MIN_GROUP_KEYS; seats <= max_seats; seats++) {
-      const allies = planning_allies(ctx, character, seats)
-      let all_clear = true
-      for (let ri = 0; ri < all_rooms.length; ri++) {
-        const room = all_rooms[ri]
-        const preview = preview_room(seats, ri)
-        if (preview.win_rate < MIN_WIN_RATE) {
-          all_clear = false
-          break
-        }
-      }
-      if (all_clear) {
-        chosen_seats = seats
+
+    let failing = -1
+
+    // Every room must be winnable with the complete party.
+    for (let ri = 0; ri < all_rooms.length; ri++) {
+      if (preview_room(ri).win_rate < MIN_WIN_RATE) {
+        failing = ri
         break
       }
     }
-    if (chosen_seats === 0) {
-      // No seat count clears every room. Name the room that actually FAILS: room 1 is often a 100%
-      // walkover while a later room is the wall, and always reporting room 1 printed a contradiction
-      // ("win_rate=100% ... < 80%") that reads as a gating bug rather than the real shortfall.
-      const allies = planning_allies(ctx, character, max_seats)
-      let failing = 0
-      let preview = preview_room(max_seats, 0)
-      for (let ri = 0; ri < all_rooms.length; ri++) {
-        const room_preview = preview_room(max_seats, ri)
-        if (room_preview.win_rate < MIN_WIN_RATE) {
-          failing = ri
-          preview = room_preview
-          break
-        }
-      }
+
+    if (failing >= 0) {
+      const preview = preview_room(failing)
+
       log_warn(
         'dungeon',
-        `${dk.dungeon} room ${failing + 1}: group preview win_rate=${(preview.win_rate * 100).toFixed(0)}% (${describe_score(preview)}) < 80% even at ${max_seats} seat(s) -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
+        `${dk.dungeon} room ${failing + 1}: group preview win_rate=${(preview.win_rate * 100).toFixed(0)}% (${describe_score(preview)}) < 80% with all ${target_seats} seats -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
       )
+
       park_dungeon_key(blacklist, dk.key)
       continue
     }
 
-    // Log the full-room preview at the chosen seat count.
-    const allies = planning_allies(ctx, character, chosen_seats)
+    // A dungeon's authored difficulty is viable at recovered HP, but do not burn a full party of
+    // keys until the randomized first room is also a reliable win at the party's CURRENT HP. A
+    // low-HP preview waits for regeneration without parking the key as an impossible dungeon.
+    const current_health = party_health_status(members)
+    const first_room = score_group(
+      character,
+      room_to_mob_group(all_rooms[0]!),
+      allies,
+      { rounds: DUNGEON_ROUNDS }
+    )
+    if (dungeon_preview_readiness(first_room.win_rate, current_health.ready) !== 'ready') {
+      const wait_key = `planning:${dk.key}`
+      const now = Date.now()
+      if (now - (room_hp_wait_log_ms.get(wait_key) ?? 0) >= ROOM_HP_LOG_INTERVAL_MS) {
+        room_hp_wait_log_ms.set(wait_key, now)
+        const status = current_health.wounded.map((member) => `${member.name}:${member.hp}/${member.max_hp}`).join(' ')
+        log_info(
+          'dungeon',
+          `holding ${dk.dungeon} before entry: first-room preview ${Math.round(first_room.win_rate * 100)}% (${describe_score(first_room)}) at current HP${status ? ` (${status}; ${current_health.missing_hp} HP missing)` : ''}`
+        )
+      }
+      if (current_health.ready)
+        log_warn('dungeon', `${dk.dungeon}: first-room preview is below 80% even at full HP; refusing to spend keys`)
+      return null
+    }
+
     for (let ri = 0; ri < all_rooms.length; ri++) {
-      const room = all_rooms[ri]
-      const preview = preview_room(chosen_seats, ri)
+      const preview = preview_room(ri)
+
       log_info(
         'dungeon',
-        `${character.name}: ${dk.dungeon} room ${ri + 1} group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${chosen_seats}, scored=${allies.length + 1}, keys=${keys}`
+        `${character.name}: ${dk.dungeon} room ${ri + 1} group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${target_seats}, scored=${allies.length + 1}, keys=${keys}`
       )
     }
-    // The preview proved `chosen_seats` is ENOUGH; the party then runs it TOGETHER — every member
-    // the held keys cover enters (more seats only raise the win rate, and nobody idles outside).
+
     log_info(
       'dungeon',
-      `${character.name}: ${dk.dungeon} clears with ${chosen_seats} seat(s); reserving ${keys - chosen_seats} key(s)`
+      `${character.name}: ${dk.dungeon} clears with all ${target_seats} seats; reserving ${keys - target_seats} key(s)`
     )
-    return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats: chosen_seats })
-  }
+
+    return Object.freeze({
+        dungeon: dk.dungeon,
+        world: world.world,
+        city: city.city,
+        x: city.x,
+        z: city.z,
+        seats: target_seats,
+      })
+    }
   return null
 }
 
@@ -448,28 +532,29 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     }
 
     const allies = dungeon_allies(ctx, character).filter((ally) => ally.dungeon_run?.dungeon === run.dungeon)
-    const wounded = [character, ...allies]
-      .map((member) => ({ member, hp: projected_character_hp(member), max: character_max_hp(member) }))
-      .filter(({ hp, max }) => hp < max)
-    if (wounded.length > 0) {
+    const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
+    const health = party_health_status([character, ...allies])
+    const readiness = dungeon_preview_readiness(preview.win_rate, health.ready)
+    if (readiness === 'recovering') {
       const now = Date.now()
       const key = `${run.dungeon}:${run.room}`
       if (now - (room_hp_wait_log_ms.get(key) ?? 0) >= ROOM_HP_LOG_INTERVAL_MS) {
         room_hp_wait_log_ms.set(key, now)
-        const status = wounded.map(({ member, hp, max }) => `${member.name}:${hp}/${max}`).join(' ')
-        const slowest_seconds = Math.max(...wounded.map(({ hp, max }) => max - hp))
-        log_info('dungeon', `holding ${run.dungeon} room ${run.room} for health regeneration (${status}; ~${slowest_seconds}s)`)
+        const status = health.wounded.map((member) => `${member.name}:${member.hp}/${member.max_hp}`).join(' ')
+        log_info(
+          'dungeon',
+          `holding ${run.dungeon} room ${run.room}: preview ${Math.round(preview.win_rate * 100)}% (${describe_score(preview)}) below 80% at current HP${status ? ` (${status}; ${health.missing_hp} HP missing)` : ''}`
+        )
       }
-      return outcome('waiting', 'waiting for party health to regenerate')
+      return outcome('waiting', 'room preview is not yet safe at current HP')
     }
-    const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
-    if (preview.win_rate < MIN_WIN_RATE) {
+    if (readiness === 'unwinnable') {
       log_warn(
         'dungeon',
-        `${run.dungeon} room ${run.room}: preview win_rate=${(preview.win_rate * 100).toFixed(0)}% (${describe_score(preview)}) < 80% -- abandoning run`
+        `${run.dungeon} room ${run.room}: preview ${Math.round(preview.win_rate * 100)}% (${describe_score(preview)}) is below 80% even at full HP -- abandoning run`
       )
       await abandon(ctx)
-      return outcome('skipped', `preview win_rate ${(preview.win_rate * 100).toFixed(0)}% -- abandoned`)
+      return outcome('skipped', `preview win rate ${(preview.win_rate * 100).toFixed(0)}% at full HP -- abandoned`)
     }
     log_info(
       'dungeon',
