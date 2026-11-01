@@ -737,6 +737,33 @@ export const play_loop = async (
   }
 
   // ── per-character decision pass ─────────────────────────────────────
+  // ARES_DIAGNOSTIC_PATCH_V1
+  const trace_step = async <T>(
+    character: string,
+    step: string,
+    operation: () => Promise<T>,
+  ): Promise<T> => {
+    const started = Date.now()
+    log_info('trace', `${character}: >>> ${step}`)
+
+    try {
+      const result = await operation()
+      log_info(
+        'trace',
+        `${character}: <<< ${step} (${Date.now() - started}ms)`,
+      )
+      return result
+    } catch (error) {
+      log_error(
+        'trace',
+        `${character}: !!! ${step} after ${Date.now() - started}ms: ${
+          error instanceof Error ? error.stack ?? error.message : String(error)
+        }`,
+      )
+      throw error
+    }
+  }
+
   const pass_diag = new Map<string, string>()
   const run_pass = async (rt: CharRuntime): Promise<number> => {
     const { ctx, mover, roamer, character } = rt
@@ -796,7 +823,7 @@ export const play_loop = async (
       'pass',
       `${character.name}: active_fight=${active_fight_of(current) ?? '-'} resolutions=${game_state.resolutions.length} group_attempting=${party_attempting(party_state)}`
     )
-    const settled = await settle_pending(ctx)
+    const settled = await trace_step(character.name, 'settle_pending', () => settle_pending(ctx))
     if (settled.settled) {
       log_info('session', `${character.name}: ${settled.detail}`)
       rt.stats = settled.reports.reduce(record_fight, rt.stats)
@@ -809,7 +836,7 @@ export const play_loop = async (
       log_warn('session', `${character.name}: settlement incomplete: ${settled.detail}`)
       return SETTLE_RETRY_MS
     }
-    await close_pending(ctx)
+    await trace_step(character.name, 'close_pending', () => close_pending(ctx))
 
     // 2. drive whatever our active fight needs right now. The per-fight lock serializes allied
     // seats: in a group fight the leader and its partners place/ready/turn on the same object, so
@@ -828,11 +855,11 @@ export const play_loop = async (
     // it here even if gathering was disabled or the original resolve transaction failed. This must
     // follow active-fight handling because the projection can show the verdict briefly after the
     // fight itself has already appeared.
-    if (await resolve_pending_ambush(ctx, current)) return FIGHT_POLL_MS
+    if (await trace_step(character.name, 'resolve_pending_ambush', () => resolve_pending_ambush(ctx, current))) return FIGHT_POLL_MS
 
     // 2b. spend stat capital / spell points a level-up granted (out of fight only — the chain
     // borrows the character from the kiosk, which a seated fighter cannot lend).
-    if (await maybe_progress(ctx, current)) return SETTLE_POLL_MS
+    if (await trace_step(character.name, 'maybe_progress', () => maybe_progress(ctx, current))) return SETTLE_POLL_MS
 
     // 2b. an engage was just submitted but the roster has not caught up yet: do not re-engage into
     // the indexing window (that is the double-engage that aborts on chain).
@@ -862,7 +889,7 @@ export const play_loop = async (
     // its own key here — before the routed steps below can send it off gathering. The step also gives
     // up a run the leader is no longer driving, so a follower never sits rooted at a portal.
     if (toggles.group && !is_leader) {
-      if (await follower_dungeon_step(ctx, mover)) return idle_sleep_ms
+      if (await trace_step(character.name, 'follower_dungeon_step', () => follower_dungeon_step(ctx, mover))) return idle_sleep_ms
     }
 
     // 3c. keep the party together. Every activity below can hand the LEADER a far target — the
@@ -887,7 +914,7 @@ export const play_loop = async (
             `${character.name}: regrouping — ${Math.round(regroup.offset)} blocks from the party centre, walking back to ${hop.x},${hop.z}`
           )
         try {
-          await mover.travel_to(hop.x, hop.z)
+          await trace_step(character.name, 'regroup.travel_to', () => mover.travel_to(hop.x, hop.z))
         } catch (error) {
           log_warn('party', `regroup leg paused: ${error instanceof Error ? error.message : String(error)}`)
         }
@@ -901,7 +928,7 @@ export const play_loop = async (
     // the dungeon door, which advances the run or ends it.
     // When the leader starts a room, it becomes the party's active group fight — followers join it.
     if (should_run_dungeons(current, ctx)) {
-      const dungeon = await rt.dungeon.run_once(mover)
+      const dungeon = await trace_step(character.name, 'dungeon.run_once', () => rt.dungeon.run_once(mover))
       if (dungeon !== null) {
         if (dungeon.kind !== 'skipped' && dungeon.kind !== 'waiting')
           log_info('session', `${character.name}: dungeon ${dungeon.kind} — ${dungeon.detail}`)
@@ -937,7 +964,7 @@ export const play_loop = async (
     // is marked on the shared party so the leader's rendezvous ignores the missing seat; while it is
     // away its whole pass belongs to the trip, so it never wanders back into a nauvis rendezvous.
     if (toggles.cross_world) {
-      const cross = await rt.cross_world.run_once(party_state, mover)
+      const cross = await trace_step(character.name, 'cross_world.run_once', () => rt.cross_world.run_once(party_state, mover))
       if (cross.handled) {
         log_debug('cross_world', `${character.name}: ${cross.detail}`)
         return idle_sleep_ms
@@ -958,8 +985,8 @@ export const play_loop = async (
           // Don't plan new fights while traveling.
           if (await safe_travel_to(mover, party_state.excursion.x, party_state.excursion.z)) {
             // Arrived at the zone center; prove the leg and discover the zone so the window updates.
-            if (await mover.prove_ready(party_state.excursion.x, party_state.excursion.z)) {
-              await mover.ensure_zone(false)
+            if (await trace_step(character.name, 'excursion.prove_ready', () => mover.prove_ready(party_state.excursion!.x, party_state.excursion!.z))) {
+              await trace_step(character.name, 'ensure_zone', () => mover.ensure_zone(false))
             }
             party_state.excursion = Object.freeze({
               ...party_state.excursion,
@@ -971,7 +998,7 @@ export const play_loop = async (
         }
         // Dwell phase (arrived_ms > 0 but not done): allow normal fight staging at the destination.
         // Fall through to leader_group_step which will pick fights at the excursion zone.
-      } else if (await maybe_start_excursion(ctx, party_state, current, pose)) {
+      } else if (await trace_step(character.name, 'maybe_start_excursion', async () => maybe_start_excursion(ctx, party_state, current, pose))) {
         // Excursion just started; skip this pass so the leader begins walking.
         return idle_sleep_ms
       }
@@ -982,15 +1009,15 @@ export const play_loop = async (
       // Bounded to the party's neighbourhood: an unbounded chore hands the leader the demanded node
       // the crafting rotation owes, which may be zones away, and walks it there alone in one silent
       // leg. Bounded, the leader harvests what is local and lets the party relocate when needed.
-      if (await run_chore(rt, true)) return idle_sleep_ms
+      if (await trace_step(character.name, 'run_chore_leader', () => run_chore(rt, true))) return idle_sleep_ms
     }
 
     if (group_mode) {
       const handled = is_leader
-        ? await leader_group_step(ctx, mover, current, party_state)
+        ? await trace_step(character.name, 'leader_group_step', () => leader_group_step(ctx, mover, current, party_state))
         : party_state.detached.has(current.id)
           ? null
-          : await follower_group_step(ctx, mover, current, party_state)
+          : await trace_step(character.name, 'follower_group_step', () => follower_group_step(ctx, mover, current, party_state))
       if (handled !== null) return handled
       // The group step found nothing to stage in the CURRENT window — only now does the leader
       // roam, with a bounded step (PARTY_RADIUS) so a relocation creeps toward the band and the
@@ -1000,14 +1027,14 @@ export const play_loop = async (
       // check for a whole pass, so an already-staged group sat parked (observed: 13:52 staging ->
       // 14:53 engage).
       if (is_leader && toggles.roam) {
-        const roamed = await roamer.roam_once(
+        const roamed = await trace_step(character.name, 'roamer.roam_once', () => roamer.roam_once(
           mover,
           team_level,
           PARTY_RADIUS,
           window_viable(party_state),
           strategy_plan?.farm?.distance ?? null,
           strategy_plan?.loot_focus ?? null
-        )
+        ))
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
           roamed.kind === 'roamed' ||
@@ -1036,11 +1063,11 @@ export const play_loop = async (
           log_warn('party', `${character.name}: ${away} blocks from the leader — walking home before any chore`)
         }
         const before = mover.pose()
-        await rally_to_leader(mover, leader_pose)
+        await trace_step(character.name, 'rally_to_leader', () => rally_to_leader(mover, leader_pose))
         const after = mover.pose()
         if (after.x !== before.x || after.z !== before.z) {
           try {
-            await mover.ensure_zone(false)
+            await trace_step(character.name, 'ensure_zone', () => mover.ensure_zone(false))
           } catch (error) {
             log_warn('party', `${character.name}: could not re-anchor while walking home: ${error instanceof Error ? error.message : String(error)}`)
           }
@@ -1053,7 +1080,7 @@ export const play_loop = async (
     // character that has since blown the forced window runs one too, so no engage cadence starves it.
     if (rt.chore_pending || chore_due(rt)) {
       rt.chore_pending = false
-      if (await run_chore(rt, group_mode)) return idle_sleep_ms
+      if (await trace_step(character.name, 'run_chore', () => run_chore(rt, group_mode))) return idle_sleep_ms
     }
 
     // 4. fight: never burn gas on trivial prey
@@ -1072,7 +1099,7 @@ export const play_loop = async (
           current.world === undefined ||
           leader_row.world === current.world
         if (leader_pose && same_world) {
-          await rally_to_leader(mover, leader_pose)
+          await trace_step(character.name, 'rally_to_leader', () => rally_to_leader(mover, leader_pose))
           return idle_sleep_ms
         }
       }
@@ -1080,14 +1107,14 @@ export const play_loop = async (
       // Leader already roamed before group step. Followers already rallied.
       // Solo play (no group): roam and engage with default step (2500 blocks).
       if (!group_mode && toggles.roam) {
-        const roamed = await roamer.roam_once(
+        const roamed = await trace_step(character.name, 'roamer.roam_once', () => roamer.roam_once(
           mover,
           team_level,
           undefined,
           undefined,
           strategy_plan?.farm?.distance ?? null,
           strategy_plan?.loot_focus ?? null
-        )
+        ))
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
           roamed.kind === 'roamed' ||
@@ -1110,7 +1137,7 @@ export const play_loop = async (
     }
 
     // 5. chores fallback: with no fight on offer, harvest and craft rather than idle.
-    if (await run_chore(rt, group_mode)) return idle_sleep_ms
+    if (await trace_step(character.name, 'run_chore', () => run_chore(rt, group_mode))) return idle_sleep_ms
 
     return idle_sleep_ms
   }

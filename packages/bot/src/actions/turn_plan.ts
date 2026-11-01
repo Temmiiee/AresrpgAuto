@@ -30,7 +30,7 @@ import {
 } from '@aresrpg/fight'
 import { AREA_SHAPES, CHANNELS, EFFECT_KINDS, TARGET_FILTERS } from '@aresrpg/fight/move_contract'
 
-import { log_debug } from '../shared/logger.ts'
+import { log_debug, log_info } from '../shared/logger.ts'
 
 import type { BotSdk } from '../auth/sdk_client.ts'
 
@@ -76,55 +76,121 @@ type EnemyResponse = Readonly<{
 }>
 const response_cache = new WeakMap<object, Map<number, EnemyResponse>>()
 
+// Diagnostic temporaire : mesures cumulées des simulations tactiques.
+// Les compteurs sont remis à zéro à chaque rapport de tour.
+type PlannerPerfKey =
+  | 'enemy_response_calls'
+  | 'enemy_response_ms'
+  | 'enemy_simulate_turn_ms'
+  | 'response_after_action_calls'
+  | 'response_after_action_ms'
+  | 'tactical_cast_calls'
+  | 'tactical_cast_ms'
+  | 'tactical_create_ms'
+  | 'tactical_apply_ms'
+  | 'tactical_zone_ms'
+  | 'tactical_enemy_ms'
+  | 'movement_candidates'
+  | 'damage_candidates'
+
+const planner_perf: Record<PlannerPerfKey, number> = {
+  enemy_response_calls: 0,
+  enemy_response_ms: 0,
+  enemy_simulate_turn_ms: 0,
+  response_after_action_calls: 0,
+  response_after_action_ms: 0,
+  tactical_cast_calls: 0,
+  tactical_cast_ms: 0,
+  tactical_create_ms: 0,
+  tactical_apply_ms: 0,
+  tactical_zone_ms: 0,
+  tactical_enemy_ms: 0,
+  movement_candidates: 0,
+  damage_candidates: 0,
+}
+
+const planner_perf_add = (key: PlannerPerfKey, value = 1): void => {
+  planner_perf[key] += value
+}
+
+const planner_perf_report = (label: string): void => {
+  const values = { ...planner_perf }
+  if (Object.values(values).some((value) => value > 0)) {
+    log_debug(
+      'combat',
+      `[PERF-PLAN] ${label} ` +
+        `enemy=${values.enemy_response_calls}/${values.enemy_response_ms.toFixed(1)}ms ` +
+        `enemy_sim=${values.enemy_simulate_turn_ms.toFixed(1)}ms ` +
+        `after_action=${values.response_after_action_calls}/${values.response_after_action_ms.toFixed(1)}ms ` +
+        `casts=${values.tactical_cast_calls}/${values.tactical_cast_ms.toFixed(1)}ms ` +
+        `cast_create=${values.tactical_create_ms.toFixed(1)}ms ` +
+        `cast_apply=${values.tactical_apply_ms.toFixed(1)}ms ` +
+        `cast_zones=${values.tactical_zone_ms.toFixed(1)}ms ` +
+        `cast_enemy=${values.tactical_enemy_ms.toFixed(1)}ms ` +
+        `moves=${values.movement_candidates} damage=${values.damage_candidates}`
+    )
+  }
+  for (const key of Object.keys(planner_perf) as PlannerPerfKey[]) planner_perf[key] = 0
+}
+
+
 /** Replay the engine's deterministic enemy segment after this player's turn. The local twin runs the
  * actual mob AI (including target selection, movement, spells, cooldowns and zones), so safety is
  * estimated from the current fight state instead of a fixed distance-to-mob guess. */
 const enemy_response = (cp: HydratedFightCheckpoint, seat: number): EnemyResponse => {
-  let by_seat = response_cache.get(cp)
-  if (!by_seat) {
-    by_seat = new Map()
-    response_cache.set(cp, by_seat)
+  const perf_started = performance.now()
+  planner_perf_add('enemy_response_calls')
+  try {
+    let by_seat = response_cache.get(cp)
+    if (!by_seat) {
+      by_seat = new Map()
+      response_cache.set(cp, by_seat)
+    }
+    const cached = by_seat.get(seat)
+    if (cached) return cached
+    const unchanged = Object.freeze({
+      party_damage: 0,
+      seat_damage: 0,
+      party_deaths: 0,
+      seat_dies: false,
+      fighter_damage: Object.freeze(cp.contract.fighters.map(() => 0)),
+    })
+    const actor = BigInt(seat)
+    if (cp.contract.queue[Number(cp.contract.turn_ptr)] !== actor) return unchanged
+    const scratch = create_fight({ state: cp, mode: 'local', seed: 1n })
+    const before = cp.contract.fighters.map((fighter) => Number(fighter.hp))
+    const simulate_started = performance.now()
+    const result = scratch.simulate_turn({
+      observed_ms: cp.contract.turn_started_ms + CONTRACT_CONSTANTS.turn_min_ms,
+    })
+    planner_perf_add('enemy_simulate_turn_ms', performance.now() - simulate_started)
+    if (result.error) return unchanged
+    let party_damage = 0
+    let seat_damage = 0
+    let party_deaths = 0
+    const fighter_damage = cp.contract.fighters.map(() => 0)
+    for (let index = 0; index < result.state.contract.fighters.length; index++) {
+      const initial = cp.contract.fighters[index]
+      const final = result.state.contract.fighters[index]
+      if (!initial || !final || initial.team !== cp.contract.fighters[seat]?.team || initial.dead) continue
+      const loss = Math.max(0, before[index]! - Number(final.hp))
+      fighter_damage[index] = loss
+      party_damage += loss
+      if (index === seat) seat_damage += loss
+      if (!initial.dead && final.dead) party_deaths += 1
+    }
+    const response = Object.freeze({
+      party_damage,
+      seat_damage,
+      party_deaths,
+      seat_dies: Boolean(result.state.contract.fighters[seat]?.dead),
+      fighter_damage: Object.freeze(fighter_damage),
+    })
+    by_seat.set(seat, response)
+    return response
+  } finally {
+    planner_perf_add('enemy_response_ms', performance.now() - perf_started)
   }
-  const cached = by_seat.get(seat)
-  if (cached) return cached
-  const unchanged = Object.freeze({
-    party_damage: 0,
-    seat_damage: 0,
-    party_deaths: 0,
-    seat_dies: false,
-    fighter_damage: Object.freeze(cp.contract.fighters.map(() => 0)),
-  })
-  const actor = BigInt(seat)
-  if (cp.contract.queue[Number(cp.contract.turn_ptr)] !== actor) return unchanged
-  const scratch = create_fight({ state: cp, mode: 'local', seed: 1n })
-  const before = cp.contract.fighters.map((fighter) => Number(fighter.hp))
-  const result = scratch.simulate_turn({
-    observed_ms: cp.contract.turn_started_ms + CONTRACT_CONSTANTS.turn_min_ms,
-  })
-  if (result.error) return unchanged
-  let party_damage = 0
-  let seat_damage = 0
-  let party_deaths = 0
-  const fighter_damage = cp.contract.fighters.map(() => 0)
-  for (let index = 0; index < result.state.contract.fighters.length; index++) {
-    const initial = cp.contract.fighters[index]
-    const final = result.state.contract.fighters[index]
-    if (!initial || !final || initial.team !== cp.contract.fighters[seat]?.team || initial.dead) continue
-    const loss = Math.max(0, before[index]! - Number(final.hp))
-    fighter_damage[index] = loss
-    party_damage += loss
-    if (index === seat) seat_damage += loss
-    if (!initial.dead && final.dead) party_deaths += 1
-  }
-  const response = Object.freeze({
-    party_damage,
-    seat_damage,
-    party_deaths,
-    seat_dies: Boolean(result.state.contract.fighters[seat]?.dead),
-    fighter_damage: Object.freeze(fighter_damage),
-  })
-  by_seat.set(seat, response)
-  return response
 }
 
 /** Apply one candidate action to the same local twin, then measure the enemy segment it leaves. */
@@ -133,13 +199,17 @@ const response_after_action = (
   seat: number,
   action: TurnAction
 ): EnemyResponse => {
+  const perf_started = performance.now()
+  planner_perf_add('response_after_action_calls')
   const scratch = create_fight({ state: cp, mode: 'local', seed: 1n })
   const applied = scratch.apply(action.type === 'move'
     ? { type: 'move_to', fighter: BigInt(seat), path: action.path }
     : action.type === 'cast'
       ? { type: 'cast_spell', fighter: action.fighter_idx, spell: action.spell, target_cell: action.target_cell }
       : { type: 'weapon_strike', fighter: action.fighter_idx, target_cell: action.target_cell })
-  return applied.error ? enemy_response(cp, seat) : enemy_response(applied.state, seat)
+  const response = applied.error ? enemy_response(cp, seat) : enemy_response(applied.state, seat)
+  planner_perf_add('response_after_action_ms', performance.now() - perf_started)
+  return response
 }
 
 /** Check if a spell is a heal (targets allies, restores HP). */
@@ -284,6 +354,7 @@ const best_damage_action = (cp: HydratedFightCheckpoint, seat: number, enemies: 
   // Bound extra engine replays: options outside the top four by raw damage efficiency cannot
   // displace the baseline enough to justify the simulation cost.
   for (const option of ranked.slice(1, 4)) {
+    planner_perf_add('damage_candidates')
     const score = safety_score(option)
     if (score > best_score) {
       best = option
@@ -583,33 +654,38 @@ const evaluate_tactical_cast = (
   seat: number,
   spell: string,
   cell: bigint,
+  cost: number,
+  friends: readonly Fighter[],
+  enemies: readonly Fighter[],
+  baseline_response: EnemyResponse,
   profile: TacticalProfile
 ): number | null => {
   const actor = BigInt(seat)
   const caster = cp.contract.fighters[seat]
   if (!caster || caster.dead) return null
 
-  const cost = spell_ap_cost(cp, seat, spell)
   if (Number(caster.ap) < cost) return null
 
+  const create_started = performance.now()
   const simulation = create_fight({ state: cp, mode: 'local' })
+  if (process.env.BOT_PROFILE_PREVIEW) {
+    planner_perf_add('tactical_create_ms', performance.now() - create_started)
+  }
+
+  const apply_started = performance.now()
   const result = simulation.apply({
     type: 'cast_spell',
     fighter: actor,
     spell,
     target_cell: cell,
   })
+  if (process.env.BOT_PROFILE_PREVIEW) {
+    planner_perf_add('tactical_apply_ms', performance.now() - apply_started)
+  }
 
   if (result.error) return null
 
   const after = result.state
-  const friends = cp.contract.fighters.filter(
-    (fighter) => !fighter.dead && fighter.team === caster.team
-  )
-  const enemies = cp.contract.fighters.filter(
-    (fighter) => !fighter.dead && fighter.team !== caster.team
-  )
-
   let utility = 0
 
   // 1. Actual HP changes, including resisted damage and healing.
@@ -784,15 +860,22 @@ const evaluate_tactical_cast = (
   }
 
   // 6. Placement-only spells.
+  const zones_started = performance.now()
   utility += score_new_zones(cp, after, seat, profile)
+  if (process.env.BOT_PROFILE_PREVIEW) {
+    planner_perf_add('tactical_zone_ms', performance.now() - zones_started)
+  }
 
   // 7. Survival through the next enemy segment. A locally replayed mob turn captures the effects
   // of damage, kills, control, healing and displacement. Reward casts that reduce party damage and
   // heavily reject a cast that leaves this caster dead before its next turn.
-  const baseline_response = enemy_response(cp, seat)
   const caster_hp_ratio = fighter_hp(caster) / Math.max(1, fighter_max_hp(cp, caster))
   if (baseline_response.party_damage > 0 || caster_hp_ratio < 0.7) {
+    const enemy_started = performance.now()
     const candidate_response = enemy_response(after, seat)
+    if (process.env.BOT_PROFILE_PREVIEW) {
+      planner_perf_add('tactical_enemy_ms', performance.now() - enemy_started)
+    }
     utility += (baseline_response.party_damage - candidate_response.party_damage) * 0.8
     utility += (baseline_response.party_deaths - candidate_response.party_deaths) * 160
     if (!baseline_response.seat_dies && candidate_response.seat_dies) utility -= 500
@@ -821,11 +904,14 @@ const best_class_tactical_action = (
 
   const actor = BigInt(seat)
   const living = cp.contract.fighters.filter((fighter) => !fighter.dead)
+  const friends = living.filter((fighter) => fighter.team === me.team)
 
+  let baseline_response: EnemyResponse | null = null
   let best: { action: TurnAction; score: number } | null = null
 
   for (const spell of spell_names_for(cp, seat)) {
-    if (spell_ap_cost(cp, seat, spell) > Number(me.ap)) continue
+    const cost = spell_ap_cost(cp, seat, spell)
+    if (cost > Number(me.ap)) continue
 
     const legal = spell_target_cells(cp, actor, spell).targetable
     if (legal.length === 0) continue
@@ -844,14 +930,27 @@ const best_class_tactical_action = (
     const candidates = [...new Set([...occupied, ...nearby])]
       .slice(0, TACTICAL_CANDIDATE_LIMIT)
 
+    if (candidates.length === 0) continue
+
+    // La réponse de référence ne dépend ni du sort ni de sa case cible.
+    // On la calcule une seule fois pour cette décision tactique.
+    baseline_response ??= enemy_response(cp, seat)
+
     for (const cell of candidates) {
+      const cast_started = performance.now()
+      planner_perf_add('tactical_cast_calls')
       const score = evaluate_tactical_cast(
         cp,
         seat,
         spell,
         cell,
+        cost,
+        friends,
+        enemies,
+        baseline_response,
         profile
       )
+      planner_perf_add('tactical_cast_ms', performance.now() - cast_started)
 
       if (score === null || score <= 0) continue
 
@@ -945,6 +1044,7 @@ const safe_step_toward_enemy = (
   let best_path: readonly bigint[] | null = null
   let best_score = score(me.cell, enemy_response(cp, seat))
   for (const option of options) {
+    planner_perf_add('movement_candidates')
     const action: TurnAction = { type: 'move', path: option.path }
     const candidate_score = score(option.cell, response_after_action(cp, seat, action))
     if (candidate_score < best_score) {
@@ -1121,6 +1221,7 @@ export const plan_turn = (cp: HydratedFightCheckpoint, seat: number): readonly T
     actions.push(action)
     state = result.state
   }
+  planner_perf_report(`solo seat=${seat} actions=${actions.length}`)
   return actions
 }
 
@@ -1155,6 +1256,7 @@ export const plan_turn_party = (
     'plan',
     `plan_turn_party seat=${seat} role=${my_role} allies=[${party_seats.join(',')}] actions=${actions.length} ap=${cp.contract.fighters[seat]?.ap} mp=${cp.contract.fighters[seat]?.mp}`
   )
+  planner_perf_report(`party seat=${seat} role=${my_role} actions=${actions.length}`)
   return actions
 }
 

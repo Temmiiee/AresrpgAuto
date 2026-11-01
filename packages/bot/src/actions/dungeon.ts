@@ -113,7 +113,7 @@ export const party_key_stock = (
 ): number => {
   if (!party) return MIN_GROUP_KEYS
   const active = party.members.filter((id) => !party.detached.has(id)).length
-  return Math.max(MIN_GROUP_KEYS, active)
+  return Math.max(MIN_GROUP_KEYS, active) // conservative stock: do not pre-craft keys for every member
 }
 
 /** A one-line "what this key still needs" summary, for the operator log. */

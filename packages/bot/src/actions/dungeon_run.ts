@@ -1,3 +1,4 @@
+// ARES_DUNGEON_DIAGNOSTICS_V1
 // Dungeon runner. A key is burned to ENTER a run; a run is character state
 // (`dungeon_run = { dungeon, room }`, 1-based). Each room is a NORMAL fight: `start_fight` births
 // it, the ordinary fight driver (combat.ts) plays the turns, and `settle_pending` routes the ended
@@ -204,8 +205,16 @@ const enter_run = async (
   // re-screening here only doubles the fight sim.
   const last = last_enter_ms_by_char.get(character.id) ?? 0
   if (Date.now() - last < ENTER_GRACE_MS) return outcome('waiting', 'recent enter; waiting for the roster')
-  if (!(await safe_travel_to(mover, city.x, city.z))) return outcome('traveling', `walking to the ${city.city} portal`)
-  if (!(await mover.prove_ready(city.x, city.z))) {
+  log_info('dungeon', `[DIAG] ${character.name}: starting safe_travel_to`)
+  const travel_started = Date.now()
+  const travel_ok = await safe_travel_to(mover, city.x, city.z)
+  log_info('dungeon', `[DIAG] ${character.name}: safe_travel_to finished in ${Date.now() - travel_started}ms (ok=${travel_ok})`)
+  if (!travel_ok) return outcome('traveling', `walking to the ${city.city} portal`)
+  log_info('dungeon', `[DIAG] ${character.name}: starting prove_ready`)
+  const prove_started = Date.now()
+  const portal_ready = await mover.prove_ready(city.x, city.z)
+  log_info('dungeon', `[DIAG] ${character.name}: prove_ready finished in ${Date.now() - prove_started}ms (ready=${portal_ready})`)
+  if (!portal_ready) {
     const a = mover.anchor()
     const p = mover.pose()
     // Diagnoses a portal leg the chain will not prove (a stale/poisoned anchor, a wrong world):
@@ -237,6 +246,8 @@ const enter_run = async (
 
   last_enter_ms_by_char.set(character.id, Date.now())
   try {
+    log_info('dungeon', `[DIAG] ${character.name}: sending dungeon.enter transaction`)
+    const enter_started = Date.now()
     const receipt = await ctx.sdk.dungeon.enter({
       character_id: ctx.character_id,
       custody: custody_of(character),
@@ -245,6 +256,7 @@ const enter_run = async (
       key_id: key_item.id,
       merge_sources,
     })
+    log_info('dungeon', `[DIAG] ${character.name}: dungeon.enter returned after ${Date.now() - enter_started}ms`)
     ctx.ledger.append({
       kind: 'dungeon_enter',
       digest: receipt.digest,
@@ -291,12 +303,24 @@ const plan_group_dungeon = (
     // Find MINIMUM seats that clears ALL rooms (key efficiency).
     const max_seats = Math.min(keys, members.length)
     let chosen_seats = 0
+    const previews = new Map<string, ReturnType<typeof score_group>>()
+    const preview_room = (seats: number, ri: number) => {
+      const cache_key = `${seats}:${ri}`
+      const cached = previews.get(cache_key)
+      if (cached) return cached
+      const allies = planning_allies(ctx, character, seats)
+      const started_ms = Date.now()
+      const preview = score_group(character, room_to_mob_group(all_rooms[ri]!), allies, { rounds: DUNGEON_ROUNDS })
+      previews.set(cache_key, preview)
+      log_info('dungeon', `[PERF] ${character.name} ${dk.dungeon} seats=${seats} room=${ri + 1} ${Date.now() - started_ms}ms`)
+      return preview
+    }
     for (let seats = MIN_GROUP_KEYS; seats <= max_seats; seats++) {
       const allies = planning_allies(ctx, character, seats)
       let all_clear = true
       for (let ri = 0; ri < all_rooms.length; ri++) {
         const room = all_rooms[ri]
-        const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
+        const preview = preview_room(seats, ri)
         if (preview.win_rate < MIN_WIN_RATE) {
           all_clear = false
           break
@@ -313,9 +337,9 @@ const plan_group_dungeon = (
       // ("win_rate=100% ... < 80%") that reads as a gating bug rather than the real shortfall.
       const allies = planning_allies(ctx, character, max_seats)
       let failing = 0
-      let preview = score_group(character, room_to_mob_group(all_rooms[0]), allies, { rounds: DUNGEON_ROUNDS })
+      let preview = preview_room(max_seats, 0)
       for (let ri = 0; ri < all_rooms.length; ri++) {
-        const room_preview = score_group(character, room_to_mob_group(all_rooms[ri]), allies, { rounds: DUNGEON_ROUNDS })
+        const room_preview = preview_room(max_seats, ri)
         if (room_preview.win_rate < MIN_WIN_RATE) {
           failing = ri
           preview = room_preview
@@ -334,7 +358,7 @@ const plan_group_dungeon = (
     const allies = planning_allies(ctx, character, chosen_seats)
     for (let ri = 0; ri < all_rooms.length; ri++) {
       const room = all_rooms[ri]
-      const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
+      const preview = preview_room(chosen_seats, ri)
       log_info(
         'dungeon',
         `${character.name}: ${dk.dungeon} room ${ri + 1} group preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, seats=${chosen_seats}, scored=${allies.length + 1}, keys=${keys}`
@@ -344,9 +368,9 @@ const plan_group_dungeon = (
     // the held keys cover enters (more seats only raise the win rate, and nobody idles outside).
     log_info(
       'dungeon',
-      `${character.name}: ${dk.dungeon} clears with ${chosen_seats} seat(s); running it with the whole party (${max_seats} seat(s), ${keys} key(s))`
+      `${character.name}: ${dk.dungeon} clears with ${chosen_seats} seat(s); reserving ${keys - chosen_seats} key(s)`
     )
-    return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats: max_seats })
+    return Object.freeze({ dungeon: dk.dungeon, world: world.world, city: city.city, x: city.x, z: city.z, seats: chosen_seats })
   }
   return null
 }
@@ -389,6 +413,7 @@ export const follower_dungeon_step = async (ctx: ActionContext, mover: Mover): P
   }
 
   if (!group || character.dungeon_run) return false
+  if (group.member_ids && !group.member_ids.includes(character.id)) return false
   if ((character.world ?? ctx.world) !== group.world) return false
   const dk = DUNGEON_KEYS.find((row) => row.dungeon === group.dungeon)
   if (!dk) return false
@@ -453,6 +478,8 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
 
     last_start_ms = Date.now()
     try {
+      log_info('dungeon', `[DIAG] ${character.name}: sending dungeon.start_fight transaction`)
+      const fight_started = Date.now()
       const receipt = await ctx.sdk.dungeon.start_fight({
         character_id: ctx.character_id,
         custody: custody_of(character),
@@ -461,6 +488,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
         mob_types: room.map((row) => row.mob_type),
         access: 0,
       })
+      log_info('dungeon', `[DIAG] ${character.name}: dungeon.start_fight returned after ${Date.now() - fight_started}ms`)
       started = Object.freeze({ dungeon: run.dungeon, room: run.room })
       ctx.ledger.append({ kind: 'dungeon_start', digest: receipt.digest, detail: { dungeon: run.dungeon, room: run.room } })
       log_info('dungeon', `${run.dungeon} room ${run.room} (${room.length} mobs) -> fight ${receipt.fight}`)
@@ -564,18 +592,24 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     // Not committed: commit only when the party can field a group (>= MIN_GROUP_KEYS keys).
     // FIRST: check for an active mastery dungeon quest — it takes priority.
     if (!ctx.party_state || ctx.party_state.members.length < MIN_GROUP_KEYS) return null
+    log_info('dungeon', `[DIAG] ${character.name}: starting plan_mastery_dungeon`)
+    const mastery_started = Date.now()
     const mastery_plan = plan_mastery_dungeon(ctx, character)
+    log_info('dungeon', `[DIAG] ${character.name}: plan_mastery_dungeon finished in ${Date.now() - mastery_started}ms (found=${Boolean(mastery_plan)})`)
     if (mastery_plan) {
-      ctx.party_state.dungeon = Object.freeze({ ...mastery_plan, committed_ms: Date.now() })
+      ctx.party_state.dungeon = Object.freeze({ ...mastery_plan, member_ids: [character.id, ...planning_allies(ctx, character, mastery_plan.seats).map((ally) => ally.id)], committed_ms: Date.now() })
       log_info('dungeon', `${character.name}: committing the party to MASTERY ${mastery_plan.dungeon} (${mastery_plan.seats} seat(s))`)
       const result = await enter_run(ctx, mover, character, mastery_plan.dungeon)
       if (result?.kind === 'entered') entered_group = true
       if (result === null) ctx.party_state.dungeon = null
       return result
     }
+    log_info('dungeon', `[DIAG] ${character.name}: starting plan_group_dungeon`)
+    const group_plan_started = Date.now()
     const plan = plan_group_dungeon(ctx, character)
+    log_info('dungeon', `[DIAG] ${character.name}: plan_group_dungeon finished in ${Date.now() - group_plan_started}ms (found=${Boolean(plan)})`)
     if (!plan) return null
-    ctx.party_state.dungeon = Object.freeze({ ...plan, committed_ms: Date.now() })
+    ctx.party_state.dungeon = Object.freeze({ ...plan, member_ids: [character.id, ...planning_allies(ctx, character, plan.seats).map((ally) => ally.id)], committed_ms: Date.now() })
     log_info('dungeon', `${character.name}: committing the party to ${plan.dungeon} (${plan.seats} seat(s))`)
     const result = await enter_run(ctx, mover, character, plan.dungeon)
     if (result?.kind === 'entered') entered_group = true

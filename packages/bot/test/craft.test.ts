@@ -44,6 +44,7 @@ describe('craft actions type check', () => {
           listings: [],
         }),
         character_id: 'c',
+        party_state: { members: ['c'] },
       }
       const selected = select_craft_target(ctx as never)
       expect(selected === null || !CRAFT_BLACKLIST.has(selected.output_type)).toBe(true)
@@ -346,7 +347,11 @@ describe('select_craft_target prerequisites', () => {
       })),
       listings: [],
     }
-    return { state: () => state, character_id: 'c' }
+    return {
+      state: () => state,
+      character_id: 'c',
+      party_state: { members: ['c'] },
+    }
   }
 
   it('refines an intermediate instead of reporting nothing craftable', () => {
@@ -412,6 +417,7 @@ describe('select_craft_target gear priority', () => {
       listings: [],
     }),
     character_id: 'c',
+    party_state: { members: ['c'] },
   })
 
   /** A recipe and the amounts needed to craft it, merged so two recipes never double-list an input. */
@@ -489,6 +495,7 @@ describe('select_craft_target dungeon-key priority', () => {
       listings: [],
     }),
     character_id: 'c',
+    party_state: { members: ['c'] },
   })
 
   it('refines a key input instead of spending the same staples on xp filler', () => {

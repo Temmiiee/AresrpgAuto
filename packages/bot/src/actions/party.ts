@@ -172,6 +172,8 @@ export type PartyDungeon = Readonly<{
   z: number
   /** members the leader expects to enter (key-holders when it committed) */
   seats: number
+  /** Explicit participants selected by the preview. Undefined for legacy/restarted runs. */
+  member_ids?: readonly string[]
   /** when the leader committed (ms since epoch); bounds how long it waits for the enterers */
   committed_ms: number
 }>

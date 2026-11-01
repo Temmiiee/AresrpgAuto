@@ -22,7 +22,7 @@ import {
 import type { CharacterRow, MobGroupRow, ZoneRow } from '@aresrpg/protocol'
 
 import { catalog_spell_sources, mob_template_of } from '../content/fight_sources.ts'
-import { log_warn } from '../shared/logger.ts'
+import { log_info, log_warn } from '../shared/logger.ts'
 import { plan_turn, plan_turn_party, sim_commands } from './turn_plan.ts'
 
 /** The pool sequential seeding draws from: the first SEED_BATCHES head (five runs) is the classic
@@ -152,7 +152,19 @@ const expected_loot_units = (mobs: readonly FightMobInput[]): number =>
 
 type RunCause = 'win' | 'wipe' | 'timeout'
 
-type SimRun = Readonly<{ won: boolean; turns: number; xp: number; cause: RunCause }>
+type SimRun = Readonly<{
+  won: boolean
+  turns: number
+  xp: number
+  cause: RunCause
+  profile: Readonly<{
+    create_ms: number
+    planner_ms: number
+    apply_ms: number
+    simulate_ms: number
+    player_turns: number
+  }>
+}>
 
 /** Only the character's OWN spells are ever cast by the planner, so the preview hands the twin
  *  just those — not the whole seed catalog. The engine deep-clones sources on every snapshot, and
@@ -178,6 +190,7 @@ const run_once = (
   seed: bigint,
   rounds: number
 ): SimRun => {
+  const create_started = performance.now()
   const fight = create_fight({
     setup: {
       fight_id: 'preview',
@@ -192,6 +205,11 @@ const run_once = (
   })
   fight.apply({ type: 'start', observed_ms: 0n })
   let cp: HydratedFightCheckpoint = fight.state()
+  const create_ms = performance.now() - create_started
+  let planner_ms = 0
+  let apply_ms = 0
+  let simulate_ms = 0
+  let player_turns = 0
   let virtual_ms = 0n
   let turns = 0
   // Seat order is stable (fighters are seeded in setup order), so the party seats are every OTHER
@@ -209,12 +227,19 @@ const run_once = (
     const fighter = cp.contract.fighters[Number(actor)]
     if (fighter && fighter.kind.type === 'player') {
       const party_seats = player_seats.filter((other) => other !== Number(actor))
+      const planner_started = performance.now()
       const plan =
         party_seats.length > 0 ? plan_turn_party(cp, Number(actor), party_seats) : plan_turn(cp, Number(actor))
+      planner_ms += performance.now() - planner_started
+      player_turns += 1
+      const apply_started = performance.now()
       for (const command of sim_commands(plan, actor)) fight.apply(command)
+      apply_ms += performance.now() - apply_started
     }
     virtual_ms += TURN_MIN_MS
+    const simulate_started = performance.now()
     cp = fight.simulate_turn({ observed_ms: virtual_ms }).state
+    simulate_ms += performance.now() - simulate_started
     turns += 1
   }
   const seat = cp.contract.fighters.findIndex(
@@ -222,7 +247,13 @@ const run_once = (
   )
   const xp = cp.contract.ended && seat >= 0 ? Number(xp_award_of(cp, BigInt(seat))) : 0
   const cause: RunCause = !cp.contract.ended ? 'timeout' : cp.contract.winner === 0n ? 'win' : 'wipe'
-  return { won: cause === 'win', turns, xp, cause }
+  return {
+    won: cause === 'win',
+    turns,
+    xp,
+    cause,
+    profile: { create_ms, planner_ms, apply_ms, simulate_ms, player_turns },
+  }
 }
 
 const average = (values: readonly number[]): number =>
@@ -288,6 +319,7 @@ export const score_mobs = (
   options: ScoreOptions = {}
 ): FightScore => {
   if (mobs.length === 0) return ZERO_SCORE
+  const prepare_started = performance.now()
   const members: readonly CharacterRow[] = [character, ...allies]
   const sourced = members.map((member) => Object.freeze({ member, source: player_source_of(member) }))
   const players: readonly FightPlayerInput[] = sourced.map(({ member, source }) => player_input(member, source))
@@ -296,13 +328,26 @@ export const score_mobs = (
     sourced.flatMap(({ source }) => Object.entries(preview_spells(source)))
   )
   const rounds = options.rounds ?? roam_rounds(mobs.length)
+  const prepare_ms = performance.now() - prepare_started
   const pinned = options.seeds
   const runs: SimRun[] = []
   let sampled_wins = 0
+  let total_create_ms = 0
+  let total_planner_ms = 0
+  let total_apply_ms = 0
+  let total_simulate_ms = 0
+  let total_player_turns = 0
+  let total_actor_turns = 0
   try {
     for (const seed of pinned ?? PREVIEW_SEED_POOL) {
       const run = run_once(players, mobs, character.id, spells, seed, rounds)
       runs.push(run)
+      total_create_ms += run.profile.create_ms
+      total_planner_ms += run.profile.planner_ms
+      total_apply_ms += run.profile.apply_ms
+      total_simulate_ms += run.profile.simulate_ms
+      total_player_turns += run.profile.player_turns
+      total_actor_turns += run.turns
       if (run.won) sampled_wins += 1
       if (pinned === undefined && !keep_sampling(runs.length, sampled_wins)) break
     }
@@ -310,6 +355,18 @@ export const score_mobs = (
     const detail = error instanceof Error ? error.message : String(error)
     log_warn('preview', `could not simulate a group: ${detail}`)
     return ZERO_SCORE
+  }
+  if (process.env.BOT_PROFILE_PREVIEW) {
+    log_info(
+      'preview',
+      `[PROFILE-PREVIEW] mobs=${mobs.length} players=${players.length} rounds=${rounds} ` +
+        `seeds=${runs.length} actor_turns=${total_actor_turns} player_turns=${total_player_turns} ` +
+        `prepare=${prepare_ms.toFixed(1)}ms create=${total_create_ms.toFixed(1)}ms ` +
+        `planner=${total_planner_ms.toFixed(1)}ms apply=${total_apply_ms.toFixed(1)}ms ` +
+        `simulate=${total_simulate_ms.toFixed(1)}ms total=${(
+          prepare_ms + total_create_ms + total_planner_ms + total_apply_ms + total_simulate_ms
+        ).toFixed(1)}ms`,
+    )
   }
   const wins = runs.filter((run) => run.won)
   const counted = wins.length > 0 ? wins : runs

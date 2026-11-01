@@ -8,6 +8,7 @@ import type { CharacterRow, EquippedItem, ItemRow } from '@aresrpg/protocol'
 
 import { auto_equip_party, character_affinity, equip_plan, item_power, item_stat_offset, plan_loadout } from '../src/actions/equip.ts'
 import { initial_game_state, type GameState } from '../src/state/store.ts'
+import { create_serial_queue } from '../src/actions/context.ts'
 
 const SHIFT = item_stat_center
 
@@ -76,6 +77,8 @@ const context = (game: GameState, equip: unknown): unknown =>
   ({
     state: () => game,
     character_id: 'c1',
+    equipment_queue: create_serial_queue(),
+    party_state: { members: ['c1'] },
     sdk: { character: { equip } },
     ledger: { append: () => {} },
   }) as never

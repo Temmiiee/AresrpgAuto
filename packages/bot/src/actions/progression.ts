@@ -219,6 +219,7 @@ export const stat_weights = (
     }, 0)
   const current_utility = utility_of(character)
   const profile = profile_of(character)
+  const shares = kit_element_shares(character)
   const weights = {} as Record<CharacteristicName, number>
   for (const stat of characteristic_names) {
     const value = Math.max(0, Number(character[stat] ?? 0))
@@ -233,6 +234,12 @@ export const stat_weights = (
     // Move XP is multiplied by (100 + wisdom)/100. Its value fades at the level cap.
     if (stat === 'wisdom' && character.level < max_level)
       marginal += Math.max(0.05, current_utility * 0.01 * profile.xp * (1 - character.level / (max_level * 1.2)))
+
+    // Priorité offensive selon les dégâts élémentaires réellement disponibles.
+    const offensive_element = ELEMENTS.find((element) => STAT_OF_ELEMENT[element] === stat)
+    if (offensive_element)
+      marginal += current_utility * profile.damage * shares[offensive_element] * 0.02
+
     weights[stat] = marginal
   }
   return Object.freeze(weights)

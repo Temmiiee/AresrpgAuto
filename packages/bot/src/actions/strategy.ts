@@ -201,6 +201,7 @@ export const plan_gear_targets = (
   const craft_by_slot = new Map<string, (typeof craft_targets)[number]>()
   for (const target of craft_targets) craft_by_slot.set(`${target.character_id}\u0000${target.slot}`, target)
   const drop_targets = plan_gear_goals(characters, state, gear_drop_candidates)
+    .filter((goal) => !recipes_by_output[goal.output_type])
     .filter((goal) => {
       const craft = craft_by_slot.get(`${goal.character_id}\u0000${goal.slot}`)
       return !craft || goal.gain > craft.gain || (goal.output_type === craft.item_type && !craft.ready)

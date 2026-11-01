@@ -65,6 +65,7 @@ const available_allies = (
     .filter((id) => id !== leader.id)
     .map((id) => state.characters.find((c) => c.id === id))
     .filter((c): c is CharacterRow => c !== undefined && c.world === world_name)
+    .sort((left, right) => right.level - left.level)
     .slice(0, seats - 1)
 }
 
