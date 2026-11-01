@@ -205,15 +205,15 @@ const enter_run = async (
   // re-screening here only doubles the fight sim.
   const last = last_enter_ms_by_char.get(character.id) ?? 0
   if (Date.now() - last < ENTER_GRACE_MS) return outcome('waiting', 'recent enter; waiting for the roster')
-  log_info('dungeon', `[DIAG] ${character.name}: starting safe_travel_to`)
+  log_debug('dungeon', `[DIAG] ${character.name}: starting safe_travel_to`)
   const travel_started = Date.now()
   const travel_ok = await safe_travel_to(mover, city.x, city.z)
-  log_info('dungeon', `[DIAG] ${character.name}: safe_travel_to finished in ${Date.now() - travel_started}ms (ok=${travel_ok})`)
+  log_debug('dungeon', `[DIAG] ${character.name}: safe_travel_to finished in ${Date.now() - travel_started}ms (ok=${travel_ok})`)
   if (!travel_ok) return outcome('traveling', `walking to the ${city.city} portal`)
-  log_info('dungeon', `[DIAG] ${character.name}: starting prove_ready`)
+  log_debug('dungeon', `[DIAG] ${character.name}: starting prove_ready`)
   const prove_started = Date.now()
   const portal_ready = await mover.prove_ready(city.x, city.z)
-  log_info('dungeon', `[DIAG] ${character.name}: prove_ready finished in ${Date.now() - prove_started}ms (ready=${portal_ready})`)
+  log_debug('dungeon', `[DIAG] ${character.name}: prove_ready finished in ${Date.now() - prove_started}ms (ready=${portal_ready})`)
   if (!portal_ready) {
     const a = mover.anchor()
     const p = mover.pose()
@@ -246,7 +246,7 @@ const enter_run = async (
 
   last_enter_ms_by_char.set(character.id, Date.now())
   try {
-    log_info('dungeon', `[DIAG] ${character.name}: sending dungeon.enter transaction`)
+    log_debug('dungeon', `[DIAG] ${character.name}: sending dungeon.enter transaction`)
     const enter_started = Date.now()
     const receipt = await ctx.sdk.dungeon.enter({
       character_id: ctx.character_id,
@@ -256,7 +256,7 @@ const enter_run = async (
       key_id: key_item.id,
       merge_sources,
     })
-    log_info('dungeon', `[DIAG] ${character.name}: dungeon.enter returned after ${Date.now() - enter_started}ms`)
+    log_debug('dungeon', `[DIAG] ${character.name}: dungeon.enter returned after ${Date.now() - enter_started}ms`)
     ctx.ledger.append({
       kind: 'dungeon_enter',
       digest: receipt.digest,
@@ -478,7 +478,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
 
     last_start_ms = Date.now()
     try {
-      log_info('dungeon', `[DIAG] ${character.name}: sending dungeon.start_fight transaction`)
+      log_debug('dungeon', `[DIAG] ${character.name}: sending dungeon.start_fight transaction`)
       const fight_started = Date.now()
       const receipt = await ctx.sdk.dungeon.start_fight({
         character_id: ctx.character_id,
@@ -488,7 +488,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
         mob_types: room.map((row) => row.mob_type),
         access: 0,
       })
-      log_info('dungeon', `[DIAG] ${character.name}: dungeon.start_fight returned after ${Date.now() - fight_started}ms`)
+      log_debug('dungeon', `[DIAG] ${character.name}: dungeon.start_fight returned after ${Date.now() - fight_started}ms`)
       started = Object.freeze({ dungeon: run.dungeon, room: run.room })
       ctx.ledger.append({ kind: 'dungeon_start', digest: receipt.digest, detail: { dungeon: run.dungeon, room: run.room } })
       log_info('dungeon', `${run.dungeon} room ${run.room} (${room.length} mobs) -> fight ${receipt.fight}`)
@@ -592,10 +592,10 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     // Not committed: commit only when the party can field a group (>= MIN_GROUP_KEYS keys).
     // FIRST: check for an active mastery dungeon quest — it takes priority.
     if (!ctx.party_state || ctx.party_state.members.length < MIN_GROUP_KEYS) return null
-    log_info('dungeon', `[DIAG] ${character.name}: starting plan_mastery_dungeon`)
+    log_debug('dungeon', `[DIAG] ${character.name}: starting plan_mastery_dungeon`)
     const mastery_started = Date.now()
     const mastery_plan = plan_mastery_dungeon(ctx, character)
-    log_info('dungeon', `[DIAG] ${character.name}: plan_mastery_dungeon finished in ${Date.now() - mastery_started}ms (found=${Boolean(mastery_plan)})`)
+    log_debug('dungeon', `[DIAG] ${character.name}: plan_mastery_dungeon finished in ${Date.now() - mastery_started}ms (found=${Boolean(mastery_plan)})`)
     if (mastery_plan) {
       ctx.party_state.dungeon = Object.freeze({ ...mastery_plan, member_ids: [character.id, ...planning_allies(ctx, character, mastery_plan.seats).map((ally) => ally.id)], committed_ms: Date.now() })
       log_info('dungeon', `${character.name}: committing the party to MASTERY ${mastery_plan.dungeon} (${mastery_plan.seats} seat(s))`)
@@ -604,10 +604,10 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       if (result === null) ctx.party_state.dungeon = null
       return result
     }
-    log_info('dungeon', `[DIAG] ${character.name}: starting plan_group_dungeon`)
+    log_debug('dungeon', `[DIAG] ${character.name}: starting plan_group_dungeon`)
     const group_plan_started = Date.now()
     const plan = plan_group_dungeon(ctx, character)
-    log_info('dungeon', `[DIAG] ${character.name}: plan_group_dungeon finished in ${Date.now() - group_plan_started}ms (found=${Boolean(plan)})`)
+    log_debug('dungeon', `[DIAG] ${character.name}: plan_group_dungeon finished in ${Date.now() - group_plan_started}ms (found=${Boolean(plan)})`)
     if (!plan) return null
     ctx.party_state.dungeon = Object.freeze({ ...plan, member_ids: [character.id, ...planning_allies(ctx, character, plan.seats).map((ally) => ally.id)], committed_ms: Date.now() })
     log_info('dungeon', `${character.name}: committing the party to ${plan.dungeon} (${plan.seats} seat(s))`)

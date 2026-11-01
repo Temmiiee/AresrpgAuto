@@ -369,6 +369,10 @@ never disagree with a live decision about what is winnable:
 | `ARES_CHARACTER_ID` | – | pin one character; otherwise the whole roster is used |
 | `ARES_WORLD` | `nauvis` | fallback world |
 | `BOT_STATE_DIR` | `.state` | ledger + pending-transaction storage |
+| `BOT_LOG_LEVEL` | `info` | log verbosity: `silent`, `error`, `warn`, `info`, `debug`, `trace` (read in `shared/logger.ts`) |
+| `BOT_LOG_SCOPES` | – | per-scope override, e.g. `dungeon=debug,trace=trace,party=warn` |
+| `BOT_DEBUG` | – | legacy: same as `BOT_LOG_LEVEL=debug` when `BOT_LOG_LEVEL` is unset |
+| `BOT_PROFILE_PREVIEW` | – | print `[PROFILE-PREVIEW]` planner timings (independent of the log level) |
 
 ## Vendoring
 

@@ -29,7 +29,7 @@ import type { CharacterRow, ClientPacket, ServerPacket } from '@aresrpg/protocol
 
 import { create_server_link, type ServerLink, type ServerLinkStatus } from './server_link.ts'
 import { config, GATHERING_JOBS, type ChoreRole, type PlayToggles } from '../config.ts'
-import { log_info, log_warn, log_error, log_debug, sleep } from '../shared/logger.ts'
+import { log_info, log_warn, log_error, log_debug, log_trace, sleep } from '../shared/logger.ts'
 import { notify } from '../shared/discord_notify.ts'
 import { create_bot_sdk } from '../auth/sdk_client.ts'
 import { create_ledger } from '../chain/ledger.ts'
@@ -744,13 +744,13 @@ export const play_loop = async (
     operation: () => Promise<T>,
   ): Promise<T> => {
     const started = Date.now()
-    log_info('trace', `${character}: >>> ${step}`)
+    log_trace('trace', () => `${character}: >>> ${step}`)
 
     try {
       const result = await operation()
-      log_info(
+      log_trace(
         'trace',
-        `${character}: <<< ${step} (${Date.now() - started}ms)`,
+        () => `${character}: <<< ${step} (${Date.now() - started}ms)`,
       )
       return result
     } catch (error) {
