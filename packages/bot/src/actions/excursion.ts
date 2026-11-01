@@ -31,6 +31,7 @@ import {
 } from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
 import { select_window_resource_packs, unavailable_item_ids } from '../state/selectors.ts'
+import { GATHER_DEMAND_STOCK } from './craft.ts'
 import type { GameState } from '../state/store.ts'
 import type { PartyState } from './party.ts'
 
@@ -209,10 +210,18 @@ export const gather_needs = (
       const level = job_level_from_xp(Number(character.jobs?.[job] ?? '0'))
       const items = unlocked_items(job, level, world)
       if (items.size === 0) continue
+      const unavailable = unavailable_item_ids(state)
+      const stock_by_type = new Map<string, number>()
+      for (const item of state.inventory) {
+        if (unavailable.has(item.id)) continue
+        stock_by_type.set(item.item_type, (stock_by_type.get(item.item_type) ?? 0) + Number(item.amount))
+      }
       const present = packs.some(
-        ({ pack }) =>
+        ({ pack, zone }) =>
+          zone.world === world &&
           items.has(pack.item_type) &&
-          Math.max(Math.abs(pack.x - pose.x), Math.abs(pack.z - pose.z)) <= radius
+          (stock_by_type.get(pack.item_type) ?? 0) < GATHER_DEMAND_STOCK &&
+          Math.abs(pack.x - pose.x) + Math.abs(pack.z - pose.z) <= radius
       )
       if (present) {
         satisfied = true
