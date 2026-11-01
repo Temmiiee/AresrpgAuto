@@ -393,7 +393,7 @@ export const viable_ranking = (
   party_size: number = 1,
   wanted_mobs: ReadonlySet<string> = EMPTY_WANTED
 ): readonly ScoredGroup[] => {
-  const loot_weight = party_size > 1 ? party_size * 0.5 : 0 // 1.0 for duo, 1.5 for trio, 2.0 for 4
+  const loot_weight = party_size > 1 ? party_size * 0.5 : 0 // scales with the actual group size
   return scored
     .filter(({ score }) => score.win_rate >= MIN_WIN_RATE)
     .sort(

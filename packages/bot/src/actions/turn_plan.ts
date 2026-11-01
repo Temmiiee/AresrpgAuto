@@ -327,6 +327,18 @@ const tactical_profile = (
     }
   }
 
+  // Yogan is a ranged archer: value useful repositioning and area control while retaining the
+  // damage planner as the baseline so support actions do not displace stronger attacks.
+  if (name.includes('yogan')) {
+    return {
+      healing: 0.75,
+      buff: 0.9,
+      control: 1.15,
+      zone: 1.35,
+      mobility: 1.3,
+    }
+  }
+
   if (name.includes('yajin')) {
     return {
       healing: 1.0,
@@ -340,10 +352,10 @@ const tactical_profile = (
   if (name.includes('mori')) {
     return {
       healing: 1.6,
-      buff: 1.0,
-      control: 1.4,
-      zone: 1.2,
-      mobility: 0.8,
+      buff: 1.1,
+      control: 1.5,
+      zone: 1.35,
+      mobility: 0.9,
     }
   }
 

@@ -1,6 +1,6 @@
 // session – multi-character play loop.
 //
-// The bot drives up to 4 characters over ONE authenticated WebSocket connection. This is not an
+// The bot drives up to 5 characters over ONE authenticated WebSocket connection. This is not an
 // optimization: the realtime server seats at most ONE socket per address (`promote()` in the
 // server's index.ts closes the previous seat with `REPLACED`/`ALREADY_CONNECTED`), and it tracks
 // the whole capped roster on that single connection (`player.ts` -> `allowed_characters`,
@@ -285,8 +285,9 @@ export const play_loop = async (
     const live_ids = new Set(game_state.inventory.map((item) => item.id))
     for (const id of party_craft_burned) if (!live_ids.has(id)) party_craft_burned.delete(id)
   }
-  /** The shared group-fight rendezvous, filled in once the roster is known. */
-  const party_state = create_party()
+  /** One rendezvous state per configured team; claims and transactions remain socket-wide. */
+  const party_states = new Map<string, PartyState>()
+  const party_state_by_character = new Map<string, PartyState>()
 
   // ── party-wide Discord digest window ────────────────────────────────
   // A single accumulator for the WHOLE party, separate from each runtime's per-character console
@@ -370,34 +371,65 @@ export const play_loop = async (
     return
   }
 
-  // Select up to config.party_size characters. The configured party order is preferred; every other
-  // owned character follows, so a renamed/missing character still yields a full, stable party.
-  const knownNameOrder = ['omori', 'memorien', 'llokan', 'archero', 'archerro']
-  const rank_of = (name: string): number => {
-    const index = knownNameOrder.indexOf(name.toLowerCase())
-    return index < 0 ? knownNameOrder.length : index
+  // Keep the current four in their established order, then prefer a Tomoda as the fifth member.
+  // Other owned characters follow deterministically, so the new support joins without requiring a
+  // rename. The server roster has a six-character cap; config.party_size is capped at five.
+  const knownNameOrder = ['omori', 'memorien', 'llokan', 'archero']
+  const rank_of = (character: CharacterRow): number => {
+    const name = character.name.toLowerCase()
+    const index = knownNameOrder.indexOf(name)
+    if (index >= 0) return index
+    if (character.classe.toLowerCase() === 'tomoda') return knownNameOrder.length
+    if (name === 'archerro') return knownNameOrder.length + 1
+    return knownNameOrder.length + 2
   }
   const ordered = game_state.characters
     .slice()
-    .sort((a, b) => rank_of(a.name) - rank_of(b.name) || a.name.localeCompare(b.name))
-  const party = ordered.slice(0, config.party_size)
-  const leader = party.find((c) => c.name.toLowerCase() === config.leader_name.toLowerCase()) ?? party[0]
+    .sort((a, b) => rank_of(a) - rank_of(b) || a.name.localeCompare(b.name))
+  const explicit_names = config.teams?.flat() ?? null
+  const requested = explicit_names
+    ? explicit_names.flatMap((name) => {
+        const character = ordered.find((row) => row.name.toLowerCase() === name)
+        if (!character) log_warn('party', `BOT_TEAMS character "${name}" is not in the account roster`)
+        return character ? [character] : []
+      })
+    : ordered
+  const party = requested.slice(0, config.party_size)
+  if (requested.length > config.party_size)
+    log_warn('party', `BOT_TEAMS asks for ${requested.length} characters but BOT_PARTY_SIZE permits ${config.party_size}; trailing members are omitted`)
+  const first_team_leader = config.teams?.[0]?.[0]
+  const leader = party.find((c) => c.name.toLowerCase() === (first_team_leader ?? config.leader_name).toLowerCase()) ?? party[0]
   if (!leader) {
     log_error('session', 'no characters available to drive')
     session.dispose()
     return
   }
-  if (leader.name.toLowerCase() !== config.leader_name.toLowerCase())
+  if (!config.teams && leader.name.toLowerCase() !== config.leader_name.toLowerCase())
     log_warn('session', `configured leader "${config.leader_name}" not in the party — ${leader.name} leads instead`)
 
   // Compute effective level: the party's maximum character level
   const effectiveLevel = party.length > 0 ? Math.max(...party.map((c) => c.level)) : 0
 
-  // The group-fight rendezvous every character in the party shares.
-  party_state.leader_id = leader.id
-  party_state.members = Object.freeze(party.map((c) => c.id))
+  // A default one-team setup preserves existing behavior. Explicit BOT_TEAMS partitions the
+  // roster into independently coordinated squads; each squad owns its rendezvous/dungeon state.
+  const team_rows = config.teams
+    ? config.teams.map((names) => names.flatMap((name) => {
+        const row = party.find((c) => c.name.toLowerCase() === name)
+        return row ? [row] : []
+      })).filter((rows) => rows.length > 0)
+    : [party]
+  team_rows.forEach((rows, index) => {
+    const team_leader = rows.find((row) => row.name.toLowerCase() === (config.teams?.[index]?.[0] ?? config.leader_name).toLowerCase()) ?? rows[0]!
+    const state = create_party()
+    state.leader_id = team_leader.id
+    state.members = Object.freeze(rows.map((row) => row.id))
+    const key = `team-${index + 1}`
+    party_states.set(key, state)
+    for (const row of rows) party_state_by_character.set(row.id, state)
+    log_info('party', `${key}: leader=${team_leader.name} members=${rows.map((row) => row.name).join(', ')}`)
+  })
 
-  party_label = `lvl ${effectiveLevel} · ${party.map((c) => c.name).join(', ')}`
+  party_label = `lvl ${effectiveLevel} · ${team_rows.map((rows, i) => `team ${i + 1}: ${rows.map((c) => c.name).join(', ')}`).join(' | ')}`
   log_info(
     'session',
     `party: leader=${leader.name} members=${party.length} group=${toggles.group} — effective_lvl=${effectiveLevel}`
@@ -431,14 +463,11 @@ export const play_loop = async (
   // ── create per-character runtimes (all on the shared socket) ────────
   const runtimes: CharRuntime[] = []
 
-  // The party's home world — where the group actually plays — captured once. The cross-world detacher
-  // must return HERE and treat every other world as the trip target. Using the detacher's own current
-  // world instead would invert the trip after a restart mid-journey (it would be left in the target
-  // world and mistake that for home). The leader's world is authoritative; config.world is the fallback.
-  const home_world = leader.world ?? config.world ?? WORLD_FALLBACK
-
   for (const character of party) {
     const world = character.world ?? config.world ?? WORLD_FALLBACK
+    const team_state = party_state_by_character.get(character.id)!
+    // Cross-world trips return to this team's leader world, including after a restart mid-trip.
+    const home_world = party.find((row) => row.id === team_state.leader_id)?.world ?? config.world ?? WORLD_FALLBACK
 
     const ctx: ActionContext = {
       sdk: bot,
@@ -452,9 +481,9 @@ export const play_loop = async (
       notify,
       fight_runtimes,
       claims,
-      party_state,
+      party_state: party_state_by_character.get(character.id)!,
       dungeon_blacklist: new Map<string, number>(),
-      strategy: () => strategy_ref,
+      strategy: () => strategy_ref.get(party_state_by_character.get(character.id)!) ?? null,
     }
 
     const mover = create_mover(ctx)
@@ -466,7 +495,9 @@ export const play_loop = async (
     // character owns ONE gathering job, so the party covers every gathering leaf and craft trade.
     const chore: ChoreRole = config.chore_plan[character.name.toLowerCase()] ?? Object.freeze({ kind: 'none' })
     log_info('session', `${character.name}: chore = ${describe_chore(chore)}`)
-    if (chore.kind === 'none')
+    if (chore.kind === 'none' && character.classe.toLowerCase() === 'tomoda')
+      log_info('session', `${character.name}: Tomoda is left chore-free to focus on party support in combat`)
+    else if (chore.kind === 'none')
       log_warn('session', `${character.name}: no chore assignment — this character will only fight`)
 
     runtimes.push({
@@ -545,7 +576,7 @@ export const play_loop = async (
   // `strategy_loop` and read by the roam and the engage. One mutable ref shared by every character's
   // ctx: `farm.distance` is where the party should stand, `wanted_mobs` biases the engage toward
   // families whose loot carries a wanted upgrade.
-  let strategy_ref: Strategy | null = null
+  const strategy_ref = new Map<PartyState, Strategy>()
 
   // ── gear craft goals ────────────────────────────────────────────────
   // The craft planner's priority list: the best CRAFTABLE weapon/armour/accessory for each character at
@@ -705,6 +736,15 @@ export const play_loop = async (
   const pass_diag = new Map<string, string>()
   const run_pass = async (rt: CharRuntime): Promise<number> => {
     const { ctx, mover, roamer, character } = rt
+    const party_state = ctx.party_state
+    const strategy_plan = strategy_ref.get(party_state) ?? null
+    const team_level = Math.max(
+      0,
+      ...party_state.members.flatMap((id) => {
+        const row = game_state.characters.find((candidate) => candidate.id === id)
+        return row ? [row.level] : []
+      })
+    )
 
     // Re-read the character from the latest state
     const current = game_state.characters.find((c) => c.id === character.id)
@@ -958,11 +998,11 @@ export const play_loop = async (
       if (is_leader && toggles.roam) {
         const roamed = await roamer.roam_once(
           mover,
-          effectiveLevel,
+          team_level,
           PARTY_RADIUS,
           window_viable(party_state),
-          strategy_ref?.farm?.distance ?? null,
-          strategy_ref?.loot_focus ?? null
+          strategy_plan?.farm?.distance ?? null,
+          strategy_plan?.loot_focus ?? null
         )
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
@@ -1038,11 +1078,11 @@ export const play_loop = async (
       if (!group_mode && toggles.roam) {
         const roamed = await roamer.roam_once(
           mover,
-          effectiveLevel,
+          team_level,
           undefined,
           undefined,
-          strategy_ref?.farm?.distance ?? null,
-          strategy_ref?.loot_focus ?? null
+          strategy_plan?.farm?.distance ?? null,
+          strategy_plan?.loot_focus ?? null
         )
         if (roamed.kind === 'roamed') log_info('session', `${character.name}: roamed — ${roamed.detail}`)
         if (
@@ -1087,6 +1127,7 @@ export const play_loop = async (
    *  to the party's neighbourhood so a follower never strands itself chasing a node across zones. */
   const run_chore = async (rt: CharRuntime, local_only = false): Promise<boolean> => {
     const { ctx, mover, chore, character } = rt
+    const party_state = ctx.party_state
     let acted = false
 
     // Which gathering job this pass should harvest, if any. `gather_all` and `gather_all_craft`
@@ -1300,17 +1341,12 @@ export const play_loop = async (
   }
 
   /** The periodic strategy brain. Every `BOT_STRATEGY_INTERVAL_MS` it re-derives, from the FULL seed
-   *  content and the current party, the global farm distance and the gear acquisition routes, logs the
-   *  verdict, and publishes it in `strategy_ref` for the roam (band) and the engage (wanted mobs). The
+   *  content and each team, the farm distance and gear acquisition routes, logs the verdict, and
+   *  publishes a team-local hint for roam (band) and engage (wanted mobs). The
    *  first pass runs immediately so the very first roam already has a target; a failed pass leaves the
    *  previous plan in place rather than clearing it. */
   const strategy_loop = async (rts: readonly CharRuntime[]): Promise<void> => {
     if (!config.strategy) return
-    const party_rows = (): readonly CharacterRow[] =>
-      rts.flatMap((rt) => {
-        const row = game_state.characters.find((c) => c.id === rt.character.id)
-        return row ? [row] : []
-      })
     // Don't slam `compute_strategy` on the very first tick: let the character loops land their
     // first actions (settle, chore, engage) before the brain burns CPU on full-seed simulation.
     // Subsequent passes run on the configured interval.
@@ -1318,14 +1354,21 @@ export const play_loop = async (
     while (!stopped) {
       let ran = false
       try {
-        const rows = party_rows()
-        if (rows.length > 0) {
+        for (const state of party_states.values()) {
+          const members = rts.filter((rt) => rt.ctx.party_state === state)
+          const rows = members.flatMap((rt) => {
+            const row = game_state.characters.find((c) => c.id === rt.character.id)
+            return row ? [row] : []
+          })
+          if (rows.length === 0) continue
           const started_ms = Date.now()
           const plan = compute_strategy(rows, game_state, {
-            dungeon_blacklist: runtimes[0]?.ctx.dungeon_blacklist,
+            party_level: Math.max(...rows.map((row) => row.level)),
+            dungeon_blacklist: members[0]?.ctx.dungeon_blacklist,
             extra_outputs: current_tool_goals(),
           })
-          strategy_ref = plan
+          strategy_ref.set(state, plan)
+          log_info('strategy', `${state.members.length > 1 ? 'team' : 'solo'} [${rows.map((row) => row.name).join(', ')}]`)
           for (const line of describe_strategy(plan)) log_info('strategy', line)
           log_info('strategy', `pass complete in ${Date.now() - started_ms}ms`)
           ran = true

@@ -102,7 +102,7 @@ export type ActionContext = Readonly<{
   fight_runtimes: FightRuntimeStore
   /** the cross-character live-group claims, so the party never double-engages one group */
   claims: GroupClaims
-  /** shared party state for dungeon/group coordination */
+  /** shared state for this team's dungeon/group coordination */
   party_state: PartyState
   /** session-scoped parked dungeon keys: key -> retry-after epoch ms. Shared by the dungeon runner
    *  (which parks a key whose first room previews as unwinnable) and the key crafter (which skips a

@@ -29,7 +29,7 @@ if (-not $NoKill) {
 }
 
 # 2. Runtime environment (also present in .env; explicit here so the group loop is unambiguous).
-$env:BOT_PARTY_SIZE = '4'
+$env:BOT_PARTY_SIZE = '5'
 $env:BOT_GROUP = 'true'
 
 # 3. Launch detached, capturing both streams to the state dir.

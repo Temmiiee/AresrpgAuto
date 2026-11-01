@@ -93,7 +93,7 @@ bun test
 # run the bot (from the repo root)
 bun run bot
 
-# drive a party of 4 (BOT_PARTY_SIZE, 1..4)
+# drive a party of 5 (BOT_PARTY_SIZE, 1..5)
 ./farm4.ps1
 
 # verify the vendored tree matches ../aresrpg
@@ -162,6 +162,16 @@ gets a startup message, exactly ONE party-wide digest per `BOT_DIGEST_MINUTES` (
 disables it), a fatal-crash message, and the zkLogin sign-in link — no other chatter.
 
 ## Group fights (`actions/party.ts`)
+
+`BOT_TEAMS` optionally partitions the driven roster into independent coordinated squads. Each JSON
+array is one squad and its first character is the leader; each squad has separate rendezvous,
+dungeon, excursion and strategy state, while the websocket, live-group claims, equipment pool and
+transaction signer remain shared. This lets squads fight different live groups and perform their
+per-character chores concurrently without opening a second socket for the same account. Keep the
+total named characters within `BOT_PARTY_SIZE`; an absent team member is logged and skipped. With no
+`BOT_TEAMS`, the established single-party behavior and `BOT_LEADER` setting are unchanged. Set
+`BOT_GROUP=false` to make every selected character fight independently instead of forming the
+configured squads.
 
 The chain opens a PvM fight when the leader engages and only admits allies while the fight is in
 placement (round 0). Placement starts at engage and force-starts `PLACEMENT_FORCE_MS` (60 s) later,
@@ -335,8 +345,9 @@ never disagree with a live decision about what is winnable:
 | `ENOKI_LOGIN_TIMEOUT_MS` | `1800000` | how long the sign-in page waits (30 min) |
 | `BOT_GATHER` / `BOT_FIGHT` / `BOT_ROAM` / `BOT_CRAFT` | all `true` | play toggles |
 | `BOT_GROUP` | `true` | fight as ONE party: the leader engages and every partner joins the same fight |
+| `BOT_TEAMS` | – | optional JSON array of character-name arrays; first name leads each independent team, e.g. `[["tomoda","mori"],["yogan","memorien","llokan"]]` |
 | `BOT_CROSS_WORLD` | `true` | let the cross-world gatherer periodically detach |
-| `BOT_PARTY_SIZE` | `4` | characters driven at once (1..4), all on one socket |
+| `BOT_PARTY_SIZE` | `5` | characters driven at once (1..5), all on one socket |
 | `BOT_LEADER` | `omori` | character name that opens the party's shared fights |
 | `BOT_CHORE_PLAN` | default roster | JSON map of character name → `"craft"` / `"none"` / `"gather_all"` / `"gather_all_craft"` / `"FARMER"` \| `"HERBALIST"` \| `"MINER"` / `{"kind":"gather_craft","job":"…"}`; default is every character gathers AND crafts |
 | `BOT_CHORE_INTERVAL_MS` | `300000` | forced chore floor before an engage (0 disables) |

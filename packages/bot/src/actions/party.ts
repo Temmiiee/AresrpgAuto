@@ -1,4 +1,4 @@
-// The party coordinator: the shared state that lets up to four characters fight as ONE group.
+// The party coordinator: the shared state that lets up to five bot characters fight as ONE group.
 //
 // The chain opens a PvM fight when the leader engages, and it only admits allies while the fight is
 // in placement (round 0). Placement start is stamped at engage and the fight force-starts

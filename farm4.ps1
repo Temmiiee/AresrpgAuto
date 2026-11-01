@@ -11,9 +11,9 @@
 # (combat EOutOfRange / craft EInputShort). This script therefore stops any already-running bot
 # before launching, so re-running it is always a clean restart.
 #
-# Usage:  ./farm4.ps1            # defaults to 4 characters
+# Usage:  ./farm4.ps1            # defaults to 5 characters (including a Tomoda if present)
 #         ./farm4.ps1 -partySize 2
-param([int]$partySize = 4)
+param([int]$partySize = 5)
 
 Set-Location $PSScriptRoot
 

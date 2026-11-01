@@ -31,6 +31,22 @@ const env_int = (raw: string | undefined): number | null => {
   return parsed
 }
 
+/** Optional combat/farm teams. Each array lists character names in order; its first member leads. */
+const parse_teams = (raw: string | undefined): readonly (readonly string[])[] | null => {
+  if (raw === undefined || raw.trim() === '') return null
+  const parsed = JSON.parse(raw) as unknown
+  if (!Array.isArray(parsed) || parsed.length < 2)
+    throw new Error('BOT_TEAMS must be a JSON array with at least two character arrays')
+  const teams = parsed.map((team, index) => {
+    if (!Array.isArray(team) || team.length === 0 || team.some((name) => typeof name !== 'string' || !name.trim()))
+      throw new Error(`BOT_TEAMS team ${index + 1} must be a non-empty array of character names`)
+    return Object.freeze(team.map((name: string) => name.trim().toLowerCase()))
+  })
+  const names = teams.flat()
+  if (new Set(names).size !== names.length) throw new Error('BOT_TEAMS cannot assign a character to multiple teams')
+  return Object.freeze(teams)
+}
+
 /** What a character does with its non-combat time.
  *  - `craft`        rotates through every crafting job (a pure levelling crafter);
  *  - `gather`       harvests ONLY the assigned gathering job, so the party covers every gatherer slot;
@@ -115,6 +131,8 @@ export type BotConfig = Readonly<{
   state_dir: string
   /** maximum number of characters to drive simultaneously over the one shared WebSocket */
   party_size: number
+  /** optional independent group-fight teams; the first name in each team is its leader */
+  teams: readonly (readonly string[])[] | null
   /** per-character chore assignment (gather a single job / rotate all crafting jobs / none) */
   chore_plan: ChorePlan
   /** how long a character may go with no chore before its pass runs one BEFORE staging another
@@ -173,7 +191,10 @@ export const config: BotConfig = Object.freeze({
   // loop responsive without meaningfully raising the pass rate over a five-second beat.
   idle_sleep_ms: env_int(process.env.BOT_IDLE_SLEEP_MS) ?? 3_000,
   state_dir: process.env.BOT_STATE_DIR ?? '.state',
-  party_size: Math.min(Math.max(env_int(process.env.BOT_PARTY_SIZE) ?? 4, 1), 4),
+  // The realtime roster supports six and every current combat board has six player start cells.
+  // Default to five so a newly-created Tomoda joins the existing four-character farm team.
+  party_size: Math.min(Math.max(env_int(process.env.BOT_PARTY_SIZE) ?? 5, 1), 5),
+  teams: parse_teams(process.env.BOT_TEAMS),
   chore_plan: parse_chore_plan(process.env.BOT_CHORE_PLAN),
   chore_interval_ms: Math.max(env_int(process.env.BOT_CHORE_INTERVAL_MS) ?? 5 * 60_000, 0),
   leader_name: process.env.BOT_LEADER ?? 'omori',
