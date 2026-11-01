@@ -46,7 +46,7 @@ import {
 import type { GameState } from '../state/store.ts'
 
 import { MIN_WIN_RATE, score_mobs, type FightScore } from './fight_preview.ts'
-import { gear_drop_candidates, plan_gear_goals } from './gear.ts'
+import { gear_drop_candidates, plan_gear_craft_steps, plan_gear_goals } from './gear.ts'
 import { CRAFT_BLACKLIST } from './craft.ts'
 import { dungeon_key_targets, held_key_amount, MIN_GROUP_KEYS } from './dungeon.ts'
 
@@ -171,11 +171,10 @@ export const plan_gear_targets = (
   characters: readonly CharacterRow[],
   state: GameState
 ): readonly GearTarget[] => {
-  const by_id = new Map(characters.map((character) => [character.id, character]))
-  const level_of = (character_id: string, job: string): number =>
-    job_level_from_xp(Number(by_id.get(character_id)?.jobs?.[job] ?? '0'))
+  const level_of = (_character_id: string, job: string): number =>
+    Math.max(0, ...characters.map((character) => job_level_from_xp(Number(character.jobs?.[job] ?? '0'))))
 
-  const craft_targets = plan_gear_goals(characters, state).map((goal) => {
+  const craft_targets = plan_gear_craft_steps(characters, state).map((goal) => {
     const recipe = recipes_by_output[goal.output_type]
     const detail = recipe ? recipe_detail(recipe) : null
     const job = detail?.job ?? goal.job
@@ -199,13 +198,13 @@ export const plan_gear_targets = (
     })
   })
 
-  const craft_gain = new Map<string, number>()
-  for (const target of craft_targets) craft_gain.set(`${target.character_id}\u0000${target.slot}`, target.gain)
+  const craft_by_slot = new Map<string, (typeof craft_targets)[number]>()
+  for (const target of craft_targets) craft_by_slot.set(`${target.character_id}\u0000${target.slot}`, target)
   const drop_targets = plan_gear_goals(characters, state, gear_drop_candidates)
-    .filter(
-      (goal) =>
-        goal.gain > (craft_gain.get(`${goal.character_id}\u0000${goal.slot}`) ?? Number.NEGATIVE_INFINITY)
-    )
+    .filter((goal) => {
+      const craft = craft_by_slot.get(`${goal.character_id}\u0000${goal.slot}`)
+      return !craft || goal.gain > craft.gain || (goal.output_type === craft.item_type && !craft.ready)
+    })
     .map((goal) =>
       Object.freeze({
         character_id: goal.character_id,
@@ -422,13 +421,11 @@ export const plan_loot_focus = (
     const held = held_key_amount(state.inventory, unavailable, key)
     add_output(key, Math.max(0, MIN_GROUP_KEYS - held))
   }
-  for (const target of gear) {
-    if (target.route === 'drop') {
-      needs.set(target.item_type, (needs.get(target.item_type) ?? 0) + 1)
-    } else {
-      add_output(target.item_type)
-    }
-  }
+  // A directly dropped piece is the shortest route when its recipe is locked or the craft target
+  // needs more work. Check those before collecting the same piece's recipe ingredients.
+  for (const target of gear.filter((row) => row.route === 'drop'))
+    needs.set(target.item_type, (needs.get(target.item_type) ?? 0) + 1)
+  for (const target of gear) if (target.route === 'craft') add_output(target.item_type)
   for (const output_type of options.extra_outputs ?? []) add_output(output_type)
   for (const output_type of xp_training_outputs(characters)) add_output(output_type)
 
@@ -453,11 +450,8 @@ export const plan_loot_focus = (
         (left, right) =>
           right.spawn_weight * right.expected_drop - left.spawn_weight * left.expected_drop
       )
-    const source = sources[0]
-    if (!source) continue
-
-    let best: Readonly<{ distance: number; score: FightScore }> | null = null
-    for (const distance of distances) {
+    let best: Readonly<{ distance: number; score: FightScore; mob_type: string; loot_rate: number }> | null = null
+    for (const source of sources) for (const distance of distances) {
       const [scalar_low, scalar_high] = mob_level_scalar_bounds(distance)
       const scalar = Math.trunc((scalar_low + scalar_high) / 2)
       const [size_low, size_high] = mob_group_size_bounds(distance)
@@ -467,17 +461,22 @@ export const plan_loot_focus = (
         seeds: STRATEGY_SEEDS,
       })
       if (score.win_rate < MIN_WIN_RATE) continue
+      // Compare expected units of the WANTED item per committed fight turn. This considers both
+      // encounter frequency and quantity, and naturally rejects a high-level source when a weaker
+      // family yields the same material with less risk/time.
+      const loot_rate = (source.spawn_weight * source.expected_drop * group_size) / Math.max(1, score.turns)
       if (
         !best ||
-        score.xp_per_turn > best.score.xp_per_turn ||
-        (score.xp_per_turn === best.score.xp_per_turn && distance < best.distance)
+        loot_rate > best.loot_rate ||
+        (loot_rate === best.loot_rate && score.xp_per_turn > best.score.xp_per_turn) ||
+        (loot_rate === best.loot_rate && score.xp_per_turn === best.score.xp_per_turn && distance < best.distance)
       )
-        best = Object.freeze({ distance, score })
+        best = Object.freeze({ distance, score, mob_type: source.mob_type, loot_rate })
     }
     if (best)
       return Object.freeze({
         item_type,
-        mob_type: source.mob_type,
+        mob_type: best.mob_type,
         have,
         need,
         distance: best.distance,

@@ -27,6 +27,31 @@ immutable mirrors the bot vendors. Everything below is derived, not guessed.
   WebSocket for one address, and `state.inventory` is the address's item pool — so a tool omori
   crafts is immediately equippable by archero. No item transfer is needed.
 
+## Combat build progression
+
+`actions/progression.ts` now compares the next legal spell level using the current authored seed
+effects: expected damage and life steal, healing (with the game's Intelligence scaling), buffs,
+AP/MP removal, control, area, range, cast limit, cooldown, and critical effects. It weights those
+effects by class role: **Yogan** is a ranged damage carry, **Mori** is a hybrid controller with
+sustain, and **Tomoda** is a party support with healing and high-value buffs. For classes without a
+dedicated profile, it uses balanced weights. It saves spell points when the next raise cannot be
+afforded and spends them on the best marginal value per point.
+
+In grouped combat those roles affect the action choice too: **Yogan is assigned the damage-carry
+role**, **Mori the controller role**, and **Tomoda the support role**. A tactical cast must beat the
+seat's damage baseline by 22% for Yogan, 8% for Mori, or clear 92% of it for Tomoda; a threatened
+ally can still trigger an emergency heal first. If no tactical action clears its role threshold,
+the seat uses the strongest direct attack available. The role resolver includes the acting seat as
+well as its allies, and the same planner is used by live fights and win-rate previews.
+
+Stat spending evaluates the effect of one additional natural point at a time, then applies the exact
+class characteristic cost ladder. Elemental damage and Intelligence-scaled healing feed the combat
+value; Agility changes the crit estimate; Wisdom receives the game's +1% XP per point and improves
+the estimated value of AP/MP removal; Vitality gets a survival value for its +1 max HP. XP value
+fades at the level cap. The profile weights are a transparent PvM farming heuristic; they do not
+yet learn from a character's own fight history or model each enemy's resistance and actual party HP
+state. Fight logs are still needed to tune those weights for a particular roster and farm tier.
+
 ## 2. How job XP works (the leveling levers)
 
 Job levels follow `job_experience_curve` (100 levels). Milestones:

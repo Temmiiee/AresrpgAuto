@@ -236,6 +236,16 @@ export const select_craft_target = (
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
   if (!character) return null
+  const team_members = ctx.party_state.members.length > 0
+    ? ctx.party_state.members.flatMap((id) => {
+        const member = select_character(state, id)
+        return member ? [member] : []
+      })
+    : [character]
+  const team_job_level = (job: string): number =>
+    Math.max(0, ...team_members.map((member) => job_level_of(member, job)))
+  const team_job_trainer = (job: string): string =>
+    [...team_members].sort((left, right) => job_level_of(right, job) - job_level_of(left, job))[0]?.id ?? character.id
   // `also_unavailable` carries the stacks a craft ALREADY BURNED earlier in this same chore. The
   // per-character state only advances when the server pushes the next projection, so a second batch
   // planned against the pre-craft snapshot reuses ingredient ids the chain has already consumed and
@@ -263,7 +273,14 @@ export const select_craft_target = (
     if (plan) return plan
     const level = job_level_of(character, detail.job)
     if (level < craft_required_level(detail.ingredients.length)) {
-      if (!goal_jobs.includes(job)) goal_jobs.push(job)
+      // A teammate with the required trade level can make this item; do not start training the same
+      // trade on every party member while that crafter works through the shared gear queue.
+      if (
+        team_job_level(job) < craft_required_level(detail.ingredients.length) &&
+        team_job_trainer(job) === character.id &&
+        !goal_jobs.includes(job)
+      )
+        goal_jobs.push(job)
       continue
     }
     const prerequisite = craft_prerequisite(

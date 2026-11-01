@@ -12,8 +12,10 @@
 // types. The craft planner tries those first; the xp rotation remains the fallback, so the bot still
 // levels its trades when no upgrade is within reach.
 import {
+  craft_required_level,
   equipment_slot_accepts,
   item_stat_center,
+  job_level_from_xp,
   stat_names,
   weapon_categories,
   type CharacterEquipmentSlot,
@@ -103,14 +105,12 @@ export const gear_candidates: readonly GearCandidate[] = Object.freeze(
   })
 )
 
-/** Wearables the seed offers ONLY as mob loot: no recipe, so they cannot be crafted and the strategy
- *  must name the families that drop them instead. Empty for a craft-only slot, and the pet slot is
- *  excluded (see {@link GEAR_GOAL_SLOTS}) — today every authored wearable has a recipe, so this is
- *  empty and the `drop` route never fires. It exists so a loot-only piece is targeted automatically
- *  the moment the seed authors one. `job` is empty (no trade stamps it). */
+/** Wearables with an authored mob-drop source. Some also have recipes: those are valid fallback
+ *  routes when the team has not unlocked the craft yet, or the drop is a better reachable upgrade.
+ *  Tools, pets and relics are deliberately handled elsewhere. `job` is empty because a drop has no
+ *  crafting gate. */
 export const gear_drop_candidates: readonly GearCandidate[] = Object.freeze(
   items.flatMap((seed_item) => {
-    if (recipes_by_output[seed_item.item_type]) return []
     if (!GEAR_CATEGORIES.has(seed_item.category)) return []
     if ((loot_sources_by_item.get(seed_item.item_type)?.length ?? 0) === 0) return []
     return [
@@ -145,10 +145,12 @@ export const plan_slot_goal = (
   character: CharacterRow,
   slot: CharacterEquipmentSlot,
   current: GearItem | null,
-  candidates: readonly GearCandidate[] = gear_candidates
+  candidates: readonly GearCandidate[] = gear_candidates,
+  loot_team_size = 1
 ): GearGoal | null => {
   const affinity = character_affinity(character)
-  const current_score = current ? item_power(current, affinity) : Number.NEGATIVE_INFINITY
+  const base_chance = Math.max(0, Number(character.chance ?? 0))
+  const current_score = current ? item_power(current, affinity, base_chance, loot_team_size) : Number.NEGATIVE_INFINITY
   let best: GearCandidate | null = null
   let best_score = current_score
   for (const candidate of candidates) {
@@ -156,7 +158,7 @@ export const plan_slot_goal = (
     if (!equipment_slot_accepts(slot, candidate.category)) continue
     // Keeping the piece already worn is always allowed, so re-proposing it is not a goal.
     if (current && candidate.item.item_type === current.item_type) continue
-    const score = item_power(candidate.item, affinity)
+    const score = item_power(candidate.item, affinity, base_chance, loot_team_size)
     if (score > best_score) {
       best = candidate
       best_score = score
@@ -188,15 +190,63 @@ export const plan_gear_goals = (
   for (const item of state.inventory) if (!unavailable.has(item.id)) held_available.add(item.item_type)
 
   const goals: GearGoal[] = []
+  const loot_team_size = Math.max(1, characters.length)
   for (const character of characters) {
-    const loadout = plan_loadout(character, state)
+    const loadout = plan_loadout(character, state, { loot_team_size })
     for (const slot of GEAR_GOAL_SLOTS) {
-      const goal = plan_slot_goal(character, slot, loadout.get(slot) ?? null, candidates)
+      const goal = plan_slot_goal(character, slot, loadout.get(slot) ?? null, candidates, loot_team_size)
       if (!goal || held_available.has(goal.output_type)) continue
       goals.push(goal)
     }
   }
   return Object.freeze(goals.sort((left, right) => right.gain - left.gain))
+}
+
+/** A staged gear route: first return every upgrade whose recipe job is already leveled somewhere
+ *  in the team; then expose only the closest job-unlock step. A much stronger but distant recipe
+ *  cannot monopolize craft training while nearer upgrades are available. */
+export const plan_gear_craft_steps = (
+  characters: readonly CharacterRow[],
+  state: GameState
+): readonly GearGoal[] => {
+  if (characters.length === 0) return []
+  const job_level = (job: string): number =>
+    Math.max(0, ...characters.map((character) => job_level_from_xp(Number(character.jobs?.[job] ?? '0'))))
+  const required = (candidate: GearCandidate): number => {
+    const recipe = recipes_by_output[candidate.output_type]
+    return recipe ? craft_required_level(Object.keys(recipe.inputs).length) : Number.POSITIVE_INFINITY
+  }
+  const available = gear_candidates.filter((candidate) => job_level(candidate.job) >= required(candidate))
+  const ready = plan_gear_goals(characters, state, available)
+  const ready_slots = new Set(ready.map((goal) => `${goal.character_id}\u0000${goal.slot}`))
+  const next: { goal: GearGoal; gap: number }[] = []
+  for (const character of characters) {
+    const loadout = plan_loadout(character, state, { loot_team_size: characters.length })
+    for (const slot of GEAR_GOAL_SLOTS) {
+      if (ready_slots.has(`${character.id}\u0000${slot}`)) continue
+      const current = loadout.get(slot) ?? null
+      const legal = gear_candidates.filter(
+        (candidate) => candidate.level <= character.level && equipment_slot_accepts(slot, candidate.category)
+      )
+      const gaps = [...new Set(
+        legal.map((candidate) => Math.max(0, required(candidate) - job_level(candidate.job)))
+      )].filter((gap) => gap > 0).sort((left, right) => left - right)
+      for (const gap of gaps) {
+        const step_candidates = legal.filter(
+          (candidate) => Math.max(0, required(candidate) - job_level(candidate.job)) === gap
+        )
+        const goal = plan_slot_goal(character, slot, current, step_candidates, characters.length)
+        if (goal) {
+          next.push({ goal, gap })
+          break
+        }
+      }
+    }
+  }
+  next.sort((left, right) => left.gap - right.gap || right.goal.gain - left.goal.gain)
+  const staged = [...ready]
+  if (next[0]) staged.push(next[0].goal)
+  return Object.freeze(staged)
 }
 
 /** The deduped, gain-ordered output types the craft planner should try FIRST. This is the whole
@@ -206,4 +256,9 @@ export const gear_goal_outputs = (
   state: GameState,
   candidates: readonly GearCandidate[] = gear_candidates
 ): readonly string[] =>
-  Object.freeze([...new Set(plan_gear_goals(characters, state, candidates).map((goal) => goal.output_type))])
+  Object.freeze(
+    [...new Set(
+      (candidates === gear_candidates ? plan_gear_craft_steps(characters, state) : plan_gear_goals(characters, state, candidates))
+        .map((goal) => goal.output_type)
+    )]
+  )

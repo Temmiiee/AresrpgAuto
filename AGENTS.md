@@ -237,6 +237,14 @@ fallback, and an output already held un-equipped is dropped (auto-equip will pla
 inputs are demanded through `craft_gather_demand`'s `extra_outputs`, which the play loop fills with the
 goal outputs — pulled even when the craft pays no XP, because the goal is deliberate, not filler.
 
+Gear acquisition is staged in `plan_gear_craft_steps`: craftable upgrades unlocked by any current team
+member come first, followed by only the nearest job-level unlock that improves a slot. Do not put all
+far-future recipes into craft priorities; doing so makes the XP rotation train several blocked jobs
+before taking a reachable upgrade. `gear_drop_candidates` includes items with recipes when they also
+have a mob loot source. `plan_loot_focus` must test every source family and difficulty band with the
+fight twin, keep its normal win-rate gate, and rank only viable drops by expected item quantity per
+committed turn. A stronger theoretical drop is not a farming order if no screened band can beat it.
+
 ## Dungeon runs (`actions/dungeon_run.ts`)
 
 Dungeon keys are deliberate party goals: the leader focuses gather and craft demand on one

@@ -307,6 +307,8 @@ type TacticalProfile = Readonly<{
   mobility: number
 }>
 
+type PartyCombatRole = 'tank' | 'support' | 'controller' | 'dps'
+
 const tactical_profile = (
   cp: HydratedFightCheckpoint,
   seat: number
@@ -809,7 +811,8 @@ const best_class_tactical_action = (
   cp: HydratedFightCheckpoint,
   seat: number,
   _party_allies: readonly Fighter[],
-  enemies: readonly Fighter[]
+  enemies: readonly Fighter[],
+  party_role: PartyCombatRole = 'dps'
 ): TurnAction | null => {
   const profile = tactical_profile(cp, seat)
   const me = cp.contract.fighters[seat]
@@ -874,7 +877,10 @@ const best_class_tactical_action = (
     ...damage_options(cp, seat, enemies).map((option) => option.score)
   )
 
-  const required_score = Math.max(0.65, damage_baseline * 1.08)
+  // Keep a real damage core. Yogan should replace attacks with tactical casts only when clearly
+  // worthwhile; Mori can trade some damage for control; Tomoda can support when that beats attacking.
+  const role_threshold = party_role === 'dps' ? 1.22 : party_role === 'support' ? 0.92 : 1.08
+  const required_score = Math.max(0.65, damage_baseline * role_threshold)
 
   if (best.score <= required_score) return null
 
@@ -991,7 +997,7 @@ const next_action_party = (
   cp: HydratedFightCheckpoint,
   seat: number,
   ally_seats: readonly number[],
-  party_role: 'tank' | 'support' | 'dps'
+  party_role: PartyCombatRole
 ): TurnAction | null => {
   const me = cp.contract.fighters[seat]
   if (!me || me.dead) return null
@@ -1004,7 +1010,7 @@ const next_action_party = (
   if (emergency_heal) return emergency_heal
 
   const class_aware = tactical_profile(cp, seat) !== null
-  const tactical = best_class_tactical_action(cp, seat, allies, enemies)
+  const tactical = best_class_tactical_action(cp, seat, allies, enemies, party_role)
   if (tactical !== null) return tactical
 
   // 1. HEAL PRIORITY: any ally BELOW HALF of its OWN max HP and I have a heal → heal the most
@@ -1052,28 +1058,36 @@ const next_action_party = (
   return { type: 'move', path }
 }
 
-/** Assign a party role to each seat based on stats. */
-const assign_roles = (cp: HydratedFightCheckpoint, seats: readonly number[]): Map<number, 'tank' | 'support' | 'dps'> => {
-  const roles = new Map<number, 'tank' | 'support' | 'dps'>()
+/** Assign combat roles from class first, then use stats and available heals for other classes. */
+const assign_roles = (cp: HydratedFightCheckpoint, seats: readonly number[]): Map<number, PartyCombatRole> => {
+  const roles = new Map<number, PartyCombatRole>()
   const seat_stats = seats.map((seat) => {
     const fighter = cp.contract.fighters[seat]
     const source = fighter?.kind.type === 'player' ? cp.sources.players[fighter.kind.character] : null
     const vit = source ? Number(source.vitality ?? 0n) : 0
     const has_heal = spell_names_for(cp, seat).some((name) => is_heal_spell(cp, seat, name))
-    return { seat, vit, has_heal }
+    const classe = source?.classe.toLowerCase() ?? ''
+    return { seat, vit, has_heal, classe }
   })
-  
-  // One tank (highest vitality)
-  const tank = seat_stats.reduce((best, cur) => cur.vit > best.vit ? cur : best)
-  roles.set(tank.seat, 'tank')
-  
-  // Supports = have heals (excluding tank)
-  for (const s of seat_stats) {
-    if (s.seat === tank.seat) continue
-    if (s.has_heal) roles.set(s.seat, 'support')
-    else roles.set(s.seat, 'dps')
+
+  // In this three-class roster, Yogan is the finisher, Tomoda the support, Mori the controller.
+  // The role also changes how much tactical utility must beat the direct-damage option.
+  for (const row of seat_stats) {
+    if (row.classe.includes('yogan')) roles.set(row.seat, 'dps')
+    else if (row.classe.includes('tomoda')) roles.set(row.seat, 'support')
+    else if (row.classe.includes('mori')) roles.set(row.seat, 'controller')
   }
-  
+
+  const unassigned = seat_stats.filter((row) => !roles.has(row.seat))
+  if (unassigned.length > 0) {
+    const tank = unassigned.reduce((best, cur) => cur.vit > best.vit ? cur : best)
+    roles.set(tank.seat, 'tank')
+    for (const row of unassigned) {
+      if (row.seat === tank.seat) continue
+      roles.set(row.seat, row.has_heal ? 'support' : 'dps')
+    }
+  }
+
   return roles
 }
 
@@ -1084,7 +1098,7 @@ const next_action = (cp: HydratedFightCheckpoint, seat: number): TurnAction | nu
   const enemies = cp.contract.fighters.filter((fighter) => !fighter.dead && fighter.team !== me.team)
   if (enemies.length === 0) return null
 
-  const tactical = best_class_tactical_action(cp, seat, [], enemies)
+  const tactical = best_class_tactical_action(cp, seat, [], enemies, 'dps')
   if (tactical !== null) return tactical
 
   const damage = best_damage_action(cp, seat, enemies)
@@ -1118,7 +1132,9 @@ export const plan_turn_party = (
 ): readonly TurnAction[] => {
   if (party_seats.length === 0) return plan_turn(cp, seat) // solo fallback
   
-  const roles = assign_roles(cp, party_seats)
+  // `party_seats` intentionally excludes the acting seat (as supplied by live combat and previews),
+  // so include it explicitly when resolving this actor's class role.
+  const roles = assign_roles(cp, [seat, ...party_seats])
   const my_role = roles.get(seat) ?? 'dps'
   const scratch = create_fight({ state: cp, mode: 'local' })
   const actions: TurnAction[] = []

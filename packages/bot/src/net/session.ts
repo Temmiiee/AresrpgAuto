@@ -586,7 +586,11 @@ export const play_loop = async (
   let gear_goal_cache: Readonly<{ state: GameState; outputs: readonly string[] }> | null = null
   const current_gear_goals = (): readonly string[] => {
     if (gear_goal_cache && gear_goal_cache.state === game_state) return gear_goal_cache.outputs
-    const outputs = gear_goal_outputs(game_state.characters, game_state)
+    const driven_characters = runtimes.flatMap((runtime) => {
+      const character = game_state.characters.find((row) => row.id === runtime.character.id)
+      return character ? [character] : []
+    })
+    const outputs = gear_goal_outputs(driven_characters, game_state)
     gear_goal_cache = Object.freeze({ state: game_state, outputs })
     return outputs
   }

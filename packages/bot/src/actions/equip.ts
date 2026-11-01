@@ -94,10 +94,10 @@ const class_affinity: Readonly<Record<string, ElementAffinity>> = (() => {
 export const character_affinity = (character: CharacterRow): ElementAffinity => {
   const base = class_affinity[character.classe] ?? UNIFORM_AFFINITY
   const allocated: Record<CombatElement, number> = {
-    earth: Math.max(0, Number(character.strength ?? 0)),
-    fire: Math.max(0, Number(character.intelligence ?? 0)),
-    water: Math.max(0, Number(character.chance ?? 0)),
-    air: Math.max(0, Number(character.agility ?? 0)),
+    earth: Math.max(0, Number(character.strength ?? 0) + Number(character.folded_stats?.strength ?? 0)),
+    fire: Math.max(0, Number(character.intelligence ?? 0) + Number(character.folded_stats?.intelligence ?? 0)),
+    water: Math.max(0, Number(character.chance ?? 0) + Number(character.folded_stats?.chance ?? 0)),
+    air: Math.max(0, Number(character.agility ?? 0) + Number(character.folded_stats?.agility ?? 0)),
   }
   const allocated_total = COMBAT_ELEMENTS.reduce((sum, element) => sum + allocated[element], 0)
   if (allocated_total <= 0) return base
@@ -141,11 +141,26 @@ const WEAPON_DAMAGE_WEIGHT = 20
 
 /** The item's stat "power" in the game's own rune-weight unit, with the four elemental stats scaled
  *  by the character's affinity. Higher is simply better for this character. */
-export const item_power = (item: GearItem, affinity: ElementAffinity): number => {
+export const LOOT_CHANCE_RUNE_WEIGHT = 0.15
+
+export const item_power = (
+  item: GearItem,
+  affinity: ElementAffinity,
+  base_chance = 0,
+  loot_team_size = 1
+): number => {
   let score = 0
   for (const stat of stat_names) {
     const value = item_stat_offset(item, stat)
     if (value === 0) continue
+    if (stat === 'chance') {
+      // Loot uses the winning party's average Chance. Clamp negative equipment against the
+      // character's natural Chance just as the fight engine does, and keep loot a modest bonus.
+      const delta = Math.max(0, base_chance + value) - Math.max(0, base_chance)
+      score += delta * rune_unit_weights.chance * affinity.water
+      score += (delta * rune_unit_weights.chance * LOOT_CHANCE_RUNE_WEIGHT) / Math.max(1, loot_team_size)
+      continue
+    }
     const element = ELEMENT_OF_STAT[stat]
     const element_scale = element ? affinity[element] : 1
     if (element_scale <= 0) continue
@@ -169,6 +184,8 @@ export type PlanOptions = Readonly<{
   /** the tool category this character's gathering chore needs, so auto-equip does not pull the wrong
    *  job's tool and force the gather step to swap it back every beat */
   tool_category?: string
+  /** expected winners sharing this party's loot chance; the game averages Chance over them */
+  loot_team_size?: number
 }>
 
 /** The best gear `character` can actually wear right now, one item per slot. Pure: it reads the
@@ -184,6 +201,8 @@ export const plan_loadout = (
 ): GearLoadout => {
   const claimed = options.claimed ?? new Set<string>()
   const affinity = character_affinity(character)
+  const base_chance = Math.max(0, Number(character.chance ?? 0))
+  const loot_team_size = Math.max(1, options.loot_team_size ?? state.characters.length)
 
   const blocked = new Set(unavailable_item_ids(state))
   for (const worn of character.equipment) blocked.delete(worn.id)
@@ -225,7 +244,7 @@ export const plan_loadout = (
       if (slot === 'tool' && options.tool_category !== undefined && item.category !== options.tool_category)
         continue
       if (slot.startsWith('relic_') && relic_types.has(item.item_type)) continue
-      const score = item_power(item, affinity)
+      const score = item_power(item, affinity, base_chance, loot_team_size)
       if (score > best_score) {
         best = item
         best_score = score
@@ -296,7 +315,11 @@ export const auto_equip_party = async (targets: readonly EquipTarget[]): Promise
       return
     }
 
-    const loadout = plan_loadout(character, state, { claimed, tool_category })
+    const loadout = plan_loadout(character, state, {
+      claimed,
+      tool_category,
+      loot_team_size: ctx.party_state.members.length,
+    })
     const plan = equip_plan(character, loadout)
     if (!plan.to_equip.length) return
 
