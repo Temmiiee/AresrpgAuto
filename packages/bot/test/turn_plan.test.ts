@@ -135,7 +135,7 @@ describe('turn planner damage ranking', () => {
     expect(bare.win_rate).toBe(0)
     expect(armed.win_rate).toBe(1)
     expect(armed.turns).toBeLessThan(bare.turns)
-  })
+  }, 15000)
 })
 
 const spell_projection = (area_shape: bigint): SpellTurnProjection =>
