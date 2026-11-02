@@ -267,7 +267,13 @@ export const create_mover = (ctx: ActionContext): Mover => {
             `${who}: stalled ${Math.round((now - last_step_ms) / 1000)}s at ${pose.x},${pose.z} -> ${to_x},${to_z} — anchor=${anchor ? `${anchor.x},${anchor.z}@${anchor.at_ms} pet=${anchor.pet}` : 'null'} pet_now=${pet_now} wall_ok=${wall_ok} reach_next=${can_reach(next.x, next.z)} eff=${effective_now()} chain=${chain_now(ctx.state().chain_clock, now)}`
           )
         }
-        await sleep(POLL_MS)
+        // When the wall-clock speed bucket is the only blocker, sleep until the next
+        // legal step instead of waking every 40ms. Keep the short poll for chain-proof
+        // changes and missing anchors, which can become valid asynchronously.
+        const wall_wait = anchor && !wall_ok
+          ? Math.max(1, step_min_ms(mounted) - (now - last_report_ms))
+          : POLL_MS
+        await sleep(anchor && !wall_ok ? wall_wait : POLL_MS)
         continue
       }
       pose = next
