@@ -6,6 +6,7 @@ import {
   follower_group_step,
   hop_toward,
   leader_group_step,
+  mark_distant_stragglers,
   needs_rejoin,
   party_attempting,
   party_center,
@@ -294,6 +295,14 @@ describe('rejoin gate', () => {
     expect(needs_rejoin(p, state(50_000, 50_000), 'leader', { x: 0, z: 0 })).toBe(false)
     p.detached.add('follower')
     expect(needs_rejoin(p, state(50_000, 50_000), 'follower', { x: 0, z: 0 })).toBe(false)
+  })
+
+  it('excludes an already-distant follower before a new rendezvous is screened', () => {
+    const p = party()
+    p.poses.set('follower', { x: REJOIN_RADIUS + 1, z: 0 })
+    expect(mark_distant_stragglers(p, 'leader', { x: 0, z: 0 })).toEqual(['follower'])
+    expect(p.stragglers.has('follower')).toBe(true)
+    expect(allies_of({ characters: [{ id: 'follower' }] } as never, p, 'leader')).toEqual([])
   })
 })
 

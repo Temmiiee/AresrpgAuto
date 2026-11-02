@@ -49,3 +49,20 @@ you want per-fight JSONL records under `packages/bot/logs/fights/`.
 
 The environment-variable reference and architecture are in `packages/bot/.env.example` and
 `AGENTS.md`; combat analytics and version-gate behavior have dedicated notes under `docs/`.
+
+## Current automation policy
+
+- Omori is the default objective-driven crafter. Memorien farms, Llokan mines, and Archero gathers
+  herbs; each gatherer keeps the matching tool instead of paying for frequent tool swaps.
+- Craft demand is strict: one dungeon-key, missing-tool, or equipment objective drives gathering,
+  mob-loot focus, prerequisite crafts, and job training. Unrelated filler cannot consume its inputs.
+- Equipment targets use the same class/stat score as auto-equip. Held items are allocated once
+  across the party; a weak random roll or another character needing the same item keeps the craft
+  goal alive.
+- Resource-protector victories can drop deterministic resource bags. While the party is idle, the
+  leader opens and claims those bags through the shared transaction lane; every supported bag
+  yields exactly 50 units of its resource.
+- Dungeon keys are not spent blindly. The party previews authored rooms at an 80% minimum win rate,
+  parks unsafe dungeons, waits for wounded entrants to recover, and commits only nearby members.
+
+The detailed progression and acquisition chain is documented in `docs/progression-plan.md`.

@@ -1,14 +1,12 @@
 // excursion tests — the gathering-drive roster and the unmet-specialty trigger.
 //
-// The regression these lock: the default chore plan is `gather_craft`/`gather_all_craft`, but the
-// roster builder recognised only the bare `gather`/`gather_all` kinds. It therefore returned EMPTY,
-// `gather_needs` saw no gap, `maybe_start_excursion` bailed on an empty need list, and the party
-// never left a biome its gatherers could not work — the live window held only quartz+amber (a MINER
-// biome) while omori's chore wanted HERBALIST, so every gather skipped for a whole night.
+// These lock the gathering-drive roster and relocation trigger. The default plan now uses three
+// hard single-job specialties; a barren local biome must create an excursion need instead of making
+// the gatherer switch job and tool.
 import { job_xp_for_level } from '@aresrpg/immutable'
 import type { CharacterRow } from '@aresrpg/protocol'
 
-import { gather_members, gather_needs } from '../src/actions/excursion.ts'
+import { gather_members, gather_needs, maybe_start_excursion } from '../src/actions/excursion.ts'
 import { create_party } from '../src/actions/party.ts'
 import { config } from '../src/config.ts'
 import { initial_game_state, type GameState } from '../src/state/store.ts'
@@ -44,11 +42,15 @@ describe('gather_members', () => {
     expect(members.length).toBeGreaterThan(0)
   })
 
-  it('gives a single-job member its one job and a rotator all three', () => {
-    const state: GameState = { ...initial_game_state, characters: [character('omori'), character('archero')] }
-    const members = gather_members(state, party_with(['omori', 'archero']))
-    expect(members.find((member) => member.name === 'omori')!.jobs).toEqual(['HERBALIST'])
-    expect([...members.find((member) => member.name === 'archero')!.jobs].sort()).toEqual(['FARMER', 'HERBALIST', 'MINER'])
+  it('gives every default gatherer exactly one owned job', () => {
+    const names = ['memorien', 'llokan', 'archero']
+    const state: GameState = { ...initial_game_state, characters: names.map((name) => character(name)) }
+    const members = gather_members(state, party_with(names))
+    expect(members.map((member) => [member.name, member.jobs])).toEqual([
+      ['memorien', ['FARMER']],
+      ['llokan', ['MINER']],
+      ['archero', ['HERBALIST']],
+    ])
   })
 })
 
@@ -56,9 +58,9 @@ describe('gather_needs', () => {
   it('reports an unmet specialty when the window holds no pack of the member job', () => {
     const state: GameState = {
       ...initial_game_state,
-      characters: [character('omori', { HERBALIST: xp(60) }, [{ id: 't', category: 'tool_herbalist', slot: 'tool' }])],
+      characters: [character('archero', { HERBALIST: xp(60) }, [{ id: 't', category: 'tool_herbalist', slot: 'tool' }])],
     }
-    const party = party_with(['omori'], { omori: { x: 0, z: 0 } })
+    const party = party_with(['archero'], { archero: { x: 0, z: 0 } })
     const needs = gather_needs(state, gather_members(state, party))
     expect(needs.map((need) => need.job)).toEqual(['HERBALIST'])
     // The need is scoped to the member's OWN world: an unlocked-but-remote yakutia tier must not
@@ -82,8 +84,27 @@ describe('gather_needs', () => {
   })
 
   it('skips a member that owns no tool for its job (travel cannot fix a missing tool)', () => {
-    const state: GameState = { ...initial_game_state, characters: [character('omori', { HERBALIST: xp(60) })] }
-    const party = party_with(['omori'], { omori: { x: 0, z: 0 } })
+    const state: GameState = { ...initial_game_state, characters: [character('archero', { HERBALIST: xp(60) })] }
+    const party = party_with(['archero'], { archero: { x: 0, z: 0 } })
     expect(gather_needs(state, gather_members(state, party))).toEqual([])
+  })
+})
+
+describe('excursion coordination', () => {
+  it('does not replace an active fight rendezvous with a gathering relocation', () => {
+    const archero = character(
+      'archero',
+      { HERBALIST: xp(60) },
+      [{ id: 'tool', category: 'tool_herbalist', slot: 'tool' }]
+    )
+    const state: GameState = { ...initial_game_state, characters: [archero] }
+    const party = party_with(['archero'], { archero: { x: 0, z: 0 } })
+    party.phase = 'staging'
+    party.target = { x: 100, z: 100 } as never
+    party.need_since.set('archero', 0)
+
+    expect(maybe_start_excursion({ state: () => state }, party, archero, { x: 0, z: 0 })).toBe(false)
+    expect(party.excursion).toBeNull()
+    expect(party.phase).toBe('staging')
   })
 })

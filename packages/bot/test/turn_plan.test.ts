@@ -57,6 +57,12 @@ const spellbook: Readonly<Record<string, number>> = Object.fromEntries(
     .map(([name]) => [name, 5])
 )
 
+const spellbook_for = (classe: string): Readonly<Record<string, number>> => Object.fromEntries(
+  Object.entries(catalog_spell_sources())
+    .filter(([, spell]) => spell.classe === classe && spell.unlock_level <= 50)
+    .map(([name]) => [name, 5])
+)
+
 const fight_of = (rows: readonly CharacterRow[], mobs: readonly FightMobInput[]): HydratedFightCheckpoint => {
   const sourced = rows.map((row) => ({ row, source: player_source_of(row) }))
   const players: readonly FightPlayerInput[] = sourced.map(({ row, source }) => ({
@@ -93,6 +99,16 @@ const within_reach = (
     contract: {
       ...cp.contract,
       fighters: cp.contract.fighters.map((fighter, index) => (index === mob_seat ? { ...fighter, cell } : fighter)),
+    },
+  }) as HydratedFightCheckpoint
+
+const turn_of = (cp: HydratedFightCheckpoint, seat: number): HydratedFightCheckpoint =>
+  ({
+    ...cp,
+    contract: {
+      ...cp.contract,
+      turn_ptr: BigInt(cp.contract.queue.indexOf(BigInt(seat))),
+      fighters: cp.contract.fighters.map((fighter, index) => index === seat ? { ...fighter, ap: 6n, mp: 3n } : fighter),
     },
   }) as HydratedFightCheckpoint
 
@@ -136,6 +152,48 @@ describe('turn planner damage ranking', () => {
     expect(armed.win_rate).toBe(1)
     expect(armed.turns).toBeLessThan(bare.turns)
   }, 15000)
+})
+
+describe('shared tactical action scoring', () => {
+  it('lets Tomoda attack when no ally can benefit from a heal', () => {
+    const healer = character({ id: 'tomoda', classe: 'tomoda', spells: { 'Animal Healing': 5, Whip: 5 } })
+    const ally = character({ id: 'yajin', classe: 'yajin' })
+    const cp = fight_of([healer, ally], [...mob_inputs(one_mob)])
+    const seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type === 'player' && fighter.kind.character === 'tomoda')
+    const ally_seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type === 'player' && fighter.kind.character === 'yajin')
+    const mob_seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type !== 'player')
+    const adjacent = turn_of(within_reach(cp, seat, mob_seat, weapon_target_cells(cp, BigInt(seat)).targetable[0]!), seat)
+    const actions = plan_turn_party(adjacent, seat, [ally_seat])
+    expect(actions[0]?.type).toBe('cast')
+    expect(actions[0]?.type === 'cast' && actions[0].spell).toBe('Whip')
+  })
+
+  it('heals an ally with critical missing HP before spending the turn on damage', () => {
+    const healer = character({ id: 'tomoda-heal', classe: 'tomoda', spells: { 'Animal Healing': 5, Whip: 5 } })
+    const ally = character({ id: 'yajin-wounded', classe: 'yajin' })
+    const cp = fight_of([healer, ally], [...mob_inputs(one_mob)])
+    const seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type === 'player' && fighter.kind.character === 'tomoda-heal')
+    const ally_seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type === 'player' && fighter.kind.character === 'yajin-wounded')
+    const mob_seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type !== 'player')
+    const fighters = cp.contract.fighters.map((fighter, index) => index === ally_seat ? { ...fighter, hp: 1n } : fighter)
+    const wounded = { ...cp, contract: { ...cp.contract, fighters } } as HydratedFightCheckpoint
+    const adjacent = turn_of(within_reach(wounded, seat, mob_seat, weapon_target_cells(wounded, BigInt(seat)).targetable[0]!), seat)
+    const actions = plan_turn_party(adjacent, seat, [ally_seat])
+    expect(actions[0]?.type).toBe('cast')
+    expect(actions[0]?.type === 'cast' && actions[0].spell).toBe('Animal Healing')
+  })
+
+  it('uses the same party-aware decision in solo and party entry points', () => {
+    const tomoda = character({ id: 'tomoda', classe: 'tomoda', spells: spellbook_for('tomoda') })
+    const yajin = character({ id: 'yajin', classe: 'yajin', spells: spellbook_for('yajin') })
+    const cp = fight_of([tomoda, yajin], [...mob_inputs(one_mob)])
+    const seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type === 'player' && fighter.kind.character === 'tomoda')
+    const ally_seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type === 'player' && fighter.kind.character === 'yajin')
+    const mob_seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type !== 'player')
+    const target = weapon_target_cells(cp, BigInt(seat)).targetable[0]!
+    const adjacent = turn_of(within_reach(cp, seat, mob_seat, target), seat)
+    expect(plan_turn(adjacent, seat)).toEqual(plan_turn_party(adjacent, seat, [ally_seat]))
+  })
 })
 
 const spell_projection = (area_shape: bigint): SpellTurnProjection =>

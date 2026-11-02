@@ -24,7 +24,6 @@ import type { CharacterRow } from '@aresrpg/protocol'
 import type { SeedItem } from '@aresrpg/sdk/seed'
 
 import { items, items_by_type, loot_sources_by_item, recipe_job, recipes, recipes_by_output } from '../content/catalog.ts'
-import { unavailable_item_ids } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 
 import { character_affinity, item_power, plan_loadout, type GearItem } from './equip.ts'
@@ -178,24 +177,26 @@ export const plan_slot_goal = (
 }
 
 /** The party's craftable gear upgrades, biggest gain first. One goal per (character, slot) where a
- *  craftable item actually beats what that character could wear today. Output types the party already
- *  holds UN-EQUIPPED are dropped: auto-equip places those, so a second craft is pure waste. */
+ *  craftable item actually beats what that character could wear today.
+ *
+ *  Held equipment is allocated in the same leader-first order as {@link auto_equip_party}: once one
+ *  character claims a kiosk item, the next character plans without it. Merely holding an output type
+ *  is NOT enough to suppress a goal. A bad roll may lose to the currently worn piece, and one good
+ *  copy cannot equip two characters; both cases still need another craft. */
 export const plan_gear_goals = (
   characters: readonly CharacterRow[],
   state: GameState,
   candidates: readonly GearCandidate[] = gear_candidates
 ): readonly GearGoal[] => {
-  const unavailable = unavailable_item_ids(state)
-  const held_available = new Set<string>()
-  for (const item of state.inventory) if (!unavailable.has(item.id)) held_available.add(item.item_type)
-
   const goals: GearGoal[] = []
+  const claimed = new Set<string>()
   const loot_team_size = Math.max(1, characters.length)
   for (const character of characters) {
-    const loadout = plan_loadout(character, state, { loot_team_size })
+    const loadout = plan_loadout(character, state, { claimed, loot_team_size })
+    for (const item of loadout.values()) claimed.add(item.id)
     for (const slot of GEAR_GOAL_SLOTS) {
       const goal = plan_slot_goal(character, slot, loadout.get(slot) ?? null, candidates, loot_team_size)
-      if (!goal || held_available.has(goal.output_type)) continue
+      if (!goal) continue
       goals.push(goal)
     }
   }

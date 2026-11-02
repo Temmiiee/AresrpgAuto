@@ -225,12 +225,14 @@ export const plan_loadout = (
   )
   const loadout = new Map<CharacterEquipmentSlot, GearItem>()
   for (const slot of combat_equipment_slots) {
-    // No tool preference (fighter, crafter, or a gather_all rotation that swaps tools per job in
-    // the gather step): keep whatever tool is on. Re-picking "the best tool" here fought the gather
-    // step's own swap every pass and kept unequipping a tool the projection had not caught up on.
-    if (slot === 'tool' && options.tool_category === undefined) {
+    // Tools have no power gate in gathering.move: any tool of the matching category works. Keep an
+    // already-compatible worn tool even when the kiosk contains another copy with a higher item
+    // score. Re-picking between equivalent tools paid an equip transaction every projection cycle
+    // and raced the gather step's stale slot view. With no preference, keep any worn tool; with a
+    // fixed specialty, keep it when its category matches and swap only a genuinely wrong tool.
+    if (slot === 'tool') {
       const worn_tool = character.equipment.find((worn) => worn.slot === 'tool')
-      if (worn_tool) {
+      if (worn_tool && (options.tool_category === undefined || worn_tool.category === options.tool_category)) {
         loadout.set(slot, worn_tool)
         used.add(worn_tool.id)
         continue

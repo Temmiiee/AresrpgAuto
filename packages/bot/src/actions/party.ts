@@ -17,7 +17,7 @@ import type { CharacterRow } from '@aresrpg/protocol'
 import { config } from '../config.ts'
 import { items_by_type, worlds_by_id } from '../content/catalog.ts'
 import { log_info, log_warn } from '../shared/logger.ts'
-import { active_fight_of, is_version_assert_error, select_character } from '../state/selectors.ts'
+import { active_fight_of, is_version_assert_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
 import type { GameState } from '../state/store.ts'
 import { claim_key, engage_target, pick_engage_target } from './combat.ts'
 import { custody_of, type ActionContext } from './context.ts'
@@ -110,7 +110,9 @@ const try_rendezvous_potion = async (
   if (current_distance < 4_000) return false
 
   const candidates: { item_id: string; item_type: string; world?: string; destination: { x: number; z: number }; gain: number }[] = []
+  const unavailable = unavailable_item_ids(ctx.state())
   for (const item of ctx.state().inventory) {
+    if (unavailable.has(item.id)) continue
     if (item.category !== 'consumable' || item.amount < 1 || items_by_type[item.item_type]?.category !== 'consumable') continue
     let destination: { x: number; z: number } | undefined
     let potion_world: string | undefined
@@ -371,6 +373,27 @@ export const leader_live_pose = (
  *  its party behind. Wide enough that ordinary rallying never trips it (PARTY_RADIUS is 2_000, the
  *  rendezvous a short hop), narrow enough that a genuinely stranded member is caught. */
 export const REJOIN_RADIUS = PARTY_RADIUS * 4
+
+/** Exclude followers already beyond the rejoin radius before screening a new group. Waiting for the
+ * staging grace cannot make an 8k+ block leg fit a short rendezvous; the follower keeps walking home
+ * and `mark_staged` restores it automatically once it catches up. */
+export const mark_distant_stragglers = (
+  party: PartyState,
+  leader_id: string,
+  leader_pose: Readonly<{ x: number; z: number }>
+): readonly string[] => {
+  const marked: string[] = []
+  for (const id of party.members) {
+    if (id === leader_id || party.detached.has(id) || party.stragglers.has(id)) continue
+    const pose = party.poses.get(id)
+    if (!pose) continue
+    const distance = Math.max(Math.abs(leader_pose.x - pose.x), Math.abs(leader_pose.z - pose.z))
+    if (distance <= REJOIN_RADIUS) continue
+    party.stragglers.add(id)
+    marked.push(id)
+  }
+  return marked
+}
 /** True when this non-leader member is stranded far from the leader and must walk home BEFORE doing
  *  any chore. Every gathering/crafting/search door action re-anchors the character's chain checkpoint
  *  where it already stands, which RESETS the travel bank it needs to prove a leg back to the party —
@@ -635,6 +658,12 @@ export const leader_group_step = async (
   // idle — plan the next rendezvous, unless the party is cooling down after failures
   if (!party_attempting(party)) return null
   if (character.custody === 'fight') return null
+  for (const id of mark_distant_stragglers(party, ctx.character_id, mover.pose())) {
+    log_warn(
+      'party',
+      `${state.characters.find((row) => row.id === id)?.name ?? id}: already beyond the rejoin radius — screening without it`
+    )
+  }
   const allies = allies_of(state, party, ctx.character_id)
   // Plan the rendezvous from the party's centre of mass, not the leader's own pose: the followers
   // gather there, so the group opens where the side already stands instead of thousands of blocks

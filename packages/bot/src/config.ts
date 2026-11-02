@@ -48,11 +48,11 @@ const parse_teams = (raw: string | undefined): readonly (readonly string[])[] | 
 }
 
 /** What a character does with its non-combat time.
- *  - `craft`        rotates through every crafting job (a pure levelling crafter);
+ *  - `craft`        pursues the current key/tool/gear craft; rotates jobs only with no objective;
  *  - `gather`       harvests ONLY the assigned gathering job, so the party covers every gatherer slot;
  *  - `gather_all`   rotates through EVERY gathering job (the all-resource gatherer, e.g. archero);
- *  - `gather_craft` harvests one gathering job AND rotates the crafting jobs (e.g. omori);
- *  - `gather_all_craft` rotates EVERY gathering job AND the crafting jobs (all-resource + crafter);
+ *  - `gather_craft` harvests one gathering job AND runs the objective-driven crafter;
+ *  - `gather_all_craft` rotates EVERY gathering job AND runs the objective-driven crafter;
  *  - `none`         does no chore at all.
  *  Every character still fights for xp regardless of its chore role. */
 export type ChoreRole =
@@ -68,14 +68,15 @@ export type ChorePlan = Readonly<Record<string, ChoreRole>>
 
 export const GATHERING_JOBS = Object.freeze(['FARMER', 'HERBALIST', 'MINER'] as const)
 
-/** The default roster: EVERY character gathers its job AND rotates the crafting jobs, so crafting
- *  levels on all four while the party still covers every gathering leaf. omori owns herbs, memorien
- *  farms, llokan mines, and archero rotates every gathering job. */
+/** The default roster deliberately concentrates progression instead of spreading it over four
+ *  copies of every trade. Omori owns crafting; the other three each keep one gathering job and its
+ *  matching tool. This avoids paid tool churn and makes every craft XP batch advance the crafter
+ *  that will actually unlock the party's target recipes. */
 const DEFAULT_CHORE_PLAN: ChorePlan = Object.freeze({
-  omori: Object.freeze({ kind: 'gather_craft', job: 'HERBALIST' }),
-  memorien: Object.freeze({ kind: 'gather_craft', job: 'FARMER' }),
-  llokan: Object.freeze({ kind: 'gather_craft', job: 'MINER' }),
-  archero: Object.freeze({ kind: 'gather_all_craft' }),
+  omori: Object.freeze({ kind: 'craft' }),
+  memorien: Object.freeze({ kind: 'gather', job: 'FARMER' }),
+  llokan: Object.freeze({ kind: 'gather', job: 'MINER' }),
+  archero: Object.freeze({ kind: 'gather', job: 'HERBALIST' }),
 })
 
 /** Parse `BOT_CHORE_PLAN` — a JSON object mapping character name to `"craft"`, `"none"`, or one of

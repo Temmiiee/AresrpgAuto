@@ -84,7 +84,10 @@ const tool_ready = (
 export const cross_world_target = (
   character: CharacterRow,
   state: GameState,
-  home: string
+  home: string,
+  /** Fixed gathering specialty. When supplied, a trip may never swap to another job/tool merely
+   *  because that other resource has a richer tier in the destination world. */
+  specialty?: GatheringJob
 ): CrossWorldTarget | null => {
   const unavailable = unavailable_item_ids(state)
   const jobs = character.jobs ?? {}
@@ -95,6 +98,7 @@ export const cross_world_target = (
     if (world.entry_level > character.level) continue
     if (world.resources.length === 0) continue
     for (const resource of world.resources) {
+      if (specialty !== undefined && resource.job !== specialty) continue
       if (tier_unlock_level(resource.tier) > job_level_from_xp(Number(jobs[resource.job] ?? 0))) continue
       if (!tool_ready(character, state.inventory, resource.job, unavailable)) continue
       if (
@@ -224,7 +228,9 @@ export const create_cross_world_gatherer = (ctx: ActionContext, home: string): C
       set_detached(party, false)
       if (config.cross_world_interval_ms === 0) return skip('cross-world trips disabled')
       if (Date.now() - last_trip_ms < config.cross_world_interval_ms) return skip('cooling down')
-      const target = cross_world_target(character, state, home)
+      const chore = config.chore_plan[character.name.toLowerCase()]
+      const specialty = chore?.kind === 'gather' || chore?.kind === 'gather_craft' ? chore.job : undefined
+      const target = cross_world_target(character, state, home, specialty)
       if (!target) return skip('no reachable cross-world resource')
       phase = 'outbound'
       arrived_ms = 0

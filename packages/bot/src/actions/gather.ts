@@ -305,25 +305,10 @@ export const gather_once = async (
     return { candidates, job_out, tier_out, tool_out, surplus_out, stale_out, item_counts }
   }
 
-  let picked = pick(job)
-  // The specialty has nothing harvestable HERE (every pack of that job is above its tier, or its
-  // tool is missing): harvest whatever this character CAN work in the window instead of idling.
-  // The xp still lands on a gathering job, and the excursion planner keeps relocating the party
-  // toward the specialty's own tier-1 packs.
-  if (!picked.candidates[0] && job !== undefined) {
-    const fallback = pick(undefined)
-    // prefer a job whose tool is already on, so the fallback does not churn tool swaps every pass
-    const worn_tool = character.equipment.find((worn) => worn.slot === 'tool')?.category
-    const same_tool = fallback.candidates.filter(({ gatherable }) => tool_category_of_job(gatherable.job) === worn_tool)
-    if (same_tool.length) fallback.candidates = same_tool
-    if (fallback.candidates[0]) {
-      log_info(
-        'gather',
-        `${character.name}: no workable ${job} pack here (${job} lvl ${job_level_from_xp(Number(jobs[job] ?? 0))}, tier-locked=${picked.tier_out} no-tool=${picked.tool_out}); harvesting ${fallback.candidates[0].gatherable.job} meanwhile`
-      )
-      picked = fallback
-    }
-  }
+  // A specialty is a hard ownership boundary. If its resource is absent, stay idle and let the
+  // excursion planner relocate the gatherer; harvesting another trade here used to equip another
+  // tool, pay gas, and scatter XP into a job this character was not meant to level.
+  const picked = pick(job)
   const { candidates, job_out, tier_out, tool_out, surplus_out, stale_out, item_counts } = picked
 
   const target = candidates[0]

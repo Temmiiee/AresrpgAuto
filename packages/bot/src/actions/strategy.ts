@@ -18,15 +18,11 @@
 import { create_mob_snapshot, type FightMobInput } from '@aresrpg/fight'
 import {
   craft_required_level,
-  craft_xp_at_level,
-  job_kind_of,
   job_level_from_xp,
-  job_slugs,
 } from '@aresrpg/immutable'
 import type { CharacterRow } from '@aresrpg/protocol'
 
 import {
-  job_recipes,
   items_by_type,
   gatherable_of,
   loot_demand,
@@ -47,7 +43,7 @@ import type { GameState } from '../state/store.ts'
 
 import { MIN_WIN_RATE, score_mobs, type FightScore } from './fight_preview.ts'
 import { gear_drop_candidates, plan_gear_craft_steps, plan_gear_goals } from './gear.ts'
-import { CRAFT_BLACKLIST } from './craft.ts'
+import { select_craft_focus } from './craft.ts'
 import { dungeon_key_targets, held_key_amount, MIN_GROUP_KEYS } from './dungeon.ts'
 
 /** How a wanted item is obtained: `craft` when the seed authors a recipe, `drop` when only loot. */
@@ -138,15 +134,18 @@ export type LootFocus = Readonly<{
  *  wins by luck, at a third of the cost. Two seeds make `win_rate` 0, 0.5 or 1, so the >=
  *  MIN_WIN_RATE gate only passes a candidate that won BOTH boards. */
 const STRATEGY_SEEDS: readonly bigint[] = Object.freeze([1n, 2n])
+/** Loot focus only steers the soft preferred-family tiebreak. The live group screen still certifies
+ *  every engagement, so one deterministic board is enough for this periodic route hint. */
+const LOOT_FOCUS_SEEDS: readonly bigint[] = Object.freeze([1n])
 
 /** The zone-difficulty bands sampled, as block distances from the world centre. The scalar ramp is
  *  flat past 20,000, so four bands span the whole farmable ring; the live roam refines from whatever
  *  target this names in 2,500-block steps. */
 const SAMPLE_DISTANCES: readonly number[] = Object.freeze([5_000, 10_000, 15_000, 20_000])
 
-/** Fights simulated per band. A cheap authored-XP prefilter picks this many in-level families first,
- *  so the pass is bounded by bands × candidates × seeds — never by the size of the mob roster. */
-const CANDIDATES_PER_DISTANCE = 2
+/** Fights simulated per band. The strategy is a coarse route hint and the live engage performs the
+ *  full safety screen, so one authored-XP winner per band avoids duplicating expensive fight twins. */
+const CANDIDATES_PER_DISTANCE = 1
 
 /** A scaled mob further above the party than this is not worth simulating (it cannot be beaten). */
 const LEVEL_CEIL_GAP = 20
@@ -371,24 +370,6 @@ const held_amount = (state: GameState, item_type: string): number => {
   )
 }
 
-const xp_training_outputs = (characters: readonly CharacterRow[]): readonly string[] => {
-  const outputs = new Set<string>()
-  for (const character of characters) {
-    for (const job of job_slugs.filter((slug) => job_kind_of(slug) !== 'gathering')) {
-      const level = job_level_from_xp(Number(character.jobs?.[job] ?? '0'))
-      const candidates = job_recipes(job)
-        .filter((detail) => !CRAFT_BLACKLIST.has(detail.output_type))
-        .filter((detail) => level >= craft_required_level(detail.ingredients.length))
-        .map((detail) => ({ detail, xp: craft_xp_at_level(detail.ingredients.length, level) }))
-        .filter(({ xp }) => xp > 0)
-        .sort((left, right) => right.xp - left.xp)
-      const best = candidates[0]
-      if (best) outputs.add(best.detail.output_type)
-    }
-  }
-  return Object.freeze([...outputs])
-}
-
 /** Select one missing mob-drop material from live craft goals, then choose its best source mob and a
  *  winnable farming band. Gatherable ingredients stay with the gather planner; only loot-only leaves
  *  direct combat toward mobs. Key demand accounts for the number of keys still needed by the party. */
@@ -418,17 +399,28 @@ export const plan_loot_focus = (
     }
   }
 
-  for (const key of key_targets) {
-    const held = held_key_amount(state.inventory, unavailable, key)
-    add_output(key, Math.max(0, MIN_GROUP_KEYS - held))
+  // One strict objective at a time, in the same order as the live craft loop: dungeon key, missing
+  // gathering tool, then the highest-value gear target. If its trade is locked, farm loot for only
+  // the best XP recipe of THAT trade. This replaces the old all-profession loot sweep.
+  const fixed_craft_priorities = [...key_targets, ...(options.extra_outputs ?? [])]
+  if (fixed_craft_priorities.length > 0) {
+    const focus = select_craft_focus(leader, fixed_craft_priorities)
+    const detail = focus?.ready ? focus.goal : focus?.training
+    if (detail) {
+      const key_crafts = key_targets.includes(detail.output_type)
+        ? Math.max(0, MIN_GROUP_KEYS - held_key_amount(state.inventory, unavailable, detail.output_type))
+        : 1
+      add_output(detail.output_type, key_crafts)
+    }
+  } else {
+    const target = gear[0]
+    if (target?.route === 'drop') needs.set(target.item_type, 1)
+    else if (target?.route === 'craft') {
+      const focus = select_craft_focus(leader, [target.item_type])
+      const detail = focus?.ready ? focus.goal : focus?.training
+      if (detail) add_output(detail.output_type)
+    }
   }
-  // A directly dropped piece is the shortest route when its recipe is locked or the craft target
-  // needs more work. Check those before collecting the same piece's recipe ingredients.
-  for (const target of gear.filter((row) => row.route === 'drop'))
-    needs.set(target.item_type, (needs.get(target.item_type) ?? 0) + 1)
-  for (const target of gear) if (target.route === 'craft') add_output(target.item_type)
-  for (const output_type of options.extra_outputs ?? []) add_output(output_type)
-  for (const output_type of xp_training_outputs(characters)) add_output(output_type)
 
   const world_mobs = new Map(world.mobs.map((entry) => [entry.mob_type, entry]))
   const distances = options.distances ?? SAMPLE_DISTANCES
@@ -459,7 +451,7 @@ export const plan_loot_focus = (
       const group_size = Math.max(1, Math.round((size_low + size_high) / 2))
       const input = Object.freeze({ team: 1n, template: source.template, scalar: BigInt(scalar) })
       const score = score_mobs(leader, Array.from({ length: group_size }, () => input), characters.slice(1), {
-        seeds: STRATEGY_SEEDS,
+        seeds: LOOT_FOCUS_SEEDS,
       })
       if (score.win_rate < MIN_WIN_RATE) continue
       // Compare expected units of the WANTED item per committed fight turn. This considers both

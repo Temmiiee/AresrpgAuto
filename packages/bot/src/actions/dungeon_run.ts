@@ -41,6 +41,7 @@ import {
   type MobGroupRow,
 } from './fight_preview.ts'
 import { plan_mastery_dungeon, is_mastery_dungeon } from './mastery.ts'
+import { REJOIN_RADIUS } from './party.ts'
 import type { Mover } from './travel.ts'
 
 /** After a successful `enter`, wait this long for the roster to reveal `dungeon_run` before
@@ -49,6 +50,9 @@ const ENTER_GRACE_MS = 30_000
 /** After a successful `start_fight`, wait this long for the live fight to surface before retrying. */
 const START_GRACE_MS = 20_000
 const ROOM_HP_LOG_INTERVAL_MS = 30_000
+/** A wounded party's projected HP changes continuously, which otherwise changes the preview cache
+ *  key and replays four full fights every idle pass. Recheck on the operator heartbeat cadence. */
+const ROOM_HP_PREVIEW_RETRY_MS = 30_000
 const room_hp_wait_log_ms = new Map<string, number>()
 /** Room 1 waits for EVERY committed seat to enter. These are only deadlock breakers: the leader
  *  starts with whoever is present once nobody new has entered for GROUP_ENTER_STALL_MS, or after
@@ -178,25 +182,40 @@ const planning_allies = (
   const state = ctx.state()
   const party = ctx.party_state
   if (!party) return []
+  const leader_world = character.world ?? ctx.world
+  const leader_pose = party.poses.get(character.id) ??
+    (character.x === undefined || character.z === undefined ? null : { x: character.x, z: character.z })
   return party.members
     .filter((id) => id !== character.id && !party.detached.has(id))
     .flatMap((id) => {
       const member = select_character(state, id)
-      return member ? [member] : []
+      if (!member || (member.world ?? ctx.world) !== leader_world) return []
+      const pose = party.poses.get(id) ??
+        (member.x === undefined || member.z === undefined ? null : { x: member.x, z: member.z })
+      if (!leader_pose || !pose) return []
+      const distance = Math.max(Math.abs(leader_pose.x - pose.x), Math.abs(leader_pose.z - pose.z))
+      return distance <= REJOIN_RADIUS ? [{ member, distance }] : []
     })
-    .sort((left, right) => right.level - left.level)
+    .sort((left, right) => left.distance - right.distance || right.member.level - left.member.level)
     .slice(0, Math.max(0, seats - 1))
+    .map(({ member }) => member)
 }
 
 /** How many party members have entered `dungeon` and are sitting on `room` right now. */
 /** Followers that could still enter this run: active, in the run's world, not already in it. */
-const party_missing_names = (ctx: ActionContext, dungeon: string, world: string): string[] => {
+const party_missing_names = (
+  ctx: ActionContext,
+  dungeon: string,
+  world: string,
+  member_ids?: readonly string[]
+): string[] => {
   const state = ctx.state()
   const party = ctx.party_state
   if (!party) return []
   const out: string[] = []
   for (const id of party.members) {
     if (party.detached.has(id) || id === party.leader_id) continue
+    if (member_ids && !member_ids.includes(id)) continue
     const row = select_character(state, id)
     if (!row) continue
     if (row.dungeon_run?.dungeon === dungeon) continue
@@ -206,13 +225,19 @@ const party_missing_names = (ctx: ActionContext, dungeon: string, world: string)
   return out
 }
 
-const party_entered_count = (ctx: ActionContext, dungeon: string, room: number): number => {
+const party_entered_count = (
+  ctx: ActionContext,
+  dungeon: string,
+  room: number,
+  member_ids?: readonly string[]
+): number => {
   const state = ctx.state()
   const party = ctx.party_state
   if (!party) return 0
   let count = 0
   for (const id of party.members) {
     if (party.detached.has(id)) continue
+    if (member_ids && !member_ids.includes(id)) continue
     const row = select_character(state, id)
     if (row?.dungeon_run && row.dungeon_run.dungeon === dungeon && row.dungeon_run.room === room) count += 1
   }
@@ -312,24 +337,22 @@ const enter_run = async (
   }
 }
 
-/** Pick the first dungeon the party can field a GROUP for: at least MIN_GROUP_KEYS keys and
- *  EVERY room preview clears at the entrant seat count. Rooms are judged over DUNGEON_ROUNDS
- *  (a slow clear still clears), and a key with ANY unwinnable room is parked.
- *  Uses the MINIMUM seats that clears all rooms (saves keys). */
+/** Pick the first dungeon the nearby party can field as a GROUP: at least MIN_GROUP_KEYS keys and
+ *  EVERY room preview clears at the entrant seat count. Members still beyond the party rejoin
+ *  radius are left out of this run instead of making room 1 wait for a multi-hop return. */
 const plan_group_dungeon = (
   ctx: ActionContext,
   character: CharacterRow
 ): Readonly<{ dungeon: string; world: string; city: string; x: number; z: number; seats: number }> | null => {
   const party = ctx.party_state
   if (!party) return null
-  const members = party.members.filter((id) => !party.detached.has(id))
+  const allies = planning_allies(ctx, character, party.members.length)
+  const members = [character, ...allies]
   if (members.length < MIN_GROUP_KEYS) return null
   const world_name = character.world ?? ctx.world
   const world = worlds_by_id[world_name]
   if (!world) return null
   const blacklist = ctx.dungeon_blacklist
-  // Always preview the full active party. Never reject a dungeon using
-  // a smaller temporary roster just because the fifth key is not ready yet.
   const target_seats = members.length
 
   for (const dk of DUNGEON_KEYS) {
@@ -356,8 +379,6 @@ const plan_group_dungeon = (
     const all_rooms = dungeon_rooms(dk.dungeon)
     if (all_rooms.length === 0) continue
 
-    const allies = planning_allies(ctx, character, target_seats)
-    const members = [character, ...allies]
     const healthy_members = members.map(recovered)
     const healthy_character = healthy_members[0]!
     const healthy_allies = healthy_members.slice(1)
@@ -454,6 +475,7 @@ const plan_group_dungeon = (
         x: city.x,
         z: city.z,
         seats: target_seats,
+        member_ids: members.map((member) => member.id),
       })
     }
   return null
@@ -503,7 +525,7 @@ export const follower_dungeon_step = async (ctx: ActionContext, mover: Mover): P
   if (!dk) return false
   if (held_key_amount(ctx.state().inventory, unavailable_item_ids(ctx.state()), dk.key) <= 0) return false
   // every committed seat is already taken: don't burn a surplus key on a run nobody planned for
-  if (party_entered_count(ctx, group.dungeon, 1) >= group.seats) return false
+  if (party_entered_count(ctx, group.dungeon, 1, group.member_ids) >= group.seats) return false
   const result = await enter_run(ctx, mover, character, group.dungeon)
   return result !== null
 }
@@ -517,6 +539,8 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
   let entered_group = false
   /** room-1 wait bookkeeping for the run currently gating (keyed by dungeon + commit time) */
   let room1_wait: { key: string; since: number; present: number; last_arrival: number; last_log: number } | null = null
+  /** Next time a room that failed only because of current HP should be simulated again. */
+  let room_hp_preview_retry: { key: string; after_ms: number } | null = null
 
   /** Stage the run's current room: birth its fight (the turns are driven elsewhere). */
   const start_room = async (character: CharacterRow): Promise<DungeonOutcome> => {
@@ -531,15 +555,20 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       return outcome('skipped', `no mobs authored for ${run.dungeon} room ${run.room}`)
     }
 
+    const room_key = `${run.dungeon}:${run.room}`
+    const now = Date.now()
+    if (room_hp_preview_retry?.key === room_key && now < room_hp_preview_retry.after_ms)
+      return outcome('waiting', 'recovering HP before the next room preview')
+    if (room_hp_preview_retry?.key !== room_key) room_hp_preview_retry = null
+
     const allies = dungeon_allies(ctx, character).filter((ally) => ally.dungeon_run?.dungeon === run.dungeon)
     const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
     const health = party_health_status([character, ...allies])
     const readiness = dungeon_preview_readiness(preview.win_rate, health.ready)
     if (readiness === 'recovering') {
-      const now = Date.now()
-      const key = `${run.dungeon}:${run.room}`
-      if (now - (room_hp_wait_log_ms.get(key) ?? 0) >= ROOM_HP_LOG_INTERVAL_MS) {
-        room_hp_wait_log_ms.set(key, now)
+      room_hp_preview_retry = { key: room_key, after_ms: now + ROOM_HP_PREVIEW_RETRY_MS }
+      if (now - (room_hp_wait_log_ms.get(room_key) ?? 0) >= ROOM_HP_LOG_INTERVAL_MS) {
+        room_hp_wait_log_ms.set(room_key, now)
         const status = health.wounded.map((member) => `${member.name}:${member.hp}/${member.max_hp}`).join(' ')
         log_info(
           'dungeon',
@@ -549,6 +578,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       return outcome('waiting', 'room preview is not yet safe at current HP')
     }
     if (readiness === 'unwinnable') {
+      room_hp_preview_retry = null
       log_warn(
         'dungeon',
         `${run.dungeon} room ${run.room}: preview ${Math.round(preview.win_rate * 100)}% (${describe_score(preview)}) is below 80% even at full HP -- abandoning run`
@@ -556,6 +586,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       await abandon(ctx)
       return outcome('skipped', `preview win rate ${(preview.win_rate * 100).toFixed(0)}% at full HP -- abandoned`)
     }
+    room_hp_preview_retry = null
     log_info(
       'dungeon',
       `${run.dungeon} room ${run.room} preview: win_rate=${(preview.win_rate * 100).toFixed(0)}%, ${describe_score(preview)}, turns=${preview.turns.toFixed(1)}, xp/turn=${Math.round(preview.xp_per_turn)}`
@@ -615,7 +646,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       // so the room is fought at the committed seat count instead of solo.
       if (group && group.dungeon === run.dungeon && run.room === 1) {
         const now = Date.now()
-        const present = party_entered_count(ctx, run.dungeon, 1)
+        const present = party_entered_count(ctx, run.dungeon, 1, group.member_ids)
         const key = `${group.dungeon}@${group.committed_ms}`
         if (!room1_wait || room1_wait.key !== key)
           room1_wait = { key, since: now, present, last_arrival: now, last_log: 0 }
@@ -625,7 +656,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
         }
         // expected = the committed seats, capped by who can still physically come (same world,
         // active) — a member that left the world is not waited for.
-        const missing = party_missing_names(ctx, run.dungeon, group.world)
+        const missing = party_missing_names(ctx, run.dungeon, group.world, group.member_ids)
         const run_key = DUNGEON_KEYS.find((row) => row.dungeon === run.dungeon)?.key
         const keys_left = run_key
           ? held_key_amount(ctx.state().inventory, unavailable_item_ids(ctx.state()), run_key)
@@ -682,7 +713,15 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     const mastery_plan = plan_mastery_dungeon(ctx, character)
     log_debug('dungeon', `[DIAG] ${character.name}: plan_mastery_dungeon finished in ${Date.now() - mastery_started}ms (found=${Boolean(mastery_plan)})`)
     if (mastery_plan) {
-      ctx.party_state.dungeon = Object.freeze({ ...mastery_plan, member_ids: [character.id, ...planning_allies(ctx, character, mastery_plan.seats).map((ally) => ally.id)], committed_ms: Date.now() })
+      const mastery_allies = planning_allies(ctx, character, mastery_plan.seats)
+      if (mastery_allies.length + 1 < mastery_plan.seats) {
+        log_debug(
+          'dungeon',
+          `${character.name}: mastery ${mastery_plan.dungeon} needs ${mastery_plan.seats} nearby seats; ${mastery_allies.length + 1} ready`
+        )
+        return null
+      }
+      ctx.party_state.dungeon = Object.freeze({ ...mastery_plan, member_ids: [character.id, ...mastery_allies.map((ally) => ally.id)], committed_ms: Date.now() })
       log_info('dungeon', `${character.name}: committing the party to MASTERY ${mastery_plan.dungeon} (${mastery_plan.seats} seat(s))`)
       const result = await enter_run(ctx, mover, character, mastery_plan.dungeon)
       if (result?.kind === 'entered') entered_group = true
@@ -694,7 +733,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     const plan = plan_group_dungeon(ctx, character)
     log_debug('dungeon', `[DIAG] ${character.name}: plan_group_dungeon finished in ${Date.now() - group_plan_started}ms (found=${Boolean(plan)})`)
     if (!plan) return null
-    ctx.party_state.dungeon = Object.freeze({ ...plan, member_ids: [character.id, ...planning_allies(ctx, character, plan.seats).map((ally) => ally.id)], committed_ms: Date.now() })
+    ctx.party_state.dungeon = Object.freeze({ ...plan, committed_ms: Date.now() })
     log_info('dungeon', `${character.name}: committing the party to ${plan.dungeon} (${plan.seats} seat(s))`)
     const result = await enter_run(ctx, mover, character, plan.dungeon)
     if (result?.kind === 'entered') entered_group = true

@@ -8,6 +8,7 @@ import {
   craft_gather_demand,
   plan_recipe,
   drive_craft,
+  select_craft_focus,
   select_craft_target,
 } from '../src/actions/craft.ts'
 import { rank_gather_candidates } from '../src/actions/gather.ts'
@@ -238,59 +239,40 @@ describe('craft_gather_demand', () => {
       jobs: Object.fromEntries(Object.entries(jobs).map(([job, level]) => [job, String(job_xp_for_level(level))])),
     }) as any
 
-  it('demands the tier-1 staples the stalled trades were missing', () => {
-    // omori as shipped: FAR:1 HER:60 MIN:1 JEW:1 BAK:3 HAN:4 — none of those could craft, because
-    // nothing ever gathered the staples their recipes resolve to.
-    const omori = crafter({ FARMER: 1, HERBALIST: 60, MINER: 1, JEWELER: 1, BAKER: 3, HANDYMAN: 4 })
-    const demand = craft_gather_demand(omori, [], new Set())
-    expect(demand.has('wheat')).toBe(true) // FARMER flour chain, and the BAKER flour it feeds
-    expect(demand.has('quartz')).toBe(true) // MINER powders, and the JEWELER settings they feed
-    expect(demand.has('green_mushroom')).toBe(true) // HERBALIST powder
-    expect(demand.has('water')).toBe(false) // drops from mobs; not something a gather can aim at
-    expect(demand.has('shiny_trinket')).toBe(false)
+  const ready_goal = () => {
+    const detail = recipes.map(recipe_detail).find((row) => gatherable_demand(row.output_type).size > 0)!
+    return { detail, character: crafter({ [detail.job]: 100 }) }
+  }
+
+  it('emits no craft-driven demand without an explicit objective', () => {
+    expect(craft_gather_demand(crafter({ FARMER: 1, MINER: 1, HANDYMAN: 4 }), [], new Set()).size).toBe(0)
   })
 
-  it('ranks the universal staple above the narrow one, not by tier', () => {
-    const omori = crafter({ FARMER: 1, HERBALIST: 60, MINER: 1, JEWELER: 1, BAKER: 3, HANDYMAN: 4 })
-    const demand = craft_gather_demand(omori, [], new Set())
-    // wheat feeds the flour chain AND a dozen low-tier TAILOR/JEWELER recipes; wheat_barley only the
-    // chain. Tier alone would send a FARMER to the T2 barley and starve the T1 wheat again.
-    expect(demand.get('wheat')!).toBeGreaterThan(demand.get('wheat_barley')!)
+  it('demands only the gatherable leaves of the first ready objective', () => {
+    const { detail, character } = ready_goal()
+    const leaves = [...gatherable_demand(detail.output_type).keys()]
+    const demand = craft_gather_demand(character, [], new Set(), [detail.output_type])
+    expect([...demand.keys()].sort()).toEqual(leaves.sort())
   })
 
-  it('hands priority back once the stock reaches the line', () => {
-    const omori = crafter({ FARMER: 1, MINER: 1 })
-    const stocked = [{ id: 'w', item_type: 'wheat', amount: 200, category: 'resource' }] as any[]
-    const demand = craft_gather_demand(omori, stocked, new Set())
-    expect(demand.has('wheat')).toBe(false)
-    expect(demand.has('quartz')).toBe(true)
+  it('feeds the best XP recipe of the objective trade while the goal is level-locked', () => {
+    const candidate = recipes.map(recipe_detail).map((goal) => {
+      const character = crafter({ [goal.job]: 1 })
+      const focus = select_craft_focus(character, [goal.output_type])
+      return { character, focus }
+    }).find(({ focus }) => !focus?.ready && focus?.training && gatherable_demand(focus.training.output_type).size > 0)!
+    expect(candidate).toBeDefined()
+    const training = candidate.focus!.training!
+    const demand = craft_gather_demand(candidate.character, [], new Set(), [candidate.focus!.goal.output_type])
+    expect([...demand.keys()].sort()).toEqual([...gatherable_demand(training.output_type).keys()].sort())
   })
 
-  it('treats a worn (unavailable) stack as not held', () => {
-    const omori = crafter({ FARMER: 1 })
-    const worn = [{ id: 'w', item_type: 'wheat', amount: 200, category: 'resource' }] as any[]
-    expect(craft_gather_demand(omori, worn, new Set()).has('wheat')).toBe(false)
-    expect(craft_gather_demand(omori, worn, new Set(['w'])).has('wheat')).toBe(true)
-  })
-
-  it('folds dungeon-key materials into the demand', () => {
-    const omori = crafter({ FARMER: 1, MINER: 1, HANDYMAN: 4 })
-    const without_keys = craft_gather_demand(omori, [], new Set())
-    const with_keys = craft_gather_demand(omori, [], new Set(), ['key_of_gilded_lorito'])
-    // the key chain needs amber (through amber_powder), so its leverage rises while it is demanded
-    expect(with_keys.get('amber')!).toBeGreaterThan(without_keys.get('amber')!)
-  })
-
-  it('folds a gear-goal recipe in even when its craft pays no xp', () => {
-    // FORGER 100 makes this 2-slot recipe four slots below capacity, so the retro floor zeroes its XP
-    // and the rotation's own note() skips it. A deliberate gear goal must still pull its leaves.
-    const gear = recipe_detail(recipes_by_output['lid_splitter']!)
-    const leaves = [...gatherable_demand(gear.output_type).keys()]
-    expect(leaves.length).toBeGreaterThan(0)
-    const omori = crafter({ FORGER: 100 })
-    const bare = craft_gather_demand(omori, [], new Set())
-    const with_gear = craft_gather_demand(omori, [], new Set(), ['lid_splitter'])
-    expect(leaves.some((leaf) => (with_gear.get(leaf) ?? 0) > (bare.get(leaf) ?? 0))).toBe(true)
+  it('hands objective priority back once its stock reaches the reserve line', () => {
+    const { detail, character } = ready_goal()
+    const leaf = [...gatherable_demand(detail.output_type).keys()][0]!
+    const stocked = [{ id: 'stock', item_type: leaf, amount: 200, category: 'resource' }] as any[]
+    expect(craft_gather_demand(character, stocked, new Set(), [detail.output_type]).has(leaf)).toBe(false)
+    expect(craft_gather_demand(character, stocked, new Set(['stock']), [detail.output_type]).has(leaf)).toBe(true)
   })
 })
 
@@ -458,6 +440,17 @@ describe('select_craft_target gear priority', () => {
     expect(plan_recipe(character, gear, inventory, new Set())).toBeNull()
     expect(plan_recipe(character, gear, inventory, new Set(), true)).not.toBeNull()
     expect(select_craft_target(ctx, undefined, ['lid_splitter'])?.output_type).toBe('lid_splitter')
+  })
+
+  it('does not spend materials on an unrelated profession while the focused goal is blocked', () => {
+    const filler_recipe = recipes.find(
+      (row) => CRAFTING_JOBS.includes(recipe_job(row)) && recipe_job(row) !== 'FORGER' && Object.keys(row.inputs).length === 4
+    )!
+    const filler = recipe_detail(filler_recipe)
+    const inventory = hold([filler]).map(({ item_type, amount }) => [item_type, amount] as const)
+    const ctx = ctx_for({ FORGER: 40, [filler.job]: 20 }, inventory)
+    expect(select_craft_target(ctx)?.output_type).toBe(filler.output_type)
+    expect(select_craft_target(ctx, undefined, ['lid_splitter'])).toBeNull()
   })
 
   it('falls through to the xp rotation when the goal trade is too low to craft it', () => {

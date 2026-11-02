@@ -3,27 +3,26 @@
 Confirmed from the seed content, the on-chain game rules (`aresrpg/packages/move`), and the
 immutable mirrors the bot vendors. Everything below is derived, not guessed.
 
-> **Status (current build).** The default chore plan is `gather_craft` for every character
-> (`archero` uses `gather_all_craft`), so all four gather AND level the crafting trades. The
-> per-character split in §1 and the "someone else crafts for me" framing in §5 are the ORIGINAL
-> plan, kept only for the still-accurate game math; §6's excursion design is implemented in
-> `actions/excursion.ts` (leader-driven, `gather_needs`).
+> **Status (current build).** Progression is specialized: Omori concentrates all craft XP, while
+> Memorien, Llokan, and Archero each own one gathering job and keep its matching tool. A specialized
+> gatherer never falls back to another job when its local resource is absent; the excursion planner
+> relocates it instead. §6's excursion design is implemented in `actions/excursion.ts`.
 
 ## 1. Jobs and ownership
 
 | character | default chore (`BOT_CHORE_PLAN`) | goal |
 |-----------|----------------------------------|------|
-| **omori** (leader) | gather HERBALIST + rotate every crafting trade | level **every job** |
-| **memorien** | gather FARMER + rotate every crafting trade | " |
-| **llokan** | gather MINER + rotate every crafting trade | " |
-| **archero** | gather EVERY gathering job + rotate every crafting trade | " |
+| **omori** (leader) | objective-driven crafting | unlock the party's target crafts |
+| **memorien** | gather FARMER | keep `tool_farmer` equipped and level FARMER |
+| **llokan** | gather MINER | keep `tool_miner` equipped and level MINER |
+| **archero** | gather HERBALIST | keep `tool_herbalist` equipped and level HERBALIST |
 
 - Gathering jobs: `FARMER`, `HERBALIST`, `MINER` (`immutable/identity.ts`).
 - Crafting trades: `FORGER, CARVER, TAILOR, JEWELER, TANNER, HANDYMAN, ALCHEMIST, BAKER`
   (`job_groups` minus `gathering`; the rotation already uses exactly this list in `craft.ts`).
-- Every character also fights for xp regardless of its chore; the default plan keeps every
-  gatherer leaf covered while all four level the crafting trades.
-- **One signer / one shared inventory.** The bot drives all four characters over a single
+- Every character also fights for xp regardless of its chore. Craft XP is intentionally not spread
+  across the roster: every useful batch advances the one crafter responsible for recipe unlocks.
+- **One signer / one shared inventory.** The bot drives the selected roster over a single
   WebSocket for one address, and `state.inventory` is the address's item pool — so a tool omori
   crafts is immediately equippable by archero. No item transfer is needed.
 
@@ -38,11 +37,11 @@ dedicated profile, it uses balanced weights. It saves spell points when the next
 afforded and spends them on the best marginal value per point.
 
 In grouped combat those roles affect the action choice too: **Yogan is assigned the damage-carry
-role**, **Mori the controller role**, and **Tomoda the support role**. A tactical cast must beat the
-seat's damage baseline by 22% for Yogan, 8% for Mori, or clear 92% of it for Tomoda; a threatened
-ally can still trigger an emergency heal first. If no tactical action clears its role threshold,
-the seat uses the strongest direct attack available. The role resolver includes the acting seat as
-well as its allies, and the same planner is used by live fights and win-rate previews.
+role**, **Mori the controller role**, and **Tomoda the support role**. Damage, healing, buffs,
+control, displacement and casualty prevention now share one engine-backed HP-impact-per-AP scorer.
+It compares each candidate after the same projected enemy response, values buffs by the extra damage
+or movement they unlock for allies, and still falls back to direct damage or safe movement when no
+tactical action has positive impact. The same planner is used by live fights and win-rate previews.
 
 Stat spending evaluates the effect of one additional natural point at a time, then applies the exact
 class characteristic cost ladder. Elemental damage and Intelligence-scaled healing feed the combat
@@ -192,9 +191,14 @@ Path (fits world entry levels):
 `gather_quantity_bounds` raises yield with level, and `gather_time_ms` shortens the cooldown, so
 each band is faster than the last. XP, however, is per node — so the count is what matters.
 
-### omori (all craft trades)
-The rotation (least-trained trade first, highest-XP affordable recipe) is already correct. The
-bottleneck is **ingredients**, not policy. To keep every trade moving:
+### omori (objective-driven crafter)
+Crafting is deliberately strict. The first live priority is a dungeon key, then a missing gathering
+tool, then the highest-value gear upgrade. If its trade is level-locked, Omori crafts only the
+highest-XP legal recipe of that same trade until the required level is reached. Other professions
+do not request resources, redirect loot farming, or consume ingredients while this objective is
+blocked. The least-trained rotation is only a fallback when no key, tool, or gear objective exists.
+
+To feed the focused trade:
 
 - Harvests from the gatherers feed the **refine recipes** (FARMER flours, HERBALIST salves, MINER
   powders): 4 slots = 50 xp, 5 slots = 100 xp (e.g. `bloodstone_powder` needs
@@ -206,6 +210,29 @@ bottleneck is **ingredients**, not policy. To keep every trade moving:
 
 So the loop is: **fights (drops) + gather excursions (raw resources) → omori refines & crafts →
 tools/gear back to the party.** With one shared inventory this is automatic.
+
+### Equipment acquisition invariant
+
+The equipment path is validated end to end against all 116 craftable wearables:
+
+1. Score the best legal upgrade for each character and slot using class affinity and actual stats.
+2. Allocate held item ids leader-first, exactly like auto-equip; one copy cannot satisfy two users.
+3. Keep the goal when a held random roll is weaker than the worn piece.
+4. Train only the target recipe's job when its ingredient-count gate is still locked.
+5. Expand intermediates recursively into gatherable leaves and mob-only drops.
+6. Craft unique equipment with one attempt and no stack output target.
+7. Detect the minted id, verify kiosk ownership, and equip it when the character is idle and fresh.
+
+Every gear recipe terminates in gatherable, lootable, or craftable inputs; the regression suite also
+checks that there are no dependency cycles or unreachable job-level gates.
+
+### Resource protector bags
+
+A successful protector fight can award a deterministic bag for the protected resource. The idle
+party leader opens and claims these boxes before starting another fight. Only seed entries with one
+guaranteed gatherable-resource reward are accepted; each supported bag returns **50 units**, and up
+to 50 boxes from one stack are processed together. The resulting stock immediately participates in
+the normal craft-demand calculation.
 
 ## 6. Periodic gathering excursions (design and current status)
 

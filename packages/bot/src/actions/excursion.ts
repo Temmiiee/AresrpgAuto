@@ -115,12 +115,8 @@ const has_job_tool = (
 }
 
 /** Every party member whose chore gathers, with the jobs it covers and the ones it is tool-ready for.
- *  A single-job chore (`gather`/`gather_craft`) covers ONE job; an all-resource chore
- *  (`gather_all`/`gather_all_craft`) covers every job. Recognising only `gather` here was the bug
- *  that killed every excursion: the default plan is `gather_craft`/`gather_all_craft`, so this
- *  returned EMPTY, `gather_needs` saw no gap, and the party never left a biome its gatherers could
- *  not work (the live window held only quartz+amber while omori's chore wanted HERBALIST — zero
- *  harvests for the whole window). */
+ *  A single-job chore (`gather`/`gather_craft`) covers ONE job; an explicitly configured all-resource
+ *  chore (`gather_all`/`gather_all_craft`) covers every job. */
 export const gather_members = (state: GameState, party: PartyState): readonly GatherMember[] => {
   const unavailable = unavailable_item_ids(state)
   const members: GatherMember[] = []
@@ -313,6 +309,9 @@ export const maybe_start_excursion = (
   character: CharacterRow,
   pose: PartyPose
 ): boolean => {
+  // A rendezvous already owns the party's destination. Starting an excursion while staging moves
+  // the leader away from the screened group and leaves every staged follower waiting for minutes.
+  if (party.phase !== 'idle' || party.target !== null || party.fight !== null) return false
   if (party.excursion) return false
   const state = ctx.state()
   const needs = gather_needs(state, gather_members(state, party))

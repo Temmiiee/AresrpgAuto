@@ -181,6 +181,18 @@ describe('plan_loadout', () => {
     const loadout = plan_loadout(character({ strength: 500 }), state([pick, hoe]), { tool_category: 'tool_farmer' })
     expect(loadout.get('tool')?.id).toBe('hoe')
   })
+
+  it('keeps the matching worn tool instead of swapping to an equivalent higher-scored copy', () => {
+    const wornHoe = worn('tool', 'worn-hoe', {
+      category: 'tool_farmer',
+      stats: stats_of({ strength: 1 }),
+    })
+    const shinyHoe = item('shiny-hoe', 'tool_farmer', { stats: stats_of({ strength: 500 }) })
+    const hero = character({ strength: 500, equipment: [wornHoe] })
+    const loadout = plan_loadout(hero, state([shinyHoe], [hero]), { tool_category: 'tool_farmer' })
+    expect(loadout.get('tool')?.id).toBe('worn-hoe')
+    expect(equip_plan(hero, loadout).to_equip).toEqual([])
+  })
 })
 
 describe('equip_plan', () => {

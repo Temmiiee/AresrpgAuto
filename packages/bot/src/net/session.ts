@@ -78,6 +78,7 @@ import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, create_serial_queue, type ActionContext } from '../actions/context.ts'
 import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
 import { maybe_progress } from '../actions/progression.ts'
+import { open_resource_bag_once } from '../actions/loot_box.ts'
 import { gear_goal_outputs } from '../actions/gear.ts'
 import { describe_strategy, type Strategy } from '../actions/strategy.ts'
 import { compute_strategy_offload } from '../actions/strategy_offload.ts'
@@ -172,6 +173,8 @@ const DIGEST_INTERVAL_MS = config.digest_minutes * 60_000
 const STRATEGY_STARTUP_DELAY_MS = 90_000
 const HEALTH_HEARTBEAT_MS = 15_000
 const SLOW_PASS_WARN_MS = 60_000
+/** Repeat an unchanged gather failure occasionally, while logging a new reason immediately. */
+const GATHER_SKIP_LOG_MS = 60_000
 /** How far (in blocks) a party member may wander for a node while the party is grouping. Two zones is
  *  about 90s of travel under the speed law, cheap enough that the next rendezvous still lands. */
 const PARTY_GATHER_RADIUS = 1_024
@@ -216,6 +219,8 @@ type CharRuntime = {
   last_key_craft_attempt_ms: number | null
   /** last time this character's chore genuinely acted (gathered or crafted); the forced window reads it */
   last_chore_ms: number
+  /** Last empty-gather diagnosis, used to keep a 3-second idle loop readable. */
+  last_gather_skip: { reason: string; logged_ms: number } | null
   /** true on this character's very first pass — auto-equip is deferred past it so the character can
    *  land its first settle/chore/engage before gear swaps start firing. */
   first_pass: boolean
@@ -236,15 +241,15 @@ const chore_due = (rt: CharRuntime): boolean =>
 const describe_chore = (chore: ChoreRole): string => {
   switch (chore.kind) {
     case 'craft':
-      return 'rotate all crafting jobs'
+      return 'craft priority goals (rotate only when none)'
     case 'gather':
       return `gather ${chore.job}`
     case 'gather_all':
       return `gather all (${GATHERING_JOBS.join('/')})`
     case 'gather_craft':
-      return `gather ${chore.job} + rotate crafts`
+      return `gather ${chore.job} + craft priority goals`
     case 'gather_all_craft':
-      return `gather all (${GATHERING_JOBS.join('/')}) + rotate crafts`
+      return `gather all (${GATHERING_JOBS.join('/')}) + craft priority goals`
     case 'none':
       return 'none'
   }
@@ -542,6 +547,7 @@ export const play_loop = async (
       awaiting_fight_ms: null,
       last_key_craft_attempt_ms: null,
       last_chore_ms: Date.now(),
+      last_gather_skip: null,
       first_pass: true,
       pass_started_ms: null,
       last_pass_completed_ms: null,
@@ -607,6 +613,14 @@ export const play_loop = async (
   // ctx: `farm.distance` is where the party should stand, `wanted_mobs` biases the engage toward
   // families whose loot carries a wanted upgrade.
   const strategy_ref = new Map<PartyState, Strategy>()
+
+  // Character loops run concurrently. A follower can begin a long gather leg a few milliseconds
+  // before the leader stages a fight; once the rendezvous exists, that in-flight chore cannot be
+  // cancelled and the whole party waits minutes for it to walk back. Track chores across loops so
+  // the leader never opens a new rendezvous until every non-detached member has finished its current
+  // chore. New chores are also refused once staging has begun.
+  const active_chores = new Set<string>()
+  const planning_fight = new WeakSet<PartyState>()
 
   // ── gear craft goals ────────────────────────────────────────────────
   // The craft planner's priority list: the best CRAFTABLE weapon/armour/accessory for each character at
@@ -914,6 +928,14 @@ export const play_loop = async (
     const group_mode = toggles.group && party_attempting(party_state)
     const is_leader = character.id === party_state.leader_id
 
+    // Protector victories drop deterministic bags worth 50 resources each. Open them through the
+    // same party-wide kiosk lane as crafting, while idle and before planning another fight. Only the
+    // leader performs this shared-inventory maintenance, so one bag stack is never opened twice.
+    if (is_leader && party_state.phase === 'idle') {
+      const opened = await craft_queue.run(() => open_resource_bag_once(ctx))
+      if (opened.opened) return idle_sleep_ms
+    }
+
     // 3b-bis. group dungeon: when the leader has committed the party to a run, every key-holder must
     // ENTER it before the dungeon door will accept its join. A follower walks to the portal and burns
     // its own key here — before the routed steps below can send it off gathering. The step also gives
@@ -1039,15 +1061,36 @@ export const play_loop = async (
       // Bounded to the party's neighbourhood: an unbounded chore hands the leader the demanded node
       // the crafting rotation owes, which may be zones away, and walks it there alone in one silent
       // leg. Bounded, the leader harvests what is local and lets the party relocate when needed.
-      if (await trace_step(character.name, 'run_chore_leader', () => run_chore(rt, true))) return idle_sleep_ms
+      if (await trace_step(character.name, 'run_chore_leader', () => run_chore_tracked(rt, true))) return idle_sleep_ms
     }
 
     if (group_mode) {
-      const handled = is_leader
-        ? await trace_step(character.name, 'leader_group_step', () => leader_group_step(ctx, mover, current, party_state))
-        : party_state.detached.has(current.id)
+      // Do not create a target while another seat is still walking/harvesting. It will finish and
+      // the next leader pass can stage from coherent party positions instead of starting a 140s wait.
+      if (
+        is_leader &&
+        party_state.phase === 'idle' &&
+        party_state.members.some((id) => id !== character.id && !party_state.detached.has(id) && active_chores.has(id))
+      )
+        return idle_sleep_ms
+      let handled: number | null
+      if (is_leader) {
+        // Close the small preview race: after the active-chore check but before leader_group_step
+        // publishes `phase=staging`, its simulations await worker results. Followers must not start
+        // a chore in that window.
+        planning_fight.add(party_state)
+        try {
+          handled = await trace_step(character.name, 'leader_group_step', () =>
+            leader_group_step(ctx, mover, current, party_state)
+          )
+        } finally {
+          planning_fight.delete(party_state)
+        }
+      } else {
+        handled = party_state.detached.has(current.id)
           ? null
           : await trace_step(character.name, 'follower_group_step', () => follower_group_step(ctx, mover, current, party_state))
+      }
       if (handled !== null) return handled
       // The group step found nothing to stage in the CURRENT window — only now does the leader
       // roam, with a bounded step (PARTY_RADIUS) so a relocation creeps toward the band and the
@@ -1110,7 +1153,7 @@ export const play_loop = async (
     // character that has since blown the forced window runs one too, so no engage cadence starves it.
     if (rt.chore_pending || chore_due(rt)) {
       rt.chore_pending = false
-      if (await trace_step(character.name, 'run_chore', () => run_chore(rt, group_mode))) return idle_sleep_ms
+      if (await trace_step(character.name, 'run_chore', () => run_chore_tracked(rt, group_mode))) return idle_sleep_ms
     }
 
     // 4. fight: never burn gas on trivial prey
@@ -1167,7 +1210,7 @@ export const play_loop = async (
     }
 
     // 5. chores fallback: with no fight on offer, harvest and craft rather than idle.
-    if (await trace_step(character.name, 'run_chore', () => run_chore(rt, group_mode))) return idle_sleep_ms
+    if (await trace_step(character.name, 'run_chore', () => run_chore_tracked(rt, group_mode))) return idle_sleep_ms
 
     return idle_sleep_ms
   }
@@ -1223,6 +1266,7 @@ export const play_loop = async (
         : undefined
       const gathered = await gather_once(ctx, mover, gather_job, local_only ? PARTY_GATHER_RADIUS : undefined, demand)
       if (gathered.kind === 'gathered') {
+        rt.last_gather_skip = null
         rt.stats = record_gather(rt.stats, gathered.item_type, gathered.quantity)
         digest_stats = record_gather(digest_stats, gathered.item_type, gathered.quantity)
         acted = true
@@ -1233,9 +1277,15 @@ export const play_loop = async (
           return true
         }
       } else {
-        // A skip used to be silent, which hid a dead gather pipeline for a whole night (the roster
-        // showed zero harvests and nothing said why). One line per chore is cheap next to that.
-        log_info('gather', `${character.name}: no harvest — ${gathered.reason}`)
+        // Keep the diagnosis visible without printing the same large window summary every idle pass.
+        const now = Date.now()
+        if (
+          rt.last_gather_skip?.reason !== gathered.reason ||
+          now - (rt.last_gather_skip?.logged_ms ?? 0) >= GATHER_SKIP_LOG_MS
+        ) {
+          log_info('gather', `${character.name}: no harvest — ${gathered.reason}`)
+          rt.last_gather_skip = { reason: gathered.reason, logged_ms: now }
+        }
       }
       // Advance the rotation so the all-resource gatherer sweeps FARMER → HERBALIST → MINER.
       if (chore.kind === 'gather_all' || chore.kind === 'gather_all_craft') rt.gather_cursor = (rt.gather_cursor + 1) % GATHERING_JOBS.length
@@ -1314,6 +1364,21 @@ export const play_loop = async (
     // due, so a blocked pass retries instead of silently resetting the floor.
     if (acted) rt.last_chore_ms = Date.now()
     return acted
+  }
+
+  /** Serialize fight staging against concurrent chores without serializing the chores themselves. */
+  const run_chore_tracked = async (rt: CharRuntime, local_only = false): Promise<boolean> => {
+    const rendezvous_active = (): boolean =>
+      rt.ctx.party_state.phase !== 'idle' || planning_fight.has(rt.ctx.party_state)
+    if (rendezvous_active()) return false
+    active_chores.add(rt.character.id)
+    try {
+      // The phase may have changed between the caller's routing decision and acquiring this turn.
+      if (rendezvous_active()) return false
+      return await run_chore(rt, local_only)
+    } finally {
+      active_chores.delete(rt.character.id)
+    }
   }
 
   // ── run all characters in parallel ──────────────────────────────────

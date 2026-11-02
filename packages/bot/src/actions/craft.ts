@@ -18,6 +18,7 @@ import {
 } from '@aresrpg/immutable'
 import type { CharacterRow, ItemRow } from '@aresrpg/protocol'
 
+import { config } from '../config.ts'
 import {
   gatherable_demand,
   items_by_type,
@@ -170,6 +171,39 @@ const better_recipe =
 const job_level_of = (character: CharacterRow, job: string): number =>
   job_level_from_xp(Number(character.jobs?.[job] ?? '0'))
 
+export type CraftFocus = Readonly<{
+  goal: RecipeDetail
+  /** Best XP-paying recipe of the goal's trade while the goal itself is level-locked. */
+  training: RecipeDetail | null
+  ready: boolean
+}>
+
+/** The first authored priority is the only craft objective allowed to create resource demand. If
+ *  its trade is level-locked, return the highest-XP recipe that the crafter can legally make now;
+ *  this concentrates both gathered leaves and loot farming on the shortest unlock path. */
+export const select_craft_focus = (
+  character: CharacterRow,
+  priority_outputs: readonly string[]
+): CraftFocus | null => {
+  for (const output_type of priority_outputs) {
+    if (is_craft_blacklisted(output_type)) continue
+    const recipe = recipes_by_output[output_type]
+    if (!recipe) continue
+    const goal = recipe_detail(recipe)
+    const level = job_level_of(character, goal.job)
+    const ready = level >= craft_required_level(goal.ingredients.length)
+    if (ready) return Object.freeze({ goal, training: null, ready: true })
+    const training = [...job_recipes(goal.job)]
+      .filter((detail) => !is_craft_blacklisted(detail.output_type))
+      .filter((detail) => level >= craft_required_level(detail.ingredients.length))
+      .map((detail) => Object.freeze({ detail, xp: craft_xp_at_level(detail.ingredients.length, level) }))
+      .filter(({ xp }) => xp > 0)
+      .sort((left, right) => right.xp - left.xp || right.detail.craft_xp - left.detail.craft_xp)[0]?.detail ?? null
+    return Object.freeze({ goal, training, ready: false })
+  }
+  return null
+}
+
 /** The next recipe to craft so a blocked `detail` climbs one step closer to craftable.
  *
  *  `plan_recipe` only proposes what the inventory already holds, so a trade whose recipes are built
@@ -227,7 +261,8 @@ const craft_prerequisite = (
  *  `priority_outputs` are tried FIRST, before the XP rotation: the gear goals (`actions/gear.ts`)
  *  name the equipment that is an actual upgrade for some character, so the rotation mints what the
  *  party will WEAR before it mints xp filler. A goal that is already craftable (or one step away
- *  through a refinement) wins the pass; otherwise the rotation proceeds exactly as before. */
+ *  through a refinement) wins the pass. While any valid priority exists, unrelated professions are
+ *  frozen: only that goal's trade may train. The generic rotation runs only with no objective. */
 export const select_craft_target = (
   ctx: ActionContext,
   also_unavailable: ReadonlySet<string> = EMPTY_IDS,
@@ -242,10 +277,19 @@ export const select_craft_target = (
         return member ? [member] : []
       })
     : [character]
+  // Only characters whose runtime role actually crafts can own a trade unlock. Previously the
+  // highest historical level anywhere in the party became the trainer, even when that character's
+  // current role was gather-only; the dedicated crafter then refused to train the job and nobody
+  // advanced it. Tests and callers with synthetic unnamed characters fall back to the full team.
+  const configured_crafters = team_members.filter((member) => {
+    const role = config.chore_plan[member.name?.toLowerCase() ?? '']
+    return role?.kind === 'craft' || role?.kind === 'gather_craft' || role?.kind === 'gather_all_craft'
+  })
+  const craft_team = configured_crafters.length > 0 ? configured_crafters : team_members
   const team_job_level = (job: string): number =>
-    Math.max(0, ...team_members.map((member) => job_level_of(member, job)))
+    Math.max(0, ...craft_team.map((member) => job_level_of(member, job)))
   const team_job_trainer = (job: string): string =>
-    [...team_members].sort((left, right) => job_level_of(right, job) - job_level_of(left, job))[0]?.id ?? character.id
+    [...craft_team].sort((left, right) => job_level_of(right, job) - job_level_of(left, job))[0]?.id ?? character.id
   // `also_unavailable` carries the stacks a craft ALREADY BURNED earlier in this same chore. The
   // per-character state only advances when the server pushes the next projection, so a second batch
   // planned against the pre-craft snapshot reuses ingredient ids the chain has already consumed and
@@ -263,11 +307,13 @@ export const select_craft_target = (
   // goal means we should train THAT trade (craft its highest-XP affordable recipe) until it reaches
   // the required level, rather than cycling to every other trade first.
   const goal_jobs: string[] = []
+  let focused_goal = false
   for (const output_type of priority_outputs) {
     if (is_craft_blacklisted(output_type)) continue
     const recipe = recipes_by_output[output_type]
     if (!recipe) continue
     const detail = recipe_detail(recipe)
+    focused_goal = true
     const job = detail.job
     const plan = plan_recipe(character, detail, inventory, unavailable, true)
     if (plan) return plan
@@ -281,7 +327,7 @@ export const select_craft_target = (
         !goal_jobs.includes(job)
       )
         goal_jobs.push(job)
-      continue
+      break
     }
     const prerequisite = craft_prerequisite(
       character,
@@ -295,11 +341,14 @@ export const select_craft_target = (
       const preplan = plan_recipe(character, prerequisite, inventory, unavailable, true)
       if (preplan) return preplan
     }
+    // Strict objective mode: later priorities cannot spend materials while the first valid goal is
+    // blocked. Wait for its exact leaves/loot (or train its own trade below).
+    break
   }
 
   const job_order: string[] = []
   for (const job of goal_jobs) if (!job_order.includes(job)) job_order.push(job)
-  for (const job of rotation_order(character)) if (!job_order.includes(job)) job_order.push(job)
+  if (!focused_goal) for (const job of rotation_order(character)) if (!job_order.includes(job)) job_order.push(job)
 
   for (const job of job_order) {
     const recipes = [...job_recipes(job)].sort(better_recipe(holds))
@@ -333,7 +382,8 @@ export const select_craft_target = (
  *  its priority back and climbs the tier ladder instead of pinning on one staple forever. */
 export const GATHER_DEMAND_STOCK = 60
 
-/** Recipe-driven gathering: the gatherable inputs the crafting rotation still OWES, ranked.
+/** Strict objective-driven gathering: gather leaves for ONE priority craft, or for ONE best-XP
+ *  training recipe in the same trade when that goal is level-locked.
  *
  *  `plan_recipe` can only propose what the inventory already holds, so a trade with nothing held
  *  falls through the rotation forever — observed as JEWELER/BAKER/HANDYMAN stuck at level 1/3/4
@@ -342,13 +392,10 @@ export const GATHER_DEMAND_STOCK = 60
  *  crafter knows which recipes are one missing input away, so this derives the demand from the
  *  crafter's job levels and the gather action consumes it.
  *
- *  Every level-eligible recipe is walked down to its gatherable leaves (through any intermediate
- *  craft). The returned rank is the leaf's TOTAL one-craft requirement across those recipes, not
- *  its tier: wheat feeds the flour chain AND a dozen low-tier TAILOR/JEWELER recipes, so it must
- *  outrank the narrow wheat_barley beside it rather than lose to it on tier. A leaf drops out once
- *  its stock reaches {@link GATHER_DEMAND_STOCK}. `extra_outputs` folds in recipes that are not part of the
- *  rotation but whose inputs the party must still stock: the dungeon keys AND the gear upgrade goals
- *  (whose crafts may pay no XP, so they bypass the rotation's xp gate). */
+ *  The returned rank is the leaf's one-craft requirement through every intermediate. A leaf drops
+ *  out once its stock reaches {@link GATHER_DEMAND_STOCK}. With no objective, no craft-driven demand
+ *  is emitted: gatherers may still level their own fixed gathering trade, but they do not stockpile
+ *  ingredients for unrelated crafting professions. */
 export const craft_gather_demand = (
   character: CharacterRow,
   inventory: readonly ItemRow[],
@@ -367,11 +414,9 @@ export const craft_gather_demand = (
       leverage.set(item_type, (leverage.get(item_type) ?? 0) + quantity)
   }
 
-  for (const job of rotation_order(character)) for (const detail of job_recipes(job)) note(detail)
-  for (const output_type of extra_outputs) {
-    const recipe = recipes_by_output[output_type]
-    if (recipe) note(recipe_detail(recipe), true)
-  }
+  const focus = select_craft_focus(character, extra_outputs)
+  if (focus?.ready) note(focus.goal, true)
+  else if (focus?.training) note(focus.training)
 
   const demand = new Map<string, number>()
   for (const [item_type, rank] of leverage) {

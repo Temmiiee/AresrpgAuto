@@ -52,6 +52,7 @@ AresRPGAuto/
           roam.ts           pick where to stand (plan_roam / assess_window)
           gather.ts         harvest one node
           craft.ts          plan_recipe / craft_once / drive_craft
+          loot_box.ts       open + claim deterministic 50-resource protector bags
           combat.ts         hydrate/drive/engage/settle fights (the fight driver)
           equip.ts          auto-equip: score gear + allocate it across the party
           gear.ts           craft goals: best craftable weapon/armour per character level
@@ -146,6 +147,9 @@ For each character, in order:
    while the party chains fights. The leader screens the group **for the whole party**; the leader
    then engages and joins all partners in the same beat. While the party is grouping only the leader
    opens fights.
+3b0. **resource bags** — while the party is idle, the leader opens and claims one deterministic
+   resource-bag stack through the shared craft/kiosk lane. This happens before a new rendezvous so
+   the two-stage open/claim flow cannot race another shared-inventory action.
 3c. **chores** — run the assigned chore once (`run_chore`). A party member's gather is capped
    (`PARTY_GATHER_RADIUS = 1024`) so it stays within a zone or two of the leader. A forced chore
    floor (`BOT_CHORE_INTERVAL_MS`, default 5 min) guarantees a chore runs before the next engage
@@ -239,9 +243,11 @@ below a character's level that beat what that character could wear today, and re
 types as a **priority list** the craft planner (`select_craft_target`) tries BEFORE the xp rotation —
 so the party mints what it will WEAR before spending the same materials on xp filler. Gear goals allow
 zero-XP crafts (a 2-slot weapon still beats fists at job level 100), the rotation remains the
-fallback, and an output already held un-equipped is dropped (auto-equip will place it). A goal's
-inputs are demanded through `craft_gather_demand`'s `extra_outputs`, which the play loop fills with the
-goal outputs — pulled even when the craft pays no XP, because the goal is deliberate, not filler.
+fallback. Held equipment is allocated once in the same leader-first order as auto-equip: one usable
+copy satisfies one character, while a weak random roll that loses to the worn piece or another
+character needing the same output keeps the craft goal alive. A goal's inputs are demanded through
+`craft_gather_demand`'s `extra_outputs`, which the play loop fills with the goal outputs — pulled even
+when the craft pays no XP, because the goal is deliberate, not filler.
 
 Gear acquisition is staged in `plan_gear_craft_steps`: craftable upgrades unlocked by any current team
 member come first, followed by only the nearest job-level unlock that improves a slot. Do not put all
@@ -261,6 +267,19 @@ until the retry window expires and the next key can become the goal. The runner 
 room with the fight twin before spending keys; do not lower that safety gate without a verified
 combat reason. Group previews use the strongest available party members first. The general craft
 rotation excludes `old_hoe` and `basic_pickaxe`.
+
+Only members in the leader's world and within `REJOIN_RADIUS` are committed to a run. Room previews
+that fail only because entrants are wounded are retried at most every 30 seconds while HP recovers;
+a room that still fails at full HP abandons the run. This prevents both premature key spending and
+the old loop that re-simulated four fights every few seconds as regeneration changed the cache key.
+
+## Resource protector bags (`actions/loot_box.ts`)
+
+Protector victories mint `loot_box` consumables whose seed definition has one guaranteed resource
+reward of 50 units. The leader opens at most 50 bags from one stack, immediately claims the batch,
+and merges it into an existing resource stack when available. Recognition is content-driven: an
+ordinary loot box, a weighted/multi-reward box, or a non-resource reward is never opened by this
+maintenance action. Ledger entries record the open and claim transactions separately.
 
 ## Strategy brain (`actions/strategy.ts`)
 
@@ -298,7 +317,7 @@ never disagree with a live decision about what is winnable:
   `fight_runtimes.with_lock` (two allied seats placing onto one start cell abort the second tx).
 - **Settling is fight-wide** — `settle_pending` settles every seat of a fight in one transaction.
   The old per-character `last` detection (`row.character !== me`) misfires for a shared fight,
-  because all four seats belong to the same address. The kiosk is shared, so one character settles
+  because every party seat belongs to the same address. The kiosk is shared, so one character settles
   the whole party.
 - **Fight policy is deliberately conservative** — `MIN_WIN_RATE = 0.8` over 5 seeds, `MAX_TURNS = 30`,
   at most 6 screened candidates. Low-win-rate preview logs are normal; a session that logs previews
@@ -308,6 +327,9 @@ never disagree with a live decision about what is winnable:
   handed a held stack as `existing`. So `plan_recipe` sets `existing` **only** for a stackable output
   (`item_is_stackable(category)`), and the unique batch cap keeps `attempts == 1`. This was the
   recurring `craft rootshivs failed … abort code: 2323` (rootshivs is category `daggers`).
+- **One held item type is not one copy per character** — gear planning must allocate actual item ids
+  across the party before suppressing craft goals. Suppressing by `item_type` alone strands the
+  second wearer and also treats a bad random roll as usable forever.
 - **Vendored code** — `packages/{sdk,fight,protocol,immutable}` are copies. Edit them **only** if you
   also intend to change `../aresrpg`; otherwise `sync_vendor.mjs` will (correctly) flag drift.
 - **Terminal link states** — `replaced` and `rejected` end the run (a takeover or a bad signature
@@ -363,7 +385,7 @@ never disagree with a live decision about what is winnable:
 | `BOT_CROSS_WORLD` | `true` | let the cross-world gatherer periodically detach |
 | `BOT_PARTY_SIZE` | `5` | characters driven at once (1..5), all on one socket |
 | `BOT_LEADER` | `omori` | character name that opens the party's shared fights |
-| `BOT_CHORE_PLAN` | default roster | JSON map of character name → `"craft"` / `"none"` / `"gather_all"` / `"gather_all_craft"` / `"FARMER"` \| `"HERBALIST"` \| `"MINER"` / `{"kind":"gather_craft","job":"…"}`; default is every character gathers AND crafts |
+| `BOT_CHORE_PLAN` | specialized roster | JSON map of character name → `"craft"` / `"none"` / `"gather_all"` / `"gather_all_craft"` / `"FARMER"` \| `"HERBALIST"` \| `"MINER"` / `{"kind":"gather_craft","job":"…"}`; default is Omori crafting plus one fixed job per gatherer |
 | `BOT_CHORE_INTERVAL_MS` | `300000` | forced chore floor before an engage (0 disables) |
 | `BOT_CROSS_WORLD_GATHERER` | `archero` | character that detaches for cross-world gathering |
 | `BOT_CROSS_WORLD_WORLD` | – | explicit target world (unset = richest reachable) |

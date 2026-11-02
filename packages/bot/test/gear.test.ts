@@ -1,21 +1,31 @@
 // Gear-craft goals — the "what should we make" half of the loop. These pin the selection rules: only
 // CRAFTABLE gear, never above the character's level, fitted to the slot, scored with the same
 // rune-weight + affinity math auto-equip uses, only when it actually beats what the character could
-// wear today, and never a second copy of something the party already holds un-equipped.
+// wear today. Held copies are allocated exactly once: a usable roll suppresses one craft, while a
+// weak roll or a second character needing the same output keeps the goal alive.
 import { describe, expect, it } from 'bun:test'
-import { item_stat_center, stat_names } from '@aresrpg/immutable'
+import { craft_required_level, item_stat_center, job_xp_for_level, stat_names } from '@aresrpg/immutable'
 import type { CharacterRow, ItemRow } from '@aresrpg/protocol'
 import type { SeedItem } from '@aresrpg/sdk/seed'
 
 import {
   expected_gear,
+  gear_candidates,
   gear_goal_outputs,
   plan_gear_goals,
   plan_slot_goal,
   type GearCandidate,
   type GearItem,
 } from '../src/actions/gear.ts'
-import { items_by_type } from '../src/content/catalog.ts'
+import { plan_recipe } from '../src/actions/craft.ts'
+import { equip_plan, plan_loadout } from '../src/actions/equip.ts'
+import {
+  gatherable_of,
+  items_by_type,
+  loot_sources_by_item,
+  recipe_detail,
+  recipes_by_output,
+} from '../src/content/catalog.ts'
 import { initial_game_state } from '../src/state/store.ts'
 
 const SHIFT = item_stat_center
@@ -177,7 +187,104 @@ describe('plan_gear_goals', () => {
     expect(outputs).not.toContain(target.output_type)
   })
 
+  it('keeps a goal when the held copy is a bad roll that auto-equip would reject', () => {
+    const old = cand('old-hat', 'hat', 5, { stats: { strength: 20 } }).item
+    const target = cand('target-hat', 'hat', 5, { stats: { strength: 40 } })
+    const hero = character({
+      level: 10,
+      strength: 500,
+      equipment: [{ ...old, id: 'worn-hat', slot: 'hat' }] as CharacterRow['equipment'],
+    })
+    const bad_roll = item('bad-roll', target.output_type, 'hat', {
+      level: 5,
+      stats: { ...Object.fromEntries(stat_names.map((stat) => [stat, SHIFT])), strength: SHIFT + 5 } as ItemRow['stats'],
+    })
+
+    const goals = plan_gear_goals([hero], state_with([bad_roll], [hero]), [target])
+    expect(goals.map((goal) => goal.output_type)).toContain(target.output_type)
+  })
+
+  it('uses one held copy for only one character and keeps crafting for the other', () => {
+    const target = cand('shared-hat', 'hat', 5, { stats: { strength: 40 } })
+    const first = character({ id: 'c1', name: 'first', level: 10, strength: 500 })
+    const second = character({ id: 'c2', name: 'second', level: 10, strength: 500 })
+    const held = item('only-copy', target.output_type, 'hat', {
+      level: 5,
+      stats: target.item.stats as ItemRow['stats'],
+    })
+
+    const goals = plan_gear_goals([first, second], state_with([held], [first, second]), [target])
+    expect(goals).toHaveLength(1)
+    expect(goals[0]!.character_id).toBe(second.id)
+    expect(goals[0]!.output_type).toBe(target.output_type)
+  })
+
   it('is empty without a roster', () => {
     expect(plan_gear_goals([], state_with([]))).toEqual([])
+  })
+})
+
+describe('equipment chain', () => {
+  it('closes every real gear recipe on gatherable, lootable, or recursively craftable inputs', () => {
+    const orphaned = new Set<string>()
+    const cycles = new Set<string>()
+    const visit = (item_type: string, path: ReadonlySet<string>): void => {
+      if (gatherable_of(item_type) || (loot_sources_by_item.get(item_type)?.length ?? 0) > 0) return
+      const recipe = recipes_by_output[item_type]
+      if (!recipe) {
+        orphaned.add(item_type)
+        return
+      }
+      if (path.has(item_type)) {
+        cycles.add(item_type)
+        return
+      }
+      const next = new Set([...path, item_type])
+      for (const input of Object.keys(recipe.inputs)) visit(input, next)
+    }
+
+    for (const candidate of gear_candidates) {
+      const recipe = recipes_by_output[candidate.output_type]
+      expect(recipe).toBeDefined()
+      expect(candidate.job.length).toBeGreaterThan(0)
+      expect(craft_required_level(Object.keys(recipe!.inputs).length)).toBeLessThanOrEqual(100)
+      visit(candidate.output_type, new Set())
+    }
+    expect([...orphaned]).toEqual([])
+    expect([...cycles]).toEqual([])
+  })
+
+  it('runs a real target through goal, craft plan, minted projection, and equip plan', () => {
+    const hero = character({ id: 'crafter', level: 50, strength: 500 })
+    const empty = state_with([], [hero])
+    const goal = plan_gear_goals([hero], empty)[0]
+    expect(goal).toBeDefined()
+
+    const recipe = recipe_detail(recipes_by_output[goal!.output_type]!)
+    const crafter = character({
+      ...hero,
+      jobs: { [recipe.job]: String(job_xp_for_level(100) ?? 0) },
+    })
+    const ingredients = recipe.ingredients.map((ingredient, index) =>
+      item(`ingredient-${index}`, ingredient.item_type, items_by_type[ingredient.item_type]?.category ?? 'resource', {
+        amount: ingredient.quantity,
+      })
+    )
+    const craft = plan_recipe(crafter, recipe, ingredients, new Set(), true)
+    expect(craft?.output_type).toBe(goal!.output_type)
+    expect(craft?.attempts).toBe(1)
+    expect(craft?.existing).toBeNull()
+
+    const seed = items_by_type[goal!.output_type]!
+    const rolled = expected_gear(seed)
+    const minted = item('minted-upgrade', rolled.item_type, rolled.category, {
+      level: rolled.level,
+      stats: rolled.stats as ItemRow['stats'],
+      damages: rolled.damages as ItemRow['damages'],
+    })
+    const landed = state_with([minted], [crafter])
+    const loadout = plan_loadout(crafter, landed)
+    const equip = equip_plan(crafter, loadout)
+    expect(equip.to_equip.some((change) => change.item_id === minted.id && change.slot === goal!.slot)).toBe(true)
   })
 })

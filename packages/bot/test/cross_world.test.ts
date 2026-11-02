@@ -46,6 +46,16 @@ describe('cross_world_target', () => {
     expect(target?.job).toBe('MINER')
   })
 
+  it('honours a fixed gathering specialty even when another owned tool reaches the same world', () => {
+    const herbalist_tool = { id: 't2', item_type: 'tool_herbalist', category: 'tool_herbalist' }
+    const archero = character({
+      jobs: { MINER: job_xp_for_level(35), HERBALIST: job_xp_for_level(35) } as never,
+      equipment: [miner_tool] as never,
+    })
+    const target = cross_world_target(archero, state([herbalist_tool]), 'nauvis', 'HERBALIST')
+    expect(target?.job).toBe('HERBALIST')
+  })
+
   it('stays home when the job tool is not owned', () => {
     const archero = character({ jobs: { MINER: job_xp_for_level(35) } as never })
     expect(cross_world_target(archero, state(), 'nauvis')).toBeNull()
