@@ -17,6 +17,8 @@ export type PlayToggles = Readonly<{
   group: boolean
   /** let the designated character periodically detach to gather a richer world (e.g. yakutia) */
   cross_world: boolean
+  /** feed every eligible pet once per UTC day and craft its authored food when possible */
+  pet_feed: boolean
 }>
 
 const env_flag = (raw: string | undefined, fallback: boolean): boolean => {
@@ -186,6 +188,7 @@ export const config: BotConfig = Object.freeze({
     craft: env_flag(process.env.BOT_CRAFT, true),
     group: env_flag(process.env.BOT_GROUP, true),
     cross_world: env_flag(process.env.BOT_CROSS_WORLD, true),
+    pet_feed: env_flag(process.env.BOT_PET_FEED, true),
   }),
   // The idle beat is pure overhead stacked on top of each pass's blocking work (a staging leg, a
   // follower rally): it delays the next rendezvous/regroup check, never a transaction. 3s keeps the

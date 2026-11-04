@@ -6,7 +6,9 @@ immutable mirrors the bot vendors. Everything below is derived, not guessed.
 > **Status (current build).** Progression is specialized: Omori concentrates all craft XP, while
 > Memorien, Llokan, and Archero each own one gathering job and keep its matching tool. A specialized
 > gatherer never falls back to another job when its local resource is absent; the excursion planner
-> relocates it instead. §6's excursion design is implemented in `actions/excursion.ts`.
+> relocates it instead. After each group fight, every member receives one bounded chore attempt
+> before the next rendezvous, preventing continuous combat from starving these roles. §6's
+> excursion design is implemented in `actions/excursion.ts`.
 
 ## 1. Jobs and ownership
 
@@ -192,11 +194,12 @@ Path (fits world entry levels):
 each band is faster than the last. XP, however, is per node — so the count is what matters.
 
 ### omori (objective-driven crafter)
-Crafting is deliberately strict. The first live priority is a dungeon key, then a missing gathering
-tool, then the highest-value gear upgrade. If its trade is level-locked, Omori crafts only the
-highest-XP legal recipe of that same trade until the required level is reached. Other professions
-do not request resources, redirect loot farming, or consume ingredients while this objective is
-blocked. The least-trained rotation is only a fallback when no key, tool, or gear objective exists.
+Crafting is deliberately objective-driven. The live objective families are dungeon keys, the
+highest-value gear upgrades, obtainable pet food, and missing gathering tools. They are tried
+independently with a rotating winner, so a key blocked on a rare drop cannot freeze an affordable
+upgrade or pet food. If an objective's trade is level-locked, Omori crafts the highest-XP legal
+recipe of that same trade until the required level is reached. Unrelated filler cannot consume
+reserved objective materials and is used only when no objective family is active.
 
 To feed the focused trade:
 
@@ -234,11 +237,22 @@ guaranteed gatherable-resource reward are accepted; each supported bag returns *
 to 50 boxes from one stack are processed together. The resulting stock immediately participates in
 the normal craft-demand calculation.
 
+### Pet feeding and food supply
+
+The idle leader feeds each eligible pet once per UTC day until its power cap. Worn pets use one
+atomic unequip/feed/re-equip transaction, so auto-equip never observes an empty pet slot. Food that
+can be produced from current shipped worlds joins the craft objectives; each missing rare ingredient
+is translated back to its resource pack and gathering job. Food depending on future resource tiers
+absent from every shipped world is parked rather than creating impossible demand. Existing legacy
+food or ingredients remain valid and may still be consumed.
+
 ## 6. Periodic gathering excursions (design and current status)
 
-The party normally roams/fights together. The runtime now runs assigned gathering/crafting chores,
-can detach the configured cross-world gatherer on a timer, and can start a party excursion when
-local gather demand stays blocked. These are distinct mechanisms: `BOT_CROSS_WORLD_*` controls the
+The party normally roams/fights together. A fight-wide settlement schedules one local, bounded
+chore attempt for every member; the leader cannot stage the next rendezvous until each attempt has
+started. A failed local attempt clears that beat so combat cannot deadlock. The runtime can also
+detach the configured cross-world gatherer on a timer and can start a party excursion when local
+gather demand stays blocked. These are distinct mechanisms: `BOT_CROSS_WORLD_*` controls the
 individual detacher; the party excursion planner reacts to demand and its own dwell/return conditions.
 The original planning model below is useful context, but is not a complete account of current behavior:
 

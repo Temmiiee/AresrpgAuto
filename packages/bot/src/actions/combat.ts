@@ -532,10 +532,18 @@ export type ResolutionReport = Readonly<{
   loot: readonly Readonly<{ item_type: string; qty: number }>[]
 }>
 
-export const resolution_report = (rows: readonly FightResolutionRow[]): ResolutionReport => {
+type CreditedDrop = Readonly<{ item_type: string; qty: number }>
+
+/** Build the report from the settlement receipt when available. Resolution rows describe what CAN
+ * drop before settlement; the sealed random roll is emitted by the settlement transaction itself.
+ * The rows' `drops` remain a fallback for already-reconciled/replayed projections. */
+export const resolution_report = (
+  rows: readonly FightResolutionRow[],
+  credited_drops?: readonly CreditedDrop[]
+): ResolutionReport => {
   const counts = new Map<string, number>()
-  for (const row of rows)
-    for (const { item_type, qty } of row.drops) counts.set(item_type, (counts.get(item_type) ?? 0) + qty)
+  const drops = credited_drops ?? rows.flatMap((row) => row.drops)
+  for (const { item_type, qty } of drops) counts.set(item_type, (counts.get(item_type) ?? 0) + qty)
   const first = rows[0]
   const outcome: ResolutionReport['outcome'] =
     !first || first.winner === null ? 'draw' : first.winner === first.team ? 'won' : 'lost'
@@ -584,13 +592,29 @@ const settle_one = async (
           last,
           boss_rewards,
         })
+    // A fresh winning settlement emits one DropsRolled event per winner, even when every vector is
+    // empty. A recovered/partial settlement may emit none because an earlier transaction already
+    // rolled them; in that case retain the durable resolution-row fallback.
+    const receipt_drops = receipt.drop_rewards
+    const report = resolution_report(
+      rows,
+      receipt_drops && receipt_drops.length > 0 ? receipt_drops.flatMap((reward) => reward.drops) : undefined
+    )
     ctx.ledger.append({
       kind: 'fight_settle',
       digest: receipt.digest,
-      detail: { fight, seats: rows.map((row) => row.fighter), kares: receipt.kares_rewards?.length ?? 0, last },
+      detail: {
+        fight,
+        seats: rows.map((row) => row.fighter),
+        kares: receipt.kares_rewards?.length ?? 0,
+        loot: report.loot,
+        last,
+      },
     })
-    log_info('combat', `settled fight ${fight} (${rows.length} seat(s)${last ? ', final' : ''})`)
-    const report = resolution_report(rows)
+    const loot = report.loot.length > 0
+      ? report.loot.map(({ item_type, qty }) => `${qty}×${item_type}`).join(', ')
+      : 'none'
+    log_info('combat', `settled fight ${fight} (${rows.length} seat(s)${last ? ', final' : ''}; loot=${loot})`)
     ctx.fight_runtimes.mark_settlement_done(fight)
     if (receipt.closable && !receipt.closed) await close_fight(ctx, fight)
     ctx.fight_runtimes.drop(fight)

@@ -41,7 +41,7 @@ export {
 } from './fighters.ts'
 export type { FighterResistances, FightElement } from './fighters.ts'
 export { weapon_level_of } from './weapon.ts'
-export { fight_path_to, reachable_fight_cells } from './movement.ts'
+export { fight_approach_path, fight_path_to, reachable_fight_cells } from './movement.ts'
 export { board_zone_cells } from './zones.ts'
 export { RETRO_GROUP_XP_TENTHS } from './fight_math.ts'
 export { initial_effect_id } from './runtime.ts'

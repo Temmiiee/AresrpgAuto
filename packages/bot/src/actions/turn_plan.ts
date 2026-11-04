@@ -12,6 +12,7 @@ import {
   CONTRACT_CONSTANTS,
   board_zone_cells,
   create_fight,
+  fight_approach_path,
   fight_path_to,
   player_max_hp,
   project_spell_turn as raw_project_spell_turn,
@@ -1104,41 +1105,70 @@ const safe_step_toward_enemy = (
   // and one distant alternative so safety checks stay bounded as board reach grows.
   const nearest = ranked_cells.slice(0, 1).map(({ cell }) => cell)
   const farthest = ranked_cells.slice(-1).map(({ cell }) => cell)
-  const options = [...new Set([...nearest, ...farthest])]
-    .flatMap((cell) => {
-      const path = fight_path_to(cp, BigInt(seat), cell)
-      return path?.length ? [{ cell, path }] : []
-    })
+  // Keep every global route attached to its enemy. Flattening the route cells would mix paths
+  // when several mobs remain and could reconstruct a different local route to an arbitrary tail.
+  const approach_options = enemies.flatMap((enemy) => {
+    const path = fight_approach_path(cp, BigInt(seat), enemy.cell)
+    const cell = path?.at(-1)
+    return path && cell !== undefined ? [{ cell, path, approach: true }] : []
+  })
+  const local_options = [...new Set([...nearest, ...farthest])].flatMap((cell) => {
+    const path = fight_path_to(cp, BigInt(seat), cell)
+    return path?.length ? [{ cell, path, approach: false }] : []
+  })
+  const options = [...approach_options, ...local_options]
+    .filter((option, index, rows) => rows.findIndex((row) => row.cell === option.cell) === index)
   type MovementScore = readonly [number, number, number, number, number, number]
   const movement_score = (cell: bigint, response: EnemyResponse, attack: DamageOption | null): MovementScore => [
     response.seat_dies ? 1 : 0,
     response.party_deaths,
     attack ? 0 : 1,
     -(attack?.damage ?? 0),
-    response.party_damage,
     distance(cell),
+    response.party_damage,
   ]
-  const compare_score = (left: MovementScore, right: MovementScore): number => {
-    for (let index = 0; index < left.length; index++) {
-      const difference = left[index]! - right[index]!
-      if (difference !== 0) return difference
-    }
-    return 0
-  }
 
   let best_path: readonly bigint[] | null = null
+  let safe_detour: readonly bigint[] | null = null
   let best_score = movement_score(me.cell, enemy_response(cp, seat), best_damage_option(cp, seat))
+  const debug_scores: string[] = [`hold@${me.cell}=[${best_score.join(',')}]`]
   for (const option of options) {
     planner_perf_add('movement_candidates')
     const action: TurnAction = { type: 'move', path: option.path }
     const result = response_after_action(cp, seat, action)
     const candidate_score = movement_score(option.cell, result.response, best_damage_option(result.state, seat))
-    if (compare_score(candidate_score, best_score) < 0) {
+    debug_scores.push(`move@${option.cell}/${option.path.length}=[${candidate_score.join(',')}]`)
+    if (compare_movement_scores(candidate_score, best_score) < 0) {
       best_score = candidate_score
       best_path = option.path
     }
+    if (
+      safe_detour === null &&
+      option.approach &&
+      !result.response.seat_dies &&
+      result.response.party_deaths === 0
+    )
+      safe_detour = option.path
   }
-  return best_path
+  log_debug('plan', `seat ${seat} movement scores: ${debug_scores.join(' ')}`)
+  // A full-board approach field can require a temporary Manhattan-worse step around a wall or a
+  // packed ally. Accept that safe detour when the local score otherwise camps forever.
+  return best_path ?? safe_detour
+}
+
+/** Lexicographic movement policy, exported to pin the anti-stalemate law in tests. Death and an
+ *  available attack dominate everything; otherwise closing distance dominates merely avoiding
+ *  non-lethal chip damage. The previous damage-before-distance order made both sides camp forever
+ *  (observed live at round 187 with one full-HP boar 13 cells away). */
+export const compare_movement_scores = (
+  left: readonly number[],
+  right: readonly number[]
+): number => {
+  for (let index = 0; index < Math.min(left.length, right.length); index++) {
+    const difference = left[index]! - right[index]!
+    if (difference !== 0) return difference
+  }
+  return left.length - right.length
 }
 
 /** Choose the highest-value legal action, otherwise reposition using safety and attack access. */

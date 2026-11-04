@@ -50,18 +50,41 @@ you want per-fight JSONL records under `packages/bot/logs/fights/`.
 The environment-variable reference and architecture are in `packages/bot/.env.example` and
 `AGENTS.md`; combat analytics and version-gate behavior have dedicated notes under `docs/`.
 
+### Discord digest accounting
+
+The periodic Discord digest reports successful activity from the current process window:
+
+- `loot` comes from the sealed `fight::DropsRolled` events in the settlement receipt, not from a
+  monster's potential loot table;
+- `gathered` counts successful harvest receipts and the 50-resource rewards actually claimed from
+  protector bags;
+- `crafted` counts successful outputs only (failed craft attempts are not products);
+- `job xp` is the live job-XP delta across the selected party.
+
+Consequently, `none` means no successful action of that category was credited during that window.
+The durable `.state/activity.log` remains the transaction-level audit trail across restarts.
+
 ## Current automation policy
 
 - Omori is the default objective-driven crafter. Memorien farms, Llokan mines, and Archero gathers
   herbs; each gatherer keeps the matching tool instead of paying for frequent tool swaps.
-- Craft demand is strict: one dungeon-key, missing-tool, or equipment objective drives gathering,
-  mob-loot focus, prerequisite crafts, and job training. Unrelated filler cannot consume its inputs.
+- After every group-fight settlement, every party member gets one bounded chore attempt before the
+  leader may stage the next fight. An unavailable local node or blocked recipe does not freeze the
+  party, but continuous combat can no longer starve gathering and crafting indefinitely.
+- Craft objectives are isolated and scheduled fairly: a dungeon key blocked on a rare drop no
+  longer freezes an affordable equipment upgrade or pet food. Each objective may train its own
+  required trade, while unrelated filler remains unable to consume reserved materials.
 - Equipment targets use the same class/stat score as auto-equip. Held items are allocated once
   across the party; a weak random roll or another character needing the same item keeps the craft
   goal alive.
 - Resource-protector victories can drop deterministic resource bags. While the party is idle, the
   leader opens and claims those bags through the shared transaction lane; every supported bag
   yields exactly 50 units of its resource.
+- Every unfinished pet is fed at most once per UTC day (`BOT_PET_FEED=true`). Worn pets are
+  unequipped, fed and re-equipped atomically. Missing, genuinely obtainable food becomes a craft
+  goal, and its rare ingredients are translated into demand for the corresponding resource.
+  Recipes whose resource tier exists only in the immutable catalog (currently tiers 7–11, absent
+  from every shipped world) are reported once and parked instead of wasting craft/farm cycles.
 - Dungeon keys are not spent blindly. The party previews authored rooms at an 80% minimum win rate,
   parks unsafe dungeons, waits for wounded entrants to recover, and commits only nearby members.
 

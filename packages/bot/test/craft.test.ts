@@ -202,6 +202,11 @@ describe('gatherable_demand', () => {
       'wheat_barley',
     ])
   })
+
+  it('does not demand immutable future-tier resources absent from every shipped world', () => {
+    expect(Object.fromEntries(gatherable_demand('abyssal_arcanite_pet_food'))).toEqual({})
+    expect(Object.fromEntries(gatherable_demand('arcanite_powder'))).toEqual({})
+  })
 })
 
 // The other half of the loop: leaves that NO world grows and no gather can aim at — the mob-only

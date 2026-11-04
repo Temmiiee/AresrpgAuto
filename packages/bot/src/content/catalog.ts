@@ -111,6 +111,19 @@ export const worlds: readonly SeedWorld[] = Object.freeze(
   (worlds_source as unknown as readonly RawSeedWorld[]).map(fill_world)
 )
 
+/** Immutable defines future gathering tiers too; only rows present in a shipped world can actually
+ *  spawn. Keeping this distinction prevents recipe demand from chasing technically-defined but
+ *  unobtainable nodes (currently every tier above 6). */
+export const world_resource_item_types: ReadonlySet<string> = new Set(
+  worlds.flatMap((world) => world.resources.map((resource) => resource.item_type))
+)
+export const world_rare_item_types: ReadonlySet<string> = new Set(
+  worlds.flatMap((world) => world.resources.map((resource) => resource.rare_item_type).filter(Boolean))
+)
+
+export const world_gatherable_of = (item_type: string): Gatherable | null =>
+  world_resource_item_types.has(item_type) ? gatherable_of(item_type) : null
+
 const keyed = <T>(rows: readonly T[], key: (row: T) => string): Readonly<Record<string, T>> =>
   Object.freeze(Object.fromEntries(rows.map((row) => [key(row), row])))
 
@@ -133,6 +146,21 @@ export const loot_sources_by_item: ReadonlyMap<string, readonly string[]> = (() 
     }
   return by_item
 })()
+
+/** Whether the shipped content has a complete renewable acquisition path for an output. This is
+ *  deliberately stricter than "the immutable catalog knows the item": future gathering tiers are
+ *  authored before a world exposes their nodes. Mob loot is accepted as a leaf; recipes recurse. */
+export const craft_output_is_world_supplyable = (
+  output_type: string,
+  visiting: ReadonlySet<string> = new Set()
+): boolean => {
+  if (world_resource_item_types.has(output_type) || world_rare_item_types.has(output_type)) return true
+  if ((loot_sources_by_item.get(output_type)?.length ?? 0) > 0) return true
+  const recipe = recipes_by_output[output_type]
+  if (!recipe || visiting.has(output_type)) return false
+  const next = new Set([...visiting, output_type])
+  return Object.keys(recipe.inputs).every((input) => craft_output_is_world_supplyable(input, next))
+}
 
 /** The ordered room compositions of a dungeon; each room is a list of the mobs it stages. */
 export const dungeon_rooms = (dungeon: string): readonly (readonly Readonly<{ mob_type: string }>[])[] =>
@@ -217,13 +245,16 @@ export const gatherable_demand = (output_type: string): ReadonlyMap<string, numb
   const cached = demand_memo.get(output_type)
   if (cached) return cached
   if (demand_visiting.has(output_type)) return no_demand
+  // Do not farm the obtainable half of a recipe whose other half has no acquisition path. That is
+  // how future tiers used to consume chore time despite being absent from every current world.
+  if (!craft_output_is_world_supplyable(output_type)) return no_demand
   demand_visiting.add(output_type)
 
   const result = new Map<string, number>()
   const recipe = recipes_by_output[output_type]
   if (recipe)
     for (const ingredient of recipe_detail(recipe).ingredients) {
-      if (gatherable_of(ingredient.item_type)) {
+      if (world_gatherable_of(ingredient.item_type)) {
         result.set(ingredient.item_type, (result.get(ingredient.item_type) ?? 0) + ingredient.quantity)
         continue
       }

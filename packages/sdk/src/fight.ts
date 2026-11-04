@@ -10,6 +10,7 @@ import { prepare_boss_rewards } from './kares_economy.ts'
 import { SDK, living_content } from './client.ts'
 import { changed_object_ids, receipt_digest, receipt_event, receipt_events, type Receipt } from './cache.ts'
 import { create_kiosk_runner, type KioskCapLoader, type KioskCustody } from './kiosk_runner.ts'
+import { event_integer, event_string } from './receipt_decode.ts'
 import {
   board_catalog_id,
   item_template_id,
@@ -23,11 +24,17 @@ import {
 type GameSdk = ReturnType<typeof SDK>
 
 export type FightTurnWitness = Readonly<{ fighter: bigint; seed: bigint }>
+export type FightDropReward = Readonly<{
+  fighter: bigint
+  kares: bigint
+  drops: readonly Readonly<{ item_type: string; qty: number }>[]
+}>
 export type FightReceipt = {
   digest: string
   item_ids?: readonly string[]
   turn_witnesses?: readonly FightTurnWitness[]
   kares_rewards?: readonly Readonly<{ fighter: bigint; amount: bigint }>[]
+  drop_rewards?: readonly FightDropReward[]
   started?: boolean
   closable?: boolean
   closed?: boolean
@@ -61,13 +68,25 @@ export const project_fight_boundary_receipt = (receipt: Receipt): FightReceipt =
     started: receipt_event(receipt, '::fight::FightStarted') !== null,
   })
 
-export const fight_kares_rewards = (receipt: Receipt) =>
+export const fight_drop_rewards = (receipt: Receipt): readonly FightDropReward[] =>
   Object.freeze(
     receipt_events(receipt, '::fight::DropsRolled').map((event) => {
       if (typeof event.fighter !== 'string' || typeof event.kares !== 'string')
-        throw new Error('The fight receipt carried a malformed KARES reward.')
-      return Object.freeze({ fighter: BigInt(event.fighter), amount: BigInt(event.kares) })
+        throw new Error('The fight receipt carried a malformed drop reward.')
+      if (!Array.isArray(event.drops)) throw new Error('The fight receipt carried a malformed drop vector.')
+      const drops = event.drops.map((raw) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+          throw new Error('The fight receipt carried a malformed rolled drop.')
+        const drop = raw as Record<string, unknown>
+        return Object.freeze({ item_type: event_string(drop, 'item_type'), qty: event_integer(drop, 'qty') })
+      })
+      return Object.freeze({ fighter: BigInt(event.fighter), kares: BigInt(event.kares), drops: Object.freeze(drops) })
     })
+  )
+
+export const fight_kares_rewards = (receipt: Receipt) =>
+  Object.freeze(
+    fight_drop_rewards(receipt).map(({ fighter, kares }) => Object.freeze({ fighter, amount: kares }))
   )
 
 export const last_settler_refusal = (error: unknown): boolean => {
@@ -445,10 +464,12 @@ export const fight_actions = (sdk: GameSdk, { kiosk_cap }: FightActionsCtx) => {
           }
         )
       const receipt = await execute_settlement_mode(last, execute_settlement)
+      const drop_rewards = fight_drop_rewards(receipt)
       return Object.freeze({
         ...project_receipt(receipt),
         item_ids: changed_object_ids(receipt, '::item::Item'),
-        kares_rewards: fight_kares_rewards(receipt),
+        drop_rewards,
+        kares_rewards: drop_rewards.map(({ fighter, kares }) => Object.freeze({ fighter, amount: kares })),
         closable: receipt_event(receipt, '::fight::FightClosable') !== null,
         closed: receipt_event(receipt, '::fight::FightClosed') !== null,
       })

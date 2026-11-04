@@ -4,6 +4,8 @@
 
 import {
   CARDINAL_DIRECTIONS,
+  GRID_CELLS,
+  approach_field,
   away_dir,
   bfs_distance_field,
   in_grid,
@@ -71,6 +73,29 @@ export const fight_path_to = (
     current = next
   }
   return Object.freeze(path)
+}
+
+/** A bounded prefix of the full-board route to an open flank of `target`. Unlike fight_path_to,
+ *  this can deliberately start with a Manhattan-worse step when walls or bodies require a detour.
+ *  The field is the same reviewed approach law the on-chain mob rusher mirrors. */
+export const fight_approach_path = (
+  runtime: FightContractState,
+  fighter: bigint,
+  target: bigint
+): readonly bigint[] | null => {
+  const subject = runtime.contract.fighters[Number(fighter)]
+  if (!subject || subject.dead || subject.mp <= 0n || subject.cell === target) return null
+  const field = approach_field(target, wall_mask(runtime, fighter), subject.cell)
+  if (field[Number(subject.cell)] >= GRID_CELLS) return null
+  const path: bigint[] = []
+  let current = subject.cell
+  while (path.length < Number(subject.mp) && field[Number(current)] > 0n) {
+    const next = best_step(current, field)
+    if (next === null) break
+    path.push(next)
+    current = next
+  }
+  return path.length > 0 ? Object.freeze(path) : null
 }
 
 const fresh_lockers = (runtime: FightRuntime, runner: bigint, cell: bigint, beaten: bigint[]) => {

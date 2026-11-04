@@ -7,7 +7,7 @@ import { SDK, living_content } from './client.ts'
 import { changed_object_ids, receipt_digest, receipt_event, spending_receipt } from './cache.ts'
 import { create_kiosk_runner, type KioskCapLoader, type KioskCustody } from './kiosk_runner.ts'
 import {
-  fight_kares_rewards,
+  fight_drop_rewards,
   project_fight_boundary_receipt,
   created_fight_id,
   execute_settlement_mode,
@@ -233,13 +233,15 @@ export const dungeon_actions = (sdk: GameSdk, { kiosk_cap }: DungeonActionsCtx) 
           { custody, gas_scope: `fight:${fight}`, budget: 'estimate', include: { objectTypes: true } }
         )
       const receipt = await execute_settlement_mode(last, execute_settlement)
+      const drop_rewards = fight_drop_rewards(receipt)
       return Object.freeze({
         digest: receipt_digest(receipt),
         closable: receipt_event(receipt, '::fight::FightClosable') !== null,
         closed: receipt_event(receipt, '::fight::FightClosed') !== null,
         mastery: mastery_receipt_row(receipt),
         item_ids: changed_object_ids(receipt, '::item::Item'),
-        kares_rewards: fight_kares_rewards(receipt),
+        drop_rewards,
+        kares_rewards: drop_rewards.map(({ fighter, kares }) => Object.freeze({ fighter, amount: kares })),
       })
     },
 

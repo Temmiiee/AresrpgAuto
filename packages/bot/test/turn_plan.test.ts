@@ -4,7 +4,9 @@
 // whose damage spell is in range must CAST it, not punch with its bare fists (4 base damage, reach
 // 1), and the same fighter must win a group it loses bare-handed.
 import {
+  CONTRACT_CONSTANTS,
   create_fight,
+  fight_approach_path,
   player_max_hp,
   weapon_target_cells,
   type FightMobInput,
@@ -18,7 +20,7 @@ import type { CharacterRow, MobGroupRow } from '@aresrpg/protocol'
 
 import { mob_inputs, player_source_of, score_mobs } from '../src/actions/fight_preview.ts'
 import { catalog_spell_sources } from '../src/content/fight_sources.ts'
-import { damage_target_cells, plan_turn, plan_turn_party } from '../src/actions/turn_plan.ts'
+import { compare_movement_scores, damage_target_cells, plan_turn, plan_turn_party } from '../src/actions/turn_plan.ts'
 
 const character = (over: Partial<CharacterRow> = {}): CharacterRow =>
   ({
@@ -152,6 +154,57 @@ describe('turn planner damage ranking', () => {
     expect(armed.win_rate).toBe(1)
     expect(armed.turns).toBeLessThan(bare.turns)
   }, 15000)
+})
+
+describe('party movement anti-stalemate policy', () => {
+  it('closes distance despite non-lethal chip damage when neither position enables an attack', () => {
+    // tuple: actor dies, party deaths, no attack, -attack damage, distance, incoming party damage
+    const camping = [0, 0, 1, 0, 13, 0]
+    const advancing = [0, 0, 1, 0, 10, 20]
+    expect(compare_movement_scores(advancing, camping)).toBeLessThan(0)
+  })
+
+  it('still refuses a lethal advance', () => {
+    const camping = [0, 0, 1, 0, 13, 0]
+    const lethal = [1, 1, 1, 0, 10, 200]
+    expect(compare_movement_scores(lethal, camping)).toBeGreaterThan(0)
+  })
+
+  it('finds a legal full-board detour whose first step temporarily increases Manhattan distance', () => {
+    const cp = fight_of([character()], [...mob_inputs(one_mob)])
+    const seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type === 'player')
+    const mob_seat = cp.contract.fighters.findIndex((fighter) => fighter.kind.type !== 'player')
+    const start = 52n // (2,2)
+    const target = 54n // (4,2)
+    const blocking_cell = 53n // the direct eastward step
+    const closed = Array.from({ length: Number(CONTRACT_CONSTANTS.mask_words) }, () => 0n)
+    closed[Number(blocking_cell / 64n)]! |= 1n << (blocking_cell % 64n)
+    const maze = {
+      ...cp,
+      contract: {
+        ...cp.contract,
+        closed,
+        fighters: cp.contract.fighters.map((fighter, index) =>
+          index === seat
+            ? { ...fighter, cell: start, mp: 3n }
+            : index === mob_seat
+              ? { ...fighter, cell: target }
+              : fighter
+        ),
+      },
+    } as HydratedFightCheckpoint
+
+    const path = fight_approach_path(maze, BigInt(seat), target)
+    expect(path).not.toBeNull()
+    expect(path!.length).toBeGreaterThan(0)
+    const distance = (cell: bigint): number => {
+      const width = BigInt(CONTRACT_CONSTANTS.grid_w)
+      const dx = cell % width - target % width
+      const dy = cell / width - target / width
+      return Number((dx < 0n ? -dx : dx) + (dy < 0n ? -dy : dy))
+    }
+    expect(distance(path![0]!)).toBeGreaterThan(distance(start))
+  })
 })
 
 describe('shared tactical action scoring', () => {

@@ -43,6 +43,7 @@ import {
   record_craft,
   record_fight,
   record_gather,
+  record_pet_feed,
   type PlayStats,
 } from '../actions/play_stats.ts'
 import { close_pending, drive_fight, engage_once, handle_fight_packet, settle_pending } from '../actions/combat.ts'
@@ -79,6 +80,7 @@ import { create_group_claims, create_serial_queue, type ActionContext } from '..
 import { auto_equip_party, type EquipTarget } from '../actions/equip.ts'
 import { maybe_progress } from '../actions/progression.ts'
 import { open_resource_bag_once } from '../actions/loot_box.ts'
+import { feed_pet_once, pet_food_gather_demand, pet_food_goals, unavailable_pet_foods } from '../actions/pet.ts'
 import { gear_goal_outputs } from '../actions/gear.ts'
 import { describe_strategy, type Strategy } from '../actions/strategy.ts'
 import { compute_strategy_offload } from '../actions/strategy_offload.ts'
@@ -229,6 +231,37 @@ type CharRuntime = {
   last_pass_error: string | null
 }
 
+/** Minimal mutable surface used by the post-fight chore barrier. Exported so the scheduler
+ *  invariant can be pinned without constructing a live socket/runtime. */
+export type ChoreBeatRuntime = {
+  readonly character: Readonly<{ id: string }>
+  readonly ctx: Readonly<{ party_state: PartyState }>
+  chore_pending: boolean
+}
+
+/** Settlement is fight-wide, so schedule the beat party-wide too. */
+export const request_party_chore_beat = (
+  runtimes: readonly ChoreBeatRuntime[],
+  party: PartyState
+): void => {
+  for (const member of runtimes) {
+    if (member.ctx.party_state === party && party.members.includes(member.character.id))
+      member.chore_pending = true
+  }
+}
+
+/** True until every member has started (and therefore cleared) its scheduled beat. */
+export const party_chore_beat_pending = (
+  runtimes: readonly ChoreBeatRuntime[],
+  party: PartyState
+): boolean =>
+  runtimes.some(
+    (member) =>
+      member.ctx.party_state === party &&
+      party.members.includes(member.character.id) &&
+      member.chore_pending
+  )
+
 /** The forced-chore floor: once this character has gone a full interval with NO chore, its pass runs
  *  the chore BEFORE it stages another fight, so gathering/crafting keeps pace behind a wall of engages
  *  instead of only on the settle beat. Stamped only when a chore genuinely acts, so an empty beat does
@@ -293,6 +326,13 @@ export const play_loop = async (
   const claims = create_group_claims()
   /** Serialize planning and submission against the party's shared kiosk inventory. */
   const craft_queue = create_serial_queue()
+  /** Successful feeds remembered until the projection exposes pet_last_day, preventing a stale
+   *  inventory packet from submitting the same daily feed twice. */
+  const fed_pets_today = new Set<string>()
+  const pet_food_spent = new Map<string, number>()
+  const reported_unavailable_pet_foods = new Set<string>()
+  /** Fair round-robin across independently blocked objective families. */
+  let craft_focus_cursor = 0
   /** Kiosk object ids already consumed while the websocket inventory projection catches up. */
   const party_craft_burned = new Set<string>()
   const prune_party_craft_burned = (): void => {
@@ -872,7 +912,11 @@ export const play_loop = async (
       log_info('session', `${character.name}: ${settled.detail}`)
       rt.stats = settled.reports.reduce(record_fight, rt.stats)
       digest_stats = settled.reports.reduce(record_fight, digest_stats)
-      rt.chore_pending = true
+      // Settlement is fight-wide: whichever character loop wins the race settles every allied
+      // seat. Scheduling the post-fight chore only on that runtime starved the other roles (usually
+      // the three gatherers), because the leader immediately opened the next rendezvous. Give every
+      // member of this party one chore beat before another group may be staged.
+      request_party_chore_beat(runtimes, party_state)
       flush_summary(rt)
       return SETTLE_POLL_MS
     }
@@ -933,7 +977,31 @@ export const play_loop = async (
     // leader performs this shared-inventory maintenance, so one bag stack is never opened twice.
     if (is_leader && party_state.phase === 'idle') {
       const opened = await craft_queue.run(() => open_resource_bag_once(ctx))
-      if (opened.opened) return idle_sleep_ms
+      if (opened.opened) {
+        if (opened.reward_type && opened.amount) {
+          rt.stats = record_gather(rt.stats, opened.reward_type, opened.amount)
+          digest_stats = record_gather(digest_stats, opened.reward_type, opened.amount)
+        }
+        return idle_sleep_ms
+      }
+      if (toggles.pet_feed) {
+        for (const food of unavailable_pet_foods(game_state)) {
+          if (reported_unavailable_pet_foods.has(food)) continue
+          reported_unavailable_pet_foods.add(food)
+          log_warn(
+            'pet',
+            `${food} cannot currently be farmed: at least one required rare belongs to a resource absent from every shipped world; waiting for existing food/ingredients or a content update`
+          )
+        }
+        const fed = await craft_queue.run(() => feed_pet_once(ctx, fed_pets_today, pet_food_spent))
+        if (fed.fed) {
+          if (fed.pet_type) {
+            rt.stats = record_pet_feed(rt.stats, fed.pet_type)
+            digest_stats = record_pet_feed(digest_stats, fed.pet_type)
+          }
+          return idle_sleep_ms
+        }
+      }
     }
 
     // 3b-bis. group dungeon: when the leader has committed the party to a run, every key-holder must
@@ -1056,12 +1124,28 @@ export const play_loop = async (
       }
     }
 
-    if (group_mode && is_leader && (rt.chore_pending || chore_due(rt))) {
+    // A fight-wide settlement schedules one bounded chore attempt for EVERY party member. Run that
+    // beat only while idle (never abandon an in-flight rendezvous), then clear the signal whether it
+    // acted or not: an unavailable local node / blocked recipe must not freeze combat forever.
+    if (group_mode && party_state.phase === 'idle' && rt.chore_pending) {
       rt.chore_pending = false
-      // Bounded to the party's neighbourhood: an unbounded chore hands the leader the demanded node
-      // the crafting rotation owes, which may be zones away, and walks it there alone in one silent
-      // leg. Bounded, the leader harvests what is local and lets the party relocate when needed.
-      if (await trace_step(character.name, 'run_chore_leader', () => run_chore_tracked(rt, true))) return idle_sleep_ms
+      if (await trace_step(character.name, 'run_chore_post_fight', () => run_chore_tracked(rt, true))) return idle_sleep_ms
+    }
+
+    if (group_mode && is_leader && party_state.phase === 'idle') {
+      // The leader is the only runtime allowed to create the next target. Wait until every follower
+      // has at least STARTED its scheduled beat; active_chores covers the interval after a follower
+      // clears `chore_pending` and while its transaction is still running.
+      const party_chore_pending = party_chore_beat_pending(runtimes, party_state)
+      const party_chore_running = party_state.members.some((id) => active_chores.has(id))
+      if (party_chore_pending || party_chore_running) return idle_sleep_ms
+
+      // Keep the time-based leader floor too. This covers long idle/travel periods with no
+      // settlement; unlike the fight beat it is deliberately leader-only so a failed gather cannot
+      // hold the whole party at every decision pass.
+      if (chore_due(rt)) {
+        if (await trace_step(character.name, 'run_chore_leader', () => run_chore_tracked(rt, true))) return idle_sleep_ms
+      }
     }
 
     if (group_mode) {
@@ -1257,13 +1341,18 @@ export const play_loop = async (
             party_key_stock(party_state)
           )
         : []
-      const demand = crafter
+      const objective_demand = crafter
         ? craft_gather_demand(crafter, game_state.inventory, unavailable_item_ids(game_state), [
             ...key_outputs,
             ...current_tool_goals(),
             ...current_gear_goals(),
+            ...(toggles.pet_feed ? pet_food_goals(game_state) : []),
           ])
         : undefined
+      const pet_demand = toggles.pet_feed ? pet_food_gather_demand(game_state) : new Map<string, number>()
+      const demand = new Map(objective_demand ?? [])
+      for (const [item_type, quantity] of pet_demand)
+        demand.set(item_type, (demand.get(item_type) ?? 0) + quantity)
       const gathered = await gather_once(ctx, mover, gather_job, local_only ? PARTY_GATHER_RADIUS : undefined, demand)
       if (gathered.kind === 'gathered') {
         rt.last_gather_skip = null
@@ -1341,12 +1430,34 @@ export const play_loop = async (
             party_key_stock(party_state)
           )
         : []
-      const craft_priorities = [...key_outputs, ...current_tool_goals(), ...current_gear_goals()]
+      const priority_groups = [
+        key_outputs,
+        current_gear_goals(),
+        toggles.pet_feed ? pet_food_goals(game_state) : [],
+        current_tool_goals(),
+      ].filter((group) => group.length > 0)
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
         const crafted = await craft_queue.run(async () => {
           prune_party_craft_burned()
           const shared_unavailable = new Set([...burned, ...party_craft_burned])
-          const result = await drive_craft(ctx, shared_unavailable, craft_priorities)
+          // A missing rare leaf in one family must not freeze every later objective. Try each
+          // family independently, rotating the winner so keys, upgrades and pet food all progress.
+          let blocked_result: Awaited<ReturnType<typeof drive_craft>> | null = null
+          for (let offset = 0; offset < priority_groups.length; offset++) {
+            const index = (craft_focus_cursor + offset) % priority_groups.length
+            const result = await drive_craft(ctx, shared_unavailable, priority_groups[index])
+            if (!result.success) {
+              blocked_result = result
+              continue
+            }
+            craft_focus_cursor = (index + 1) % priority_groups.length
+            for (const id of result.input_item_ids) party_craft_burned.add(id)
+            return result
+          }
+          // Preserve objective materials when every family is blocked. The generic XP rotation is
+          // safe only when there is no active objective at all.
+          if (blocked_result) return blocked_result
+          const result = await drive_craft(ctx, shared_unavailable)
           if (result.success) for (const id of result.input_item_ids) party_craft_burned.add(id)
           return result
         })

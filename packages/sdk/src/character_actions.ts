@@ -209,6 +209,44 @@ export const character_actions = (sdk: GameSdk, { kiosk_cap }: CharacterActionsC
       return spending_receipt(receipt)
     },
 
+    /** Atomically unequip, feed and re-equip a worn pet. This is the composition required by
+     *  pet.move: feed_kiosk_pet only accepts kiosk-held items, while splitting the three calls into
+     *  separate transactions leaves the character weaker and races the automatic equip planner. */
+    feed_equipped_pet: async ({
+      character_id,
+      pet_id,
+      pet_item_type,
+      food_id,
+      custody,
+      merge_sources = [],
+    }: {
+      character_id: string
+      pet_id: string
+      pet_item_type: string
+      food_id: string
+      merge_sources?: readonly string[]
+      custody?: KioskCustody
+    }): Promise<ReturnType<typeof spending_receipt>> => {
+      const { content_root, seed_package_original } = living_content(sdk, 'Character transaction')
+      const pet_template = item_template_id(content_root, seed_package_original, pet_item_type)
+      await sdk.hydrate_unknown([pet_template, pet_id])
+      const receipt = await with_kiosk(
+        (tx, kiosk, cap) => {
+          sdk.doors.unequip_item(tx, {
+            kiosk,
+            cap,
+            character_id,
+            slot: 'pet',
+            receiving: pet_id,
+          })
+          sdk.doors.feed_kiosk_pet(tx, { kiosk, cap, pet_template, pet_id, food_id })
+          sdk.doors.equip_item(tx, { kiosk, cap, character_id, slot: 'pet', item_id: pet_id })
+        },
+        { custody, merges: [{ target_id: food_id, source_ids: merge_sources }] }
+      )
+      return spending_receipt(receipt)
+    },
+
     /** Burn a reviewed quantity and return each durable reveal claim. */
     open_loot_boxes: async ({
       box_item_id,

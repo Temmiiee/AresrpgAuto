@@ -53,6 +53,7 @@ AresRPGAuto/
           gather.ts         harvest one node
           craft.ts          plan_recipe / craft_once / drive_craft
           loot_box.ts       open + claim deterministic 50-resource protector bags
+          pet.ts            daily feeding + obtainable pet-food craft/gather demand
           combat.ts         hydrate/drive/engage/settle fights (the fight driver)
           equip.ts          auto-equip: score gear + allocate it across the party
           gear.ts           craft goals: best craftable weapon/armour per character level
@@ -139,21 +140,23 @@ For each character, in order:
    `dynamic_field::add` abort) no longer happen.
 3. **freshness gate** — refuse to spend unless the link is authenticated, gameplay is not frozen,
    indexing lag is acceptable, and the chain clock is live.
-3b. **group fight (BEFORE chores)** — when `BOT_GROUP` is on and the party has partners, run the
-   shared rendezvous (`actions/party.ts`). A **follower** does this first, so it can never wander off
-   to a chore and strand the rendezvous; between fights it **rallies** to the leader's checkpoint
-   (`rally_to_leader`) instead of roaming to its own band, so the next rendezvous is a short hop. The
-   **leader** instead runs its chore once (below) and then stages, so omori's crafting still levels
-   while the party chains fights. The leader screens the group **for the whole party**; the leader
-   then engages and joins all partners in the same beat. While the party is grouping only the leader
-   opens fights.
+3b. **group fight / chore barrier** — when `BOT_GROUP` is on and the party has partners, run the
+   shared rendezvous (`actions/party.ts`). A follower always prioritizes an in-flight rendezvous, so
+   it cannot wander off and strand the side; between fights it rallies to the leader's checkpoint
+   (`rally_to_leader`). Once a fight-wide settlement completes, every member receives one bounded
+   chore beat and the leader waits for all of them to start before creating the next target. The
+   leader then screens the group **for the whole party**, engages, and joins all partners in the same
+   beat. While the party is grouping only the leader opens fights.
 3b0. **resource bags** — while the party is idle, the leader opens and claims one deterministic
    resource-bag stack through the shared craft/kiosk lane. This happens before a new rendezvous so
    the two-stage open/claim flow cannot race another shared-inventory action.
-3c. **chores** — run the assigned chore once (`run_chore`). A party member's gather is capped
-   (`PARTY_GATHER_RADIUS = 1024`) so it stays within a zone or two of the leader. A forced chore
-   floor (`BOT_CHORE_INTERVAL_MS`, default 5 min) guarantees a chore runs before the next engage
-   even when fights never stop.
+3c. **chores** — after a fight-wide settlement, mark every party member for one chore attempt and
+   keep the leader from staging the next rendezvous until each member has started that beat. This is
+   necessary because only one character loop wins the settlement race; marking only that runtime
+   starves the other gathering roles behind continuous group fights. A party member's gather is
+   capped (`PARTY_GATHER_RADIUS = 1024`) so it stays within a zone or two of the leader. A failed
+   local gather or blocked recipe clears that one-shot beat (combat must not freeze), while the
+   forced leader floor (`BOT_CHORE_INTERVAL_MS`, default 5 min) keeps retrying during long idle gaps.
 4. **roam** — optionally drift toward worthwhile prey (`roam_once`).
 5. **engage** — screen live mob groups with the local twin and open the best sure-win group (solo
    path; suppressed while the party is grouping).
@@ -169,7 +172,10 @@ the last successful ledger action, each character's pass status, and active figh
 least 60 seconds warn. A one-line logger configuration is printed at process startup even when the
 normal logger is filtered, because SDK transaction output bypasses the app logger. Discord gets a
 startup message, exactly ONE party-wide digest per `BOT_DIGEST_MINUTES` (hourly by default; 0 disables
-it), fatal-crash messages, and the zkLogin sign-in link — no per-action chatter.
+it), fatal-crash messages, and the zkLogin sign-in link — no per-action chatter. Digest loot is
+decoded from settlement `DropsRolled` events; gathered totals count successful harvests and claimed
+protector-bag resources; crafted totals count successful outputs. A `none` value is therefore an
+honest zero for that process window, not a potential-reward estimate.
 
 ## Group fights (`actions/party.ts`)
 
@@ -281,6 +287,15 @@ and merges it into an existing resource stack when available. Recognition is con
 ordinary loot box, a weighted/multi-reward box, or a non-resource reward is never opened by this
 maintenance action. Ledger entries record the open and claim transactions separately.
 
+## Daily pet maintenance (`actions/pet.ts`)
+
+With `BOT_PET_FEED=true`, the idle party leader feeds each eligible owned pet at most once per UTC
+day until the authored power cap. A worn pet is unequipped, fed and re-equipped atomically through
+the SDK, and every successful feed is recorded in the ledger and Discord digest. Obtainable food is
+added as an isolated craft objective; missing rare ingredients become demand for the shipped-world
+resource that rolls them. Foods whose ingredients exist only in future immutable tiers absent from
+all shipped worlds are reported once and parked, while already-held legacy food remains usable.
+
 ## Strategy brain (`actions/strategy.ts`)
 
 Once every `BOT_STRATEGY_INTERVAL_MS` (30 min) the play loop runs ONE whole-content pass and publishes
@@ -380,13 +395,14 @@ never disagree with a live decision about what is winnable:
 | `ENOKI_LOGIN_PORT` | `5173` | local port the interactive sign-in page listens on |
 | `ENOKI_LOGIN_TIMEOUT_MS` | `1800000` | how long the sign-in page waits (30 min) |
 | `BOT_GATHER` / `BOT_FIGHT` / `BOT_ROAM` / `BOT_CRAFT` | all `true` | play toggles |
+| `BOT_PET_FEED` | `true` | feed eligible pets daily and pursue obtainable food ingredients |
 | `BOT_GROUP` | `true` | fight as ONE party: the leader engages and every partner joins the same fight |
 | `BOT_TEAMS` | – | optional JSON array of character-name arrays; first name leads each independent team, e.g. `[["tomoda","mori"],["yogan","memorien","llokan"]]` |
 | `BOT_CROSS_WORLD` | `true` | let the cross-world gatherer periodically detach |
 | `BOT_PARTY_SIZE` | `5` | characters driven at once (1..5), all on one socket |
 | `BOT_LEADER` | `omori` | character name that opens the party's shared fights |
 | `BOT_CHORE_PLAN` | specialized roster | JSON map of character name → `"craft"` / `"none"` / `"gather_all"` / `"gather_all_craft"` / `"FARMER"` \| `"HERBALIST"` \| `"MINER"` / `{"kind":"gather_craft","job":"…"}`; default is Omori crafting plus one fixed job per gatherer |
-| `BOT_CHORE_INTERVAL_MS` | `300000` | forced chore floor before an engage (0 disables) |
+| `BOT_CHORE_INTERVAL_MS` | `300000` | no-fight chore retry floor; post-fight party beats are always scheduled (0 disables only the floor) |
 | `BOT_CROSS_WORLD_GATHERER` | `archero` | character that detaches for cross-world gathering |
 | `BOT_CROSS_WORLD_WORLD` | – | explicit target world (unset = richest reachable) |
 | `BOT_CROSS_WORLD_INTERVAL_MS` | `1800000` | ms between cross-world trips (0 disables the cycle) |

@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   log_info('main', `runtime: network=${config.network}, party≤${config.party_size}`)
   log_info(
     'main',
-    `actions: gather=${config.play.gather}, fight=${config.play.fight}, roam=${config.play.roam}, craft=${config.play.craft}, group=${config.play.group}, cross_world=${config.play.cross_world}`
+    `actions: gather=${config.play.gather}, fight=${config.play.fight}, roam=${config.play.roam}, craft=${config.play.craft}, group=${config.play.group}, cross_world=${config.play.cross_world}, pet_feed=${config.play.pet_feed}`
   )
   // The upstream check is delayed so its parallel requests cannot contend with startup.
   start_game_content_watch()
@@ -70,6 +70,7 @@ async function main(): Promise<void> {
       craft: config.play.craft,
       group: config.play.group,
       cross_world: config.play.cross_world,
+      pet_feed: config.play.pet_feed,
     },
     config.idle_sleep_ms,
   )

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { FightResolutionRow } from '@aresrpg/protocol'
 
+import { fight_drop_rewards } from '../../sdk/src/fight.ts'
 import { resolution_report } from '../src/actions/combat.ts'
 
 const row = (over: Partial<FightResolutionRow>): FightResolutionRow => ({
@@ -49,6 +50,41 @@ describe('combat resolution_report', () => {
       row({ loot_types: ['key_of_gilded_lorito', 'nook_fang'], drops: [{ item_type: 'nook_fang', qty: 1 }] }),
     ])
     expect(report.loot).toEqual([{ item_type: 'nook_fang', qty: 1 }])
+  })
+
+  it('decodes the sealed drop roll from the settlement receipt', () => {
+    const rewards = fight_drop_rewards({
+      Transaction: {
+        digest: 'settlement',
+        events: [{
+          type: '0xgame::fight::DropsRolled',
+          parsedJson: {
+            fighter: '7',
+            kares: '12',
+            drops: [
+              { item_type: 'aragne_leg', qty: 2 },
+              { item_type: 'water', qty: '3' },
+            ],
+          },
+        }],
+      },
+    })
+    expect(rewards).toEqual([{
+      fighter: 7n,
+      kares: 12n,
+      drops: [
+        { item_type: 'aragne_leg', qty: 2 },
+        { item_type: 'water', qty: 3 },
+      ],
+    }])
+  })
+
+  it('uses receipt drops instead of the pre-settlement projection', () => {
+    const report = resolution_report(
+      [row({ drops: [{ item_type: 'stale_projection', qty: 99 }] })],
+      [{ item_type: 'aragne_leg', qty: 2 }]
+    )
+    expect(report.loot).toEqual([{ item_type: 'aragne_leg', qty: 2 }])
   })
 
   it('reports a loss when the other team won', () => {

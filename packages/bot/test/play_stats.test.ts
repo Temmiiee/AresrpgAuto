@@ -7,6 +7,7 @@ import {
   record_craft,
   record_fight,
   record_gather,
+  record_pet_feed,
 } from '../src/actions/play_stats.ts'
 
 describe('play_stats', () => {
@@ -42,6 +43,11 @@ describe('play_stats', () => {
     expect(stats.crafted).toEqual({ gold_bar: 4 })
   })
 
+  it('tallies daily pet feeds', () => {
+    const stats = record_pet_feed(record_pet_feed(empty_stats, 'suifren_bullshark'), 'vaporeon')
+    expect(stats.pets_fed).toEqual({ suifren_bullshark: 1, vaporeon: 1 })
+  })
+
   it('renders a digest with counts, xp, job xp and per-item tallies', () => {
     const stats = record_fight(record_gather(empty_stats, 'iron_ore', 5), {
       outcome: 'won',
@@ -55,5 +61,6 @@ describe('play_stats', () => {
     expect(text).toContain('loot: 2× nook_fang')
     expect(text).toContain('gathered: 5× iron_ore')
     expect(text).toContain('crafted: none')
+    expect(text).toContain('pets fed: none')
   })
 })

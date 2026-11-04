@@ -14,6 +14,7 @@ export type PlayStats = Readonly<{
   loot: Tally
   gathered: Tally
   crafted: Tally
+  pets_fed: Tally
 }>
 
 export const empty_stats: PlayStats = Object.freeze({
@@ -24,6 +25,7 @@ export const empty_stats: PlayStats = Object.freeze({
   loot: Object.freeze({}),
   gathered: Object.freeze({}),
   crafted: Object.freeze({}),
+  pets_fed: Object.freeze({}),
 })
 
 const bump = (tally: Tally, key: string, amount: number): Tally =>
@@ -49,6 +51,9 @@ export const record_gather = (stats: PlayStats, item_type: string, quantity: num
 export const record_craft = (stats: PlayStats, output_type: string, successes: number): PlayStats =>
   Object.freeze({ ...stats, crafted: bump(stats.crafted, output_type, successes) })
 
+export const record_pet_feed = (stats: PlayStats, pet_type: string): PlayStats =>
+  Object.freeze({ ...stats, pets_fed: bump(stats.pets_fed, pet_type, 1) })
+
 const render_tally = (tally: Tally): string => {
   const rows = Object.entries(tally).sort(([left], [right]) => left.localeCompare(right))
   return rows.length > 0 ? rows.map(([item_type, amount]) => `${amount}× ${item_type}`).join(', ') : 'none'
@@ -71,4 +76,5 @@ export const format_summary = (
     `loot: ${render_tally(stats.loot)}`,
     `gathered: ${render_tally(stats.gathered)}`,
     `crafted: ${render_tally(stats.crafted)}`,
+    `pets fed: ${render_tally(stats.pets_fed)}`,
   ].join('\n')
