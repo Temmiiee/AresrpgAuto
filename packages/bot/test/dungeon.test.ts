@@ -13,11 +13,15 @@ import {
 import {
   DUNGEON_EXPECTED_SCALAR,
   dungeon_preview_readiness,
+  dungeon_room_min_win_rate,
+  dungeon_travel_potion_goals,
   party_health_status,
   room_to_mob_group,
 } from '../src/actions/dungeon_run.ts'
 import { dungeon_city, dungeon_rooms, worlds_by_id } from '../src/content/catalog.ts'
 import type { CharacterRow } from '@aresrpg/protocol'
+import { create_party } from '../src/actions/party.ts'
+import { initial_game_state } from '../src/state/store.ts'
 
 const health_character = (over: Partial<CharacterRow> = {}): CharacterRow => ({
   id: 'health-test',
@@ -148,11 +152,39 @@ describe('dungeon key helpers', () => {
   })
 })
 
+describe('dungeon travel logistics', () => {
+  it('crafts city potions before committing a key-ready party to a far portal', () => {
+    const party = create_party()
+    party.leader_id = 'leader'
+    party.members = ['leader', 'ally']
+    party.poses.set('leader', { x: 48_720, z: 47_724 })
+    party.poses.set('ally', { x: 48_720, z: 47_724 })
+    const leader = health_character({ id: 'leader', name: 'leader', world: 'nauvis', x: 48_720, z: 47_724 })
+    const ally = health_character({ id: 'ally', name: 'ally', world: 'nauvis', x: 48_720, z: 47_724 })
+    const state = {
+      ...initial_game_state,
+      characters: [leader, ally],
+      inventory: [{ id: 'keys', item_type: 'key_of_tangled_aftermath', amount: 2, kiosk: 'k' }],
+    }
+
+    expect(dungeon_travel_potion_goals(state as never, party, leader)).toEqual(['potion_of_the_ruins'])
+    state.inventory.push({ id: 'potions', item_type: 'potion_of_the_ruins', amount: 2, kiosk: 'k' })
+    expect(dungeon_travel_potion_goals(state as never, party, leader)).toEqual([])
+  })
+})
+
 describe('dungeon room preview', () => {
   it('waits for HP only when a wounded party fails the current-HP preview', () => {
     expect(dungeon_preview_readiness(1, false)).toBe('ready')
     expect(dungeon_preview_readiness(0.6, false)).toBe('recovering')
     expect(dungeon_preview_readiness(0.6, true)).toBe('unwinnable')
+  })
+
+  it('requires near-certainty for the key-consuming run finale', () => {
+    expect(dungeon_room_min_win_rate(5, 6)).toBe(0.8)
+    expect(dungeon_room_min_win_rate(6, 6)).toBe(0.95)
+    expect(dungeon_preview_readiness(0.86, false, dungeon_room_min_win_rate(6, 6))).toBe('recovering')
+    expect(dungeon_preview_readiness(0.96, false, dungeon_room_min_win_rate(6, 6))).toBe('ready')
   })
 
   it('does not treat missing health as a dungeon difficulty failure', () => {

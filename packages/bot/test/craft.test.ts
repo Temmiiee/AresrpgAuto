@@ -3,6 +3,8 @@ import { craft_required_level, item_is_stackable, job_xp_for_level } from '@ares
 
 import {
   CRAFT_BLACKLIST,
+  OBJECTIVE_BATCH_ATTEMPT_CAP,
+  best_job_training_output,
   craftable_by_level,
   craft_once,
   craft_gather_demand,
@@ -100,6 +102,17 @@ describe('craftable_by_level gate', () => {
   })
 })
 
+describe('focused profession training', () => {
+  it('selects one currently XP-paying recipe from the requested profession', () => {
+    const detail = recipes.map(recipe_detail).find((row) => row.job === 'TAILOR' && row.ingredients.length <= 2)
+    expect(detail).toBeDefined()
+    const character = { id: 'c', jobs: { TAILOR: String(job_xp_for_level(1) ?? 0) } }
+    const output = best_job_training_output(character as never, [], new Set(), 'TAILOR')
+    expect(output).not.toBeNull()
+    expect(recipe_job(recipes_by_output[output!]!)).toBe('TAILOR')
+  })
+})
+
 describe('plan_recipe output target', () => {
   it('never offers an output target for a non-stackable output (regression: abort 2323)', () => {
     const detail = recipe_detail(recipes_by_output['rootshivs']!)
@@ -119,6 +132,25 @@ describe('plan_recipe output target', () => {
     const plan = plan_recipe(character_for(detail.job), detail, inventory_for(detail, true), new Set())
     expect(plan).not.toBeNull()
     expect(plan!.existing).toBe('held-output')
+  })
+
+  it('caps an explicit utility goal instead of burning the full affordable inventory', () => {
+    const detail = recipe_detail(recipes_by_output['potion_of_the_ruins']!)
+    const inventory = detail.ingredients.map((ingredient, index) => ({
+      id: `bulk-${index}`,
+      item_type: ingredient.item_type,
+      amount: ingredient.quantity * 500,
+      category: 'resource',
+    }))
+    const plan = plan_recipe(
+      character_for(detail.job),
+      detail,
+      inventory as never,
+      new Set(),
+      true,
+      OBJECTIVE_BATCH_ATTEMPT_CAP
+    )
+    expect(plan?.attempts).toBe(OBJECTIVE_BATCH_ATTEMPT_CAP)
   })
 })
 

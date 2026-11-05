@@ -36,7 +36,13 @@ import { create_ledger } from '../chain/ledger.ts'
 import { create_mover, is_travel_too_far_error, type Mover } from '../actions/travel.ts'
 import { create_roamer, type Roamer } from '../actions/roam.ts'
 import { gather_once, resolve_pending_ambush } from '../actions/gather.ts'
-import { drive_craft } from '../actions/craft.ts'
+import {
+  best_job_training_output,
+  craft_gather_demand,
+  craft_once,
+  drive_craft,
+  plan_recipe,
+} from '../actions/craft.ts'
 import {
   empty_stats,
   format_summary,
@@ -73,7 +79,12 @@ import {
 } from '../actions/excursion.ts'
 import { safe_travel_to } from '../actions/roam.ts'
 import { dungeon_key_targets, maybe_craft_dungeon_key, party_key_stock, should_run_dungeons } from '../actions/dungeon.ts'
-import { create_dungeon_runner, follower_dungeon_step, type DungeonRunner } from '../actions/dungeon_run.ts'
+import {
+  create_dungeon_runner,
+  dungeon_travel_potion_goals,
+  follower_dungeon_step,
+  type DungeonRunner,
+} from '../actions/dungeon_run.ts'
 import { create_cross_world_gatherer, type CrossWorldGatherer } from '../actions/cross_world.ts'
 import { create_fight_runtimes } from '../actions/fight_registry.ts'
 import { create_group_claims, create_serial_queue, type ActionContext } from '../actions/context.ts'
@@ -87,8 +98,8 @@ import { compute_strategy_offload } from '../actions/strategy_offload.ts'
 import { active_fight_of, freshness, unavailable_item_ids, version_gate_active } from '../state/selectors.ts'
 import { initial_game_state, reduce, type GameState } from '../state/store.ts'
 import { recipe_detail, recipes_by_output, tool_category_of_job, type GatheringJob } from '../content/catalog.ts'
-import { plan_recipe, craft_gather_demand, craft_once } from '../actions/craft.ts'
 import { is_equipment_category, job_level_from_xp, job_slugs } from '@aresrpg/immutable'
+import { module_chore, module_craft_goals, module_task_complete } from '../modules/index.ts'
 
 /** Fired when the socket connection is lost / expired. */
 export type SessionEvent =
@@ -261,6 +272,13 @@ export const party_chore_beat_pending = (
       party.members.includes(member.character.id) &&
       member.chore_pending
   )
+
+/** Dungeon routing owns a party seat from the shared commit through the final projected run row.
+ * Checking both sides is intentional: either one can arrive first across the indexer boundary. */
+export const dungeon_owns_party_route = (
+  party: Readonly<Pick<PartyState, 'dungeon'>>,
+  character: Readonly<Pick<CharacterRow, 'dungeon_run'>>
+): boolean => party.dungeon !== null || character.dungeon_run !== undefined
 
 /** The forced-chore floor: once this character has gone a full interval with NO chore, its pass runs
  *  the chore BEFORE it stages another fight, so gathering/crafting keeps pace behind a wall of engages
@@ -472,6 +490,21 @@ export const play_loop = async (
     session.dispose()
     return
   }
+  if (config.module.kind === 'craft' && !recipes_by_output[config.module.item_type]) {
+    log_error('module', `no craft recipe exists for BOT_CRAFT_TARGET=${config.module.item_type}`)
+    session.dispose()
+    return
+  }
+  const module_character =
+    config.module.kind === 'general' ? null : (config.module.character ?? leader.name.toLowerCase())
+  if (module_character && !party.some((row) => row.name.toLowerCase() === module_character)) {
+    log_error(
+      'module',
+      `target character "${module_character}" is not in the driven party; check BOT_MODULE_CHARACTER, BOT_TEAMS and BOT_PARTY_SIZE`
+    )
+    session.dispose()
+    return
+  }
   if (!config.teams && leader.name.toLowerCase() !== config.leader_name.toLowerCase())
     log_warn('session', `configured leader "${config.leader_name}" not in the party — ${leader.name} leads instead`)
 
@@ -502,6 +535,7 @@ export const play_loop = async (
     'session',
     `party: leader=${leader.name} members=${party.length} group=${toggles.group} — effective_lvl=${effectiveLevel}`
   )
+  log_info('module', `active profile: ${config.module.kind}${config.module.kind === 'general' ? '' : ` (${JSON.stringify(config.module)})`}`)
 
   // Startup diagnostic: log every character's job levels so we can see the actual state.
   const job_lines: string[] = []
@@ -522,7 +556,7 @@ export const play_loop = async (
   notify(
     [
       `✅ AresRPGAuto started — ${party_label}`,
-      `leader=${leader.name} · group=${toggles.group} · world=${leader.world ?? config.world ?? WORLD_FALLBACK}`,
+      `module=${config.module.kind} · leader=${leader.name} · group=${toggles.group} · world=${leader.world ?? config.world ?? WORLD_FALLBACK}`,
       ...job_lines,
     ].join('\n'),
     'success'
@@ -565,12 +599,20 @@ export const play_loop = async (
 
     // The chore plan is keyed by character name: omori rotates every crafting job while each other
     // character owns ONE gathering job, so the party covers every gathering leaf and craft trade.
-    const chore: ChoreRole = config.chore_plan[character.name.toLowerCase()] ?? Object.freeze({ kind: 'none' })
+    const chore: ChoreRole = module_chore(
+      config.module,
+      character.name,
+      leader.name,
+      config.chore_plan[character.name.toLowerCase()] ?? Object.freeze({ kind: 'none' })
+    )
     log_info('session', `${character.name}: chore = ${describe_chore(chore)}`)
     if (chore.kind === 'none' && character.classe.toLowerCase() === 'tomoda')
       log_info('session', `${character.name}: Tomoda is left chore-free to focus on party support in combat`)
     else if (chore.kind === 'none')
-      log_warn('session', `${character.name}: no chore assignment — this character will only fight`)
+      log_warn(
+        'session',
+        `${character.name}: no chore assignment — this character will ${toggles.fight ? 'only fight' : 'remain idle in this profile'}`
+      )
 
     runtimes.push({
       character,
@@ -714,6 +756,47 @@ export const play_loop = async (
     tool_goal_cache = Object.freeze({ state: game_state, outputs: result })
     return result
   }
+  let dungeon_travel_goal_cache: Readonly<{ state: GameState; outputs: readonly string[] }> | null = null
+  const current_dungeon_travel_goals = (): readonly string[] => {
+    if (dungeon_travel_goal_cache?.state === game_state) return dungeon_travel_goal_cache.outputs
+    const outputs = new Set<string>()
+    for (const party of party_states.values()) {
+      if (!party.leader_id) continue
+      const leader = game_state.characters.find((row) => row.id === party.leader_id)
+      if (!leader) continue
+      for (const output of dungeon_travel_potion_goals(game_state, party, leader)) outputs.add(output)
+    }
+    const result = Object.freeze([...outputs])
+    dungeon_travel_goal_cache = Object.freeze({ state: game_state, outputs: result })
+    return result
+  }
+  const current_module_craft_goals = (): readonly string[] => {
+    const exact = module_craft_goals(config.module, game_state.inventory)
+    if (exact.length > 0 || config.module.kind !== 'job' || config.module.gathering) return exact
+    const target_name = config.module.character ?? leader.name.toLowerCase()
+    const target = game_state.characters.find((row) => row.name.toLowerCase() === target_name)
+    if (!target) return Object.freeze([])
+    const output = best_job_training_output(
+      target,
+      game_state.inventory,
+      unavailable_item_ids(game_state),
+      config.module.job
+    )
+    return output ? Object.freeze([output]) : Object.freeze([])
+  }
+  const focused_craft_job = (): string | null =>
+    config.module.kind === 'job' && !config.module.gathering ? config.module.job : null
+  const module_objective_attempt_cap = (): number => {
+    if (config.module.kind !== 'craft') return 10
+    const item_type = config.module.item_type
+    const held = game_state.inventory.reduce(
+      (total, row) => total + (row.item_type === item_type ? Number(row.amount) : 0),
+      0
+    )
+    return Math.max(1, config.module.quantity - held)
+  }
+  const specialized_objectives = config.module.kind !== 'general'
+  let module_completion_logged: string | null = null
   /** true once, on the first pass that sees an equipment id the party has never seen (boot, drop,
    *  craft). The seen set is only advanced when something new appeared, so a removed id re-triggers
    *  if it ever comes back. */
@@ -949,6 +1032,16 @@ export const play_loop = async (
     // borrows the character from the kiosk, which a seated fighter cannot lend).
     if (await trace_step(character.name, 'maybe_progress', () => maybe_progress(ctx, current))) return SETTLE_POLL_MS
 
+    const completed = module_task_complete(config.module, game_state.characters, game_state.inventory, leader.name)
+    if (completed) {
+      if (module_completion_logged !== completed) {
+        module_completion_logged = completed
+        log_info('module', `objective complete — ${completed}; holding all new actions`)
+        notify(`✅ AresRPGAuto ${config.module.kind} objective complete — ${completed}`, 'success')
+      }
+      return idle_sleep_ms
+    }
+
     // 2b. an engage was just submitted but the roster has not caught up yet: do not re-engage into
     // the indexing window (that is the double-engage that aborts on chain).
     if (rt.awaiting_fight_ms !== null) {
@@ -1008,7 +1101,8 @@ export const play_loop = async (
     // ENTER it before the dungeon door will accept its join. A follower walks to the portal and burns
     // its own key here — before the routed steps below can send it off gathering. The step also gives
     // up a run the leader is no longer driving, so a follower never sits rooted at a portal.
-    if (toggles.group && !is_leader) {
+    const dungeon_route_active = toggles.dungeon || dungeon_owns_party_route(party_state, current)
+    if (dungeon_route_active && toggles.group && !is_leader) {
       if (await trace_step(character.name, 'follower_dungeon_step', () => follower_dungeon_step(ctx, mover))) return idle_sleep_ms
     }
 
@@ -1017,9 +1111,10 @@ export const play_loop = async (
     // walks it there in ONE silent `travel_to` leg (a healthy multi-minute walk logs nothing while
     // the followers, left at the old spot, are eventually written off as stragglers). So before any
     // of them runs, and before the leader opens a rendezvous, a leader that has drifted outside
-    // PARTY_RADIUS walks back to the party and does nothing else this pass. A live dungeon run owns
-    // the character at the portal, so it is exempt — this gate collects it the moment the run ends.
-    if (group_mode && is_leader && !current.dungeon_run) {
+    // PARTY_RADIUS walks back to the party and does nothing else this pass. A committed dungeon or
+    // live dungeon run owns the character at the portal, so it is exempt — checking the shared
+    // commitment as well closes the indexing race between `enter` and `character.dungeon_run`.
+    if (group_mode && is_leader && !dungeon_owns_party_route(party_state, current)) {
       const regroup = regroup_step(party_state, mover.pose())
       if (regroup) {
         // One bounded hop toward the party, not a full leg: a full leg blocks for the whole walk, and
@@ -1047,7 +1142,7 @@ export const play_loop = async (
     // fail. Step 2 above drives the room turns; step 1 routes the ended room's settlement through
     // the dungeon door, which advances the run or ends it.
     // When the leader starts a room, it becomes the party's active group fight — followers join it.
-    if (should_run_dungeons(current, ctx)) {
+    if (dungeon_route_active && should_run_dungeons(current, ctx)) {
       const dungeon = await trace_step(character.name, 'dungeon.run_once', () => rt.dungeon.run_once(mover))
       if (dungeon !== null) {
         if (dungeon.kind !== 'skipped' && dungeon.kind !== 'waiting')
@@ -1079,6 +1174,13 @@ export const play_loop = async (
         return idle_sleep_ms
       }
     }
+
+    // Once a party dungeon is committed, ordinary party routing must not run between dungeon
+    // transactions. In particular, an entered follower has no work in `follower_dungeon_step`, and
+    // would otherwise fall through to the rejoin/rally gates and walk back toward the leader's
+    // briefly stale pre-portal pose. The leader has the same projection gap immediately after
+    // `enter`. Hold every seat at the portal until the runner starts the room or releases the run.
+    if (dungeon_owns_party_route(party_state, current)) return idle_sleep_ms
 
     // Cross-world gathering (the designated detacher only): drive its trip state machine. A detacher
     // is marked on the shared party so the leader's rendezvous ignores the missing seat; while it is
@@ -1331,8 +1433,15 @@ export const play_loop = async (
       // Recipe-driven gathering: the party shares ONE kiosk inventory and ONE crafter, so the
       // leader's job levels decide which inputs the rotations still owe — every gatherer then
       // walks toward those (and the dungeon-key materials) instead of the tier ladder alone.
-      const crafter = game_state.characters.find((c) => c.id === party_state.leader_id)
-      const key_outputs = crafter
+      const crafter_runtime = runtimes.find(
+        (candidate) =>
+          candidate.ctx.party_state === party_state &&
+          (candidate.chore.kind === 'craft' ||
+            candidate.chore.kind === 'gather_craft' ||
+            candidate.chore.kind === 'gather_all_craft')
+      )
+      const crafter = game_state.characters.find((c) => c.id === (crafter_runtime?.character.id ?? party_state.leader_id))
+      const key_outputs = crafter && toggles.dungeon && !specialized_objectives
         ? dungeon_key_targets(
             game_state.inventory,
             unavailable_item_ids(game_state),
@@ -1343,11 +1452,13 @@ export const play_loop = async (
         : []
       const objective_demand = crafter
         ? craft_gather_demand(crafter, game_state.inventory, unavailable_item_ids(game_state), [
+            ...current_module_craft_goals(),
             ...key_outputs,
-            ...current_tool_goals(),
-            ...current_gear_goals(),
-            ...(toggles.pet_feed ? pet_food_goals(game_state) : []),
-          ])
+            ...(!specialized_objectives ? current_dungeon_travel_goals() : []),
+            ...(!specialized_objectives ? current_tool_goals() : []),
+            ...(!specialized_objectives ? current_gear_goals() : []),
+            ...(!specialized_objectives && toggles.pet_feed ? pet_food_goals(game_state) : []),
+          ], focused_craft_job())
         : undefined
       const pet_demand = toggles.pet_feed ? pet_food_gather_demand(game_state) : new Map<string, number>()
       const demand = new Map(objective_demand ?? [])
@@ -1390,7 +1501,7 @@ export const play_loop = async (
     let key_crafted = false
     // ANY crafting member may mint the key (the leader's own trade is often not the key's job);
     // a party-wide spacing keeps two crafters from spending the same projected stack at once.
-    if (crafts && party_state.members.includes(character.id)) {
+    if (crafts && toggles.dungeon && !specialized_objectives && party_state.members.includes(character.id)) {
       const KEY_CRAFT_COOLDOWN_MS = 60_000
       const PARTY_KEY_CRAFT_SPACING_MS = 20_000
       const now = Date.now()
@@ -1421,7 +1532,7 @@ export const play_loop = async (
       // now mints the flour/powder/weave the keys eat before spending those materials on xp filler.
       // Gear goals follow, then the XP rotation.
       const leader = game_state.characters.find((c) => c.id === party_state.leader_id)
-      const key_outputs = leader
+      const key_outputs = leader && toggles.dungeon && !specialized_objectives
         ? dungeon_key_targets(
             game_state.inventory,
             unavailable_item_ids(game_state),
@@ -1431,10 +1542,12 @@ export const play_loop = async (
           )
         : []
       const priority_groups = [
+        current_module_craft_goals(),
+        ...(!specialized_objectives ? [current_dungeon_travel_goals()] : []),
         key_outputs,
-        current_gear_goals(),
-        toggles.pet_feed ? pet_food_goals(game_state) : [],
-        current_tool_goals(),
+        ...(!specialized_objectives ? [current_gear_goals()] : []),
+        !specialized_objectives && toggles.pet_feed ? pet_food_goals(game_state) : [],
+        ...(!specialized_objectives ? [current_tool_goals()] : []),
       ].filter((group) => group.length > 0)
       for (let batch = 0; batch < CRAFT_BATCHES_PER_CHORE; batch++) {
         const crafted = await craft_queue.run(async () => {
@@ -1445,7 +1558,13 @@ export const play_loop = async (
           let blocked_result: Awaited<ReturnType<typeof drive_craft>> | null = null
           for (let offset = 0; offset < priority_groups.length; offset++) {
             const index = (craft_focus_cursor + offset) % priority_groups.length
-            const result = await drive_craft(ctx, shared_unavailable, priority_groups[index])
+            const result = await drive_craft(
+              ctx,
+              shared_unavailable,
+              priority_groups[index],
+              focused_craft_job(),
+              module_objective_attempt_cap()
+            )
             if (!result.success) {
               blocked_result = result
               continue
@@ -1457,7 +1576,11 @@ export const play_loop = async (
           // Preserve objective materials when every family is blocked. The generic XP rotation is
           // safe only when there is no active objective at all.
           if (blocked_result) return blocked_result
-          const result = await drive_craft(ctx, shared_unavailable)
+          // Exact-item mode never burns ingredients on filler after its target becomes temporarily
+          // blocked. Job mode deliberately falls through, but only inside its selected profession.
+          if (config.module.kind === 'craft')
+            return { success: false, outcome: 'target_blocked', output_type: '', successes: 0, input_item_ids: [] }
+          const result = await drive_craft(ctx, shared_unavailable, [], focused_craft_job())
           if (result.success) for (const id of result.input_item_ids) party_craft_burned.add(id)
           return result
         })
@@ -1647,7 +1770,11 @@ export const play_loop = async (
           const plan = await compute_strategy_offload(rows, game_state, {
             party_level: Math.max(...rows.map((row) => row.level)),
             dungeon_blacklist: members[0]?.ctx.dungeon_blacklist,
-            extra_outputs: current_tool_goals(),
+            urgent_outputs: [
+              ...current_module_craft_goals(),
+              ...(!specialized_objectives ? current_dungeon_travel_goals() : []),
+            ],
+            extra_outputs: !specialized_objectives ? current_tool_goals() : [],
           })
           strategy_ref.set(state, plan)
           log_info('strategy', `${state.members.length > 1 ? 'team' : 'solo'} [${rows.map((row) => row.name).join(', ')}]`)

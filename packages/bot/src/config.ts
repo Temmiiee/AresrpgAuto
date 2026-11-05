@@ -3,6 +3,9 @@
 import type { GatheringJob } from '@aresrpg/immutable'
 
 import { NETWORK, RPC_URL } from './shared/network_config.ts'
+import { GATHERING_JOBS } from './config_jobs.ts'
+import type { ChorePlan, ChoreRole } from './config_types.ts'
+import { module_defaults, parse_bot_module, type BotModule } from './modules/index.ts'
 
 export type PlayToggles = Readonly<{
   /** harvest resource nodes the zone seed draws */
@@ -19,6 +22,8 @@ export type PlayToggles = Readonly<{
   cross_world: boolean
   /** feed every eligible pet once per UTC day and craft its authored food when possible */
   pet_feed: boolean
+  /** enter and drive authored dungeon runs */
+  dungeon: boolean
 }>
 
 const env_flag = (raw: string | undefined, fallback: boolean): boolean => {
@@ -57,18 +62,8 @@ const parse_teams = (raw: string | undefined): readonly (readonly string[])[] | 
  *  - `gather_all_craft` rotates EVERY gathering job AND runs the objective-driven crafter;
  *  - `none`         does no chore at all.
  *  Every character still fights for xp regardless of its chore role. */
-export type ChoreRole =
-  | Readonly<{ kind: 'craft' }>
-  | Readonly<{ kind: 'gather'; job: GatheringJob }>
-  | Readonly<{ kind: 'gather_all' }>
-  | Readonly<{ kind: 'gather_craft'; job: GatheringJob }>
-  | Readonly<{ kind: 'gather_all_craft' }>
-  | Readonly<{ kind: 'none' }>
-
-/** Per-character chore plan, keyed by lowercased character name. */
-export type ChorePlan = Readonly<Record<string, ChoreRole>>
-
-export const GATHERING_JOBS = Object.freeze(['FARMER', 'HERBALIST', 'MINER'] as const)
+export { GATHERING_JOBS }
+export type { ChorePlan, ChoreRole }
 
 /** The default roster deliberately concentrates progression instead of spreading it over four
  *  copies of every trade. Omori owns crafting; the other three each keep one gathering job and its
@@ -162,7 +157,12 @@ export type BotConfig = Readonly<{
   content_watch_interval_ms: number
   /** write complete per-fight JSONL diagnostics under packages/bot/logs/fights */
   combat_analytics: boolean
+  /** specialized scheduler profile */
+  module: BotModule
 }>
+
+const selected_module = parse_bot_module(process.env)
+const selected_defaults = module_defaults(selected_module)
 
 export const config: BotConfig = Object.freeze({
   network: NETWORK,
@@ -182,13 +182,14 @@ export const config: BotConfig = Object.freeze({
   character_id: process.env.ARES_CHARACTER_ID ?? null,
   world: process.env.ARES_WORLD ?? "nauvis",
   play: Object.freeze({
-    gather: env_flag(process.env.BOT_GATHER, true),
-    fight: env_flag(process.env.BOT_FIGHT, true),
-    roam: env_flag(process.env.BOT_ROAM, true),
-    craft: env_flag(process.env.BOT_CRAFT, true),
-    group: env_flag(process.env.BOT_GROUP, true),
-    cross_world: env_flag(process.env.BOT_CROSS_WORLD, true),
-    pet_feed: env_flag(process.env.BOT_PET_FEED, true),
+    gather: env_flag(process.env.BOT_GATHER, selected_defaults.gather),
+    fight: env_flag(process.env.BOT_FIGHT, selected_defaults.fight),
+    roam: env_flag(process.env.BOT_ROAM, selected_defaults.roam),
+    craft: env_flag(process.env.BOT_CRAFT, selected_defaults.craft),
+    group: env_flag(process.env.BOT_GROUP, selected_defaults.group),
+    dungeon: env_flag(process.env.BOT_DUNGEON, selected_defaults.dungeon),
+    cross_world: env_flag(process.env.BOT_CROSS_WORLD, selected_defaults.cross_world),
+    pet_feed: env_flag(process.env.BOT_PET_FEED, selected_defaults.pet_feed),
   }),
   // The idle beat is pure overhead stacked on top of each pass's blocking work (a staging leg, a
   // follower rally): it delays the next rendezvous/regroup check, never a transaction. 3s keeps the
@@ -200,7 +201,7 @@ export const config: BotConfig = Object.freeze({
   party_size: Math.min(Math.max(env_int(process.env.BOT_PARTY_SIZE) ?? 5, 1), 5),
   teams: parse_teams(process.env.BOT_TEAMS),
   chore_plan: parse_chore_plan(process.env.BOT_CHORE_PLAN),
-  chore_interval_ms: Math.max(env_int(process.env.BOT_CHORE_INTERVAL_MS) ?? 5 * 60_000, 0),
+  chore_interval_ms: Math.max(env_int(process.env.BOT_CHORE_INTERVAL_MS) ?? selected_defaults.chore_interval_ms, 0),
   leader_name: process.env.BOT_LEADER ?? 'omori',
   digest_minutes: Math.max(0, env_int(process.env.BOT_DIGEST_MINUTES) ?? 60),
   cross_world_gatherer: (process.env.BOT_CROSS_WORLD_GATHERER ?? 'archero').toLowerCase(),
@@ -210,9 +211,10 @@ export const config: BotConfig = Object.freeze({
   // The periodic "brain": for each zone band it simulates the couple of in-level families with the
   // best authored XP through the same fight twin the engage uses, plus the all-item gear acquisition
   // route. 30 minutes reacts to level/gear moves without hammering the shared loop with sim bursts.
-  strategy: env_flag(process.env.BOT_STRATEGY, true),
+  strategy: env_flag(process.env.BOT_STRATEGY, selected_defaults.strategy),
   strategy_interval_ms: Math.max(0, env_int(process.env.BOT_STRATEGY_INTERVAL_MS) ?? 30 * 60_000),
   content_watch: env_flag(process.env.BOT_CONTENT_WATCH, true),
   content_watch_interval_ms: Math.max(env_int(process.env.BOT_CONTENT_WATCH_INTERVAL_MS) ?? 21_600_000, 60_000),
   combat_analytics: env_flag(process.env.BOT_COMBAT_ANALYTICS, false),
+  module: selected_module,
 })

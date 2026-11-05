@@ -52,10 +52,10 @@ async function main(): Promise<void> {
   const address = signer.toSuiAddress()
 
   log_info('main', 'starting AresRPGAuto...')
-  log_info('main', `runtime: network=${config.network}, party≤${config.party_size}`)
+  log_info('main', `runtime: network=${config.network}, party≤${config.party_size}, module=${config.module.kind}`)
   log_info(
     'main',
-    `actions: gather=${config.play.gather}, fight=${config.play.fight}, roam=${config.play.roam}, craft=${config.play.craft}, group=${config.play.group}, cross_world=${config.play.cross_world}, pet_feed=${config.play.pet_feed}`
+    `actions: gather=${config.play.gather}, fight=${config.play.fight}, roam=${config.play.roam}, craft=${config.play.craft}, group=${config.play.group}, dungeon=${config.play.dungeon}, cross_world=${config.play.cross_world}, pet_feed=${config.play.pet_feed}`
   )
   // The upstream check is delayed so its parallel requests cannot contend with startup.
   start_game_content_watch()
@@ -69,6 +69,7 @@ async function main(): Promise<void> {
       roam: config.play.roam,
       craft: config.play.craft,
       group: config.play.group,
+      dungeon: config.play.dungeon,
       cross_world: config.play.cross_world,
       pet_feed: config.play.pet_feed,
     },

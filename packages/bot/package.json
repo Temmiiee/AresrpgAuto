@@ -6,6 +6,9 @@
   "description": "Headless AresRPG automation bot: zkLogin auth, authenticated live-state websocket, gather/fight/craft/jobs farming, Discord reporting.",
   "scripts": {
     "start": "bun run src/main.ts run",
+    "start:xp": "bun run src/modules/run_xp.ts",
+    "start:job": "bun run src/modules/run_job.ts",
+    "start:craft": "bun run src/modules/run_craft.ts",
     "login": "bun run src/main.ts login",
     "doctor": "bun run src/main.ts doctor",
     "status": "bun run src/main.ts status",

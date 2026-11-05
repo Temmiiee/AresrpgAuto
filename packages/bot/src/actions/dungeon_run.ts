@@ -21,6 +21,7 @@ import type { CharacterRow } from '@aresrpg/protocol'
 import { dungeon_city, dungeon_rooms, worlds_by_id } from '../content/catalog.ts'
 import { log_debug, log_info, log_warn } from '../shared/logger.ts'
 import { active_fight_of, is_version_assert_error, select_character, unavailable_item_ids } from '../state/selectors.ts'
+import type { GameState } from '../state/store.ts'
 import { custody_of, type ActionContext } from './context.ts'
 import {
   DUNGEON_KEYS,
@@ -41,7 +42,7 @@ import {
   type MobGroupRow,
 } from './fight_preview.ts'
 import { plan_mastery_dungeon, is_mastery_dungeon } from './mastery.ts'
-import { REJOIN_RADIUS } from './party.ts'
+import { REJOIN_RADIUS, TRAVEL_POTION_MIN_SAVINGS, try_travel_potion, type PartyState } from './party.ts'
 import type { Mover } from './travel.ts'
 
 /** After a successful `enter`, wait this long for the roster to reveal `dungeon_run` before
@@ -54,6 +55,8 @@ const ROOM_HP_LOG_INTERVAL_MS = 30_000
  *  key and replays four full fights every idle pass. Recheck on the operator heartbeat cadence. */
 const ROOM_HP_PREVIEW_RETRY_MS = 30_000
 const room_hp_wait_log_ms = new Map<string, number>()
+const portal_logistics_log_ms = new Map<string, number>()
+const PORTAL_LOGISTICS_LOG_INTERVAL_MS = 60_000
 /** Room 1 waits for EVERY committed seat to enter. These are only deadlock breakers: the leader
  *  starts with whoever is present once nobody new has entered for GROUP_ENTER_STALL_MS, or after
  *  GROUP_ENTER_MAX_WAIT_MS in total. The clock starts when the LEADER's run first appears (not at
@@ -80,15 +83,79 @@ export const room1_gate = (input: {
  *  has stopped doing -- dungeon fights are only worth it fought as a stack. */
 /** The win rate below which a room is not worth committing to. */
 const MIN_WIN_RATE = 0.8
+/** The last room decides whether every key and all prior room gas paid off. A merely 80%-safe
+ * attempt is too expensive there (observed: 12/14 preview wins, then the live run wiped), so the
+ * party waits for a near-certain recovered state before committing the finale. */
+const FINAL_ROOM_MIN_WIN_RATE = 0.95
+const CITY_TRAVEL_POTION: Readonly<Record<string, string>> = Object.freeze({
+  thebes: 'potion_of_thebes',
+  the_ruins: 'potion_of_the_ruins',
+  fuwage: 'potion_of_fuwage',
+})
+
+const chebyshev_distance = (
+  from: Readonly<{ x: number; z: number }>,
+  to: Readonly<{ x: number; z: number }>
+): number => Math.max(Math.abs(from.x - to.x), Math.abs(from.z - to.z))
+
+const member_pose = (party: PartyState, member: CharacterRow): Readonly<{ x: number; z: number }> | null =>
+  party.poses.get(member.id) ??
+  (member.x === undefined || member.z === undefined ? null : { x: member.x, z: member.z })
+
+const free_amount = (state: GameState, item_type: string): number => {
+  const unavailable = unavailable_item_ids(state)
+  return state.inventory.reduce(
+    (total, item) => total + (item.item_type === item_type && !unavailable.has(item.id) ? Number(item.amount) : 0),
+    0
+  )
+}
+
+/** Cheap pre-preview logistics plan. A far dungeon is not worth freezing every character in one
+ * silent 10–20 minute walk; first craft one city potion per far entrant while normal farming keeps
+ * running. The expensive room previews happen only once this prerequisite is satisfied. */
+export const dungeon_travel_potion_goals = (
+  state: GameState,
+  party: PartyState,
+  leader: CharacterRow
+): readonly string[] => {
+  const world = worlds_by_id[leader.world ?? '']
+  if (!world) return Object.freeze([])
+  const members = party.members
+    .filter((id) => !party.detached.has(id))
+    .flatMap((id) => {
+      const member = state.characters.find((row) => row.id === id)
+      return member && member.world === leader.world ? [member] : []
+    })
+  if (members.length < MIN_GROUP_KEYS) return Object.freeze([])
+  const unavailable = unavailable_item_ids(state)
+
+  for (const dk of DUNGEON_KEYS) {
+    if (held_key_amount(state.inventory, unavailable, dk.key) < members.length) continue
+    const city = dungeon_city(world, dk.dungeon)
+    if (!city) continue
+    const potion = CITY_TRAVEL_POTION[city.city]
+    if (!potion) continue
+    const far = members.filter((member) => {
+      const pose = member_pose(party, member)
+      return pose !== null && chebyshev_distance(pose, city) >= TRAVEL_POTION_MIN_SAVINGS
+    }).length
+    if (far > free_amount(state, potion)) return Object.freeze([potion])
+  }
+  return Object.freeze([])
+}
 
 export type DungeonPreviewReadiness = 'ready' | 'recovering' | 'unwinnable'
+
+export const dungeon_room_min_win_rate = (room: number, room_count: number): number =>
+  room === room_count ? FINAL_ROOM_MIN_WIN_RATE : MIN_WIN_RATE
 
 /** A failed current-HP preview is recoverable only while the party still has HP to regenerate. */
 export const dungeon_preview_readiness = (
   win_rate: number,
-  party_at_full_hp: boolean
+  party_at_full_hp: boolean,
+  required_win_rate = MIN_WIN_RATE
 ): DungeonPreviewReadiness =>
-  win_rate >= MIN_WIN_RATE ? 'ready' : party_at_full_hp ? 'unwinnable' : 'recovering'
+  win_rate >= required_win_rate ? 'ready' : party_at_full_hp ? 'unwinnable' : 'recovering'
 
 /** Per-character "last enter submitted" stamp, shared by the leader's runner and the follower step so
  *  a lagging roster never re-issues the same enter door. */
@@ -268,6 +335,18 @@ const enter_run = async (
   // re-screening here only doubles the fight sim.
   const last = last_enter_ms_by_char.get(character.id) ?? 0
   if (Date.now() - last < ENTER_GRACE_MS) return outcome('waiting', 'recent enter; waiting for the roster')
+  if (
+    await try_travel_potion(
+      ctx,
+      character,
+      { world: world.world, x: city.x, z: city.z },
+      mover.pose(),
+      `${city.city} dungeon portal`
+    )
+  ) {
+    await mover.refresh_anchor(true)
+    return outcome('traveling', `teleported toward the ${city.city} portal`)
+  }
   log_debug('dungeon', `[DIAG] ${character.name}: starting safe_travel_to`)
   const travel_started = Date.now()
   const travel_ok = await safe_travel_to(mover, city.x, city.z)
@@ -376,6 +455,27 @@ const plan_group_dungeon = (
     const city = dungeon_city(world, dk.dungeon)
     if (!city) continue
 
+    const potion = CITY_TRAVEL_POTION[city.city]
+    const far_members = potion
+      ? members.filter((member) => {
+          const pose = member_pose(party, member)
+          return pose !== null && chebyshev_distance(pose, city) >= TRAVEL_POTION_MIN_SAVINGS
+        })
+      : []
+    const potion_stock = potion ? free_amount(ctx.state(), potion) : 0
+    if (far_members.length > potion_stock) {
+      const log_key = `${character.id}:${dk.dungeon}:${potion_stock}/${far_members.length}`
+      const now = Date.now()
+      if (now - (portal_logistics_log_ms.get(log_key) ?? 0) >= PORTAL_LOGISTICS_LOG_INTERVAL_MS) {
+        portal_logistics_log_ms.set(log_key, now)
+        log_info(
+          'dungeon',
+          `${dk.dungeon}: portal is far for ${far_members.length} seat(s); preparing ${potion} (${potion_stock}/${far_members.length}) before previews/commit`
+        )
+      }
+      return null
+    }
+
     const all_rooms = dungeon_rooms(dk.dungeon)
     if (all_rooms.length === 0) continue
 
@@ -410,7 +510,7 @@ const plan_group_dungeon = (
 
     // Every room must be winnable with the complete party.
     for (let ri = 0; ri < all_rooms.length; ri++) {
-      if (preview_room(ri).win_rate < MIN_WIN_RATE) {
+      if (preview_room(ri).win_rate < dungeon_room_min_win_rate(ri + 1, all_rooms.length)) {
         failing = ri
         break
       }
@@ -421,7 +521,7 @@ const plan_group_dungeon = (
 
       log_warn(
         'dungeon',
-        `${dk.dungeon} room ${failing + 1}: group preview win_rate=${(preview.win_rate * 100).toFixed(0)}% (${describe_score(preview)}) < 80% with all ${target_seats} seats -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
+        `${dk.dungeon} room ${failing + 1}: group preview win_rate=${(preview.win_rate * 100).toFixed(0)}% (${describe_score(preview)}) < ${Math.round(dungeon_room_min_win_rate(failing + 1, all_rooms.length) * 100)}% with all ${target_seats} seats -- parking key ${Math.round(DUNGEON_PARK_MS / 60_000)}min`
       )
 
       park_dungeon_key(blacklist, dk.key)
@@ -564,7 +664,8 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
     const allies = dungeon_allies(ctx, character).filter((ally) => ally.dungeon_run?.dungeon === run.dungeon)
     const preview = score_group(character, room_to_mob_group(room), allies, { rounds: DUNGEON_ROUNDS })
     const health = party_health_status([character, ...allies])
-    const readiness = dungeon_preview_readiness(preview.win_rate, health.ready)
+    const required_win_rate = dungeon_room_min_win_rate(run.room, dungeon_rooms(run.dungeon).length)
+    const readiness = dungeon_preview_readiness(preview.win_rate, health.ready, required_win_rate)
     if (readiness === 'recovering') {
       room_hp_preview_retry = { key: room_key, after_ms: now + ROOM_HP_PREVIEW_RETRY_MS }
       if (now - (room_hp_wait_log_ms.get(room_key) ?? 0) >= ROOM_HP_LOG_INTERVAL_MS) {
@@ -572,7 +673,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
         const status = health.wounded.map((member) => `${member.name}:${member.hp}/${member.max_hp}`).join(' ')
         log_info(
           'dungeon',
-          `holding ${run.dungeon} room ${run.room}: preview ${Math.round(preview.win_rate * 100)}% (${describe_score(preview)}) below 80% at current HP${status ? ` (${status}; ${health.missing_hp} HP missing)` : ''}`
+          `holding ${run.dungeon} room ${run.room}: preview ${Math.round(preview.win_rate * 100)}% (${describe_score(preview)}) below ${Math.round(required_win_rate * 100)}% at current HP${status ? ` (${status}; ${health.missing_hp} HP missing)` : ''}`
         )
       }
       return outcome('waiting', 'room preview is not yet safe at current HP')
@@ -581,7 +682,7 @@ export const create_dungeon_runner = (ctx: ActionContext): DungeonRunner => {
       room_hp_preview_retry = null
       log_warn(
         'dungeon',
-        `${run.dungeon} room ${run.room}: preview ${Math.round(preview.win_rate * 100)}% (${describe_score(preview)}) is below 80% even at full HP -- abandoning run`
+        `${run.dungeon} room ${run.room}: preview ${Math.round(preview.win_rate * 100)}% (${describe_score(preview)}) is below ${Math.round(required_win_rate * 100)}% even at full HP -- abandoning run`
       )
       await abandon(ctx)
       return outcome('skipped', `preview win rate ${(preview.win_rate * 100).toFixed(0)}% at full HP -- abandoned`)

@@ -10,7 +10,10 @@
   "scripts": {
     "sync-vendor": "bun scripts/sync_vendor.mjs",
     "typecheck": "bun run --cwd packages/bot typecheck",
-    "bot": "bun run --cwd packages/bot start"
+    "bot": "bun run --cwd packages/bot start",
+    "bot:xp": "bun run --cwd packages/bot start:xp",
+    "bot:job": "bun run --cwd packages/bot start:job",
+    "bot:craft": "bun run --cwd packages/bot start:craft"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",

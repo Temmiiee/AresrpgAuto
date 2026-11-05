@@ -214,6 +214,15 @@ To feed the focused trade:
 So the loop is: **fights (drops) + gather excursions (raw resources) → omori refines & crafts →
 tools/gear back to the party.** With one shared inventory this is automatic.
 
+For dungeons, key stock alone is not enough to commit the party. If the authored city portal is
+several minutes away, the matching city potion becomes an objective first (one per far entrant).
+Its mob-only ingredients feed the normal loot focus. The bot continues useful farming until the
+travel stock is ready, then performs the expensive room previews and commits the run. From that
+commitment through the final room, dungeon routing has exclusive ownership of all entrants: normal
+regrouping and post-fight chores wait so nobody leaves the portal during an indexing gap. Ordinary
+rooms require at least 80% preview wins; the final room requires 95% so the bot regenerates longer
+instead of risking all keys and prior-room gas on a merely probable clear.
+
 ### Equipment acquisition invariant
 
 The equipment path is validated end to end against all 116 craftable wearables:

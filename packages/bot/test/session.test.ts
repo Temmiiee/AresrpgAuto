@@ -1,6 +1,7 @@
 // session tests – verify function structures
 import {
   create_session,
+  dungeon_owns_party_route,
   party_chore_beat_pending,
   play_loop,
   request_party_chore_beat,
@@ -53,5 +54,28 @@ describe('post-fight party chore beat', () => {
     expect(party_chore_beat_pending(runtimes, party)).toBe(true)
     for (const runtime of runtimes.slice(0, 3)) runtime.chore_pending = false
     expect(party_chore_beat_pending(runtimes, party)).toBe(false)
+  })
+})
+
+describe('dungeon route ownership', () => {
+  it('holds normal party routing across both sides of the projection gap', () => {
+    const party = create_party()
+    const idle = { dungeon_run: undefined }
+
+    expect(dungeon_owns_party_route(party, idle)).toBe(false)
+
+    party.dungeon = {
+      dungeon: 'tangled_aftermath',
+      world: 'nauvis',
+      x: 1,
+      z: 2,
+      seats: 5,
+      member_ids: ['leader'],
+      committed_ms: 1,
+    }
+    expect(dungeon_owns_party_route(party, idle)).toBe(true)
+
+    party.dungeon = null
+    expect(dungeon_owns_party_route(party, { dungeon_run: {} as any })).toBe(true)
   })
 })

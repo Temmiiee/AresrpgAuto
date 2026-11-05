@@ -257,6 +257,8 @@ export type FarmOptions = Readonly<{
   now_ms?: number
   /** Additional craft outputs with missing loot-only ingredients (for example gathering tools). */
   extra_outputs?: readonly string[]
+  /** Outputs that unblock already-ready content and must precede future dungeon-key stock. */
+  urgent_outputs?: readonly string[]
 }>
 
 /** Scan every mob family in the fight world across the difficulty bands and pick the distance whose
@@ -399,10 +401,13 @@ export const plan_loot_focus = (
     }
   }
 
-  // One strict objective at a time, in the same order as the live craft loop: dungeon key, missing
-  // gathering tool, then the highest-value gear target. If its trade is locked, farm loot for only
-  // the best XP recipe of THAT trade. This replaces the old all-profession loot sweep.
-  const fixed_craft_priorities = [...key_targets, ...(options.extra_outputs ?? [])]
+  // One strict objective at a time, in the same order as the live craft loop. Logistics for content
+  // whose keys already exist is urgent; only then pursue future keys and other utility outputs.
+  const fixed_craft_priorities = [
+    ...(options.urgent_outputs ?? []),
+    ...key_targets,
+    ...(options.extra_outputs ?? []),
+  ]
   if (fixed_craft_priorities.length > 0) {
     const focus = select_craft_focus(leader, fixed_craft_priorities)
     const detail = focus?.ready ? focus.goal : focus?.training

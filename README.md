@@ -14,6 +14,29 @@ bun run login          # one-time interactive zkLogin Google sign-in
 bun run start          # run the session loop
 ```
 
+## Specialized modules
+
+The three focused entry points reuse the same authenticated socket, state projection, transaction
+lane and combat intelligence as the general bot, but remove unrelated work from the scheduler:
+
+```sh
+# Fast combat-XP loop. Optional stop target: level 50 for omori.
+bun run bot:xp omori 50
+
+# Raise one exact profession. Gathering jobs use only that character and its fixed tool.
+bun run bot:job FARMER memorien 80
+bun run bot:job TAILOR omori 80
+
+# Acquire/craft exactly five copies, then hold without consuming more materials.
+bun run bot:craft silkblade_thread 5 omori
+```
+
+Run these commands from the repository root and never run two modules at once: the game accepts one
+WebSocket per signer address. The target character defaults to `BOT_LEADER`; target levels are
+optional. Craft mode validates the item recipe at startup and reports blockers while its gatherers
+and combat planner pursue only the target's dependency chain. See
+[`docs/bot-modules.md`](docs/bot-modules.md) for the full behavior and environment equivalents.
+
 To run the party detached (logging to `.state/`), use `/farm4.ps1` or
 `packages/bot/run-bot.ps1`.
 
@@ -86,6 +109,11 @@ The durable `.state/activity.log` remains the transaction-level audit trail acro
   Recipes whose resource tier exists only in the immutable catalog (currently tiers 7–11, absent
   from every shipped world) are reported once and parked instead of wasting craft/farm cycles.
 - Dungeon keys are not spent blindly. The party previews authored rooms at an 80% minimum win rate,
-  parks unsafe dungeons, waits for wounded entrants to recover, and commits only nearby members.
+  raises the final-room floor to 95%, parks unsafe dungeons, waits for wounded entrants to recover,
+  and commits only nearby members.
+  When a key-ready portal is several minutes away, it first crafts one matching city potion per far
+  entrant and keeps farming normally; previews and party commitment happen only once travel is ready.
+  Once committed, every entrant stays at the portal between rooms: normal regroup, chores, roaming,
+  and excursions remain suspended until the run finishes.
 
 The detailed progression and acquisition chain is documented in `docs/progression-plan.md`.

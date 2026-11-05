@@ -43,6 +43,7 @@ AresRPGAuto/
       src/
         main.ts             entry point + CLI dispatch (run/doctor/status/login)
         config.ts           THE single seam that reads process.env -> frozen BotConfig
+        modules/            focused XP / profession / exact-item schedulers and CLI wrappers
         net/
           server_link.ts    handshake, status kinds, backoff/reconnect (long-lived daemon link)
           session.ts        the play loop: one socket, roster discovery, per-character runtimes
@@ -95,6 +96,11 @@ bun test
 
 # run the bot (from the repo root)
 bun run bot
+
+# focused modules (only one bot process may run at once)
+bun run bot:xp [character] [target-level]
+bun run bot:job <JOB> [character] [target-level]
+bun run bot:craft <item-type> [quantity] [character]
 
 # drive a party of 5 (BOT_PARTY_SIZE, 1..5)
 ./farm4.ps1
@@ -270,14 +276,25 @@ unparked key at a time until the shared inventory holds the two keys needed to c
 An under-level key remains a goal so the craft planner trains its required trade instead of dropping
 the dungeon objective. Once a dungeon is parked after failing its room previews, its key is skipped
 until the retry window expires and the next key can become the goal. The runner still screens every
-room with the fight twin before spending keys; do not lower that safety gate without a verified
-combat reason. Group previews use the strongest available party members first. The general craft
+room with the fight twin before spending keys; ordinary rooms require 80%, while the final room
+requires 95% because a finale loss wastes every entrant key and all earlier-room gas. Do not lower
+those safety gates without a verified combat reason. Group previews use the strongest available party members first. The general craft
 rotation excludes `old_hoe` and `basic_pickaxe`.
 
 Only members in the leader's world and within `REJOIN_RADIUS` are committed to a run. Room previews
 that fail only because entrants are wounded are retried at most every 30 seconds while HP recovers;
 a room that still fails at full HP abandons the run. This prevents both premature key spending and
 the old loop that re-simulated four fights every few seconds as regeneration changed the cache key.
+
+Portal logistics is gated before the expensive room previews. If a key-ready party is several
+minutes from the authored city, the matching city potion becomes a craft/loot objective (one per
+far entrant). Normal farming continues until that stock exists; only then are rooms previewed and
+the party committed. Each entrant consumes its potion before walking the remaining short leg. This
+prevents a viable dungeon from freezing every character in a silent 10–20 minute cross-map walk.
+The shared dungeon commitment also owns every entrant's route before the roster exposes its live
+`dungeon_run`: ordinary regroup, rally, chores, roaming, and excursions must stay suspended between
+rooms. Without this projection-gap guard, entrants can walk back toward a stale party pose after
+burning their keys and make the next room wait several minutes for them to return.
 
 ## Resource protector bags (`actions/loot_box.ts`)
 
@@ -395,6 +412,14 @@ never disagree with a live decision about what is winnable:
 | `ENOKI_LOGIN_PORT` | `5173` | local port the interactive sign-in page listens on |
 | `ENOKI_LOGIN_TIMEOUT_MS` | `1800000` | how long the sign-in page waits (30 min) |
 | `BOT_GATHER` / `BOT_FIGHT` / `BOT_ROAM` / `BOT_CRAFT` | all `true` | play toggles |
+| `BOT_DUNGEON` | profile default | permit new dungeon runs; an active run is recovered even when false |
+| `BOT_MODULE` | `general` | scheduler: `general`, `xp`, `job`, or `craft` |
+| `BOT_MODULE_CHARACTER` | party leader | target character for a specialized module |
+| `BOT_XP_TARGET_LEVEL` | – | optional combat level at which XP mode holds |
+| `BOT_JOB_TARGET` | – | exact gathering/crafting profession required by job mode |
+| `BOT_JOB_TARGET_LEVEL` | – | optional profession level at which job mode holds |
+| `BOT_CRAFT_TARGET` | – | exact recipe output required by craft mode |
+| `BOT_CRAFT_QUANTITY` | `1` | owned quantity at which craft mode holds |
 | `BOT_PET_FEED` | `true` | feed eligible pets daily and pursue obtainable food ingredients |
 | `BOT_GROUP` | `true` | fight as ONE party: the leader engages and every partner joins the same fight |
 | `BOT_TEAMS` | – | optional JSON array of character-name arrays; first name leads each independent team, e.g. `[["tomoda","mori"],["yogan","memorien","llokan"]]` |

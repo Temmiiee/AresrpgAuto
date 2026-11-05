@@ -57,6 +57,9 @@ const EMPTY_OUTPUTS: readonly string[] = Object.freeze([])
 
 /** Outputs the XP rotation should never spend ingredients on. */
 export const CRAFT_BLACKLIST: ReadonlySet<string> = new Set(['old_hoe', 'basic_pickaxe'])
+/** Deliberate utility goals (keys, food, potions) should make a useful reserve, not consume every
+ * held ingredient in one maximum-size batch. XP rotation batches remain uncapped. */
+export const OBJECTIVE_BATCH_ATTEMPT_CAP = 10
 
 const is_craft_blacklisted = (output_type: string): boolean => CRAFT_BLACKLIST.has(output_type)
 
@@ -102,7 +105,8 @@ export const plan_recipe = (
   detail: RecipeDetail,
   inventory: readonly ItemRow[],
   unavailable: ReadonlySet<string>,
-  allow_zero_xp = false
+  allow_zero_xp = false,
+  max_attempts = Number.POSITIVE_INFINITY
 ): CraftPlan | null => {
   if (is_craft_blacklisted(detail.output_type)) return null
   if (!craftable_by_level(character, detail, allow_zero_xp)) return null
@@ -110,7 +114,7 @@ export const plan_recipe = (
   const input_item_ids = detail.ingredients.map((ingredient) => held(inventory, ingredient.item_type, unavailable)?.id)
   if (input_item_ids.some((id) => id === undefined)) return null
 
-  const attempts = affordable_attempts(detail, inventory, unavailable)
+  const attempts = Math.min(affordable_attempts(detail, inventory, unavailable), max_attempts)
   if (attempts < 1) return null
 
   // A NON-stackable output (equipment: daggers, armour, tools) mints one fresh object per success and
@@ -204,6 +208,26 @@ export const select_craft_focus = (
   return null
 }
 
+/** Best currently XP-paying output of one exact profession. Specialized job mode publishes this as
+ *  its sole objective so gathering, loot-aware combat and crafting all pursue the same recipe. */
+export const best_job_training_output = (
+  character: CharacterRow,
+  inventory: readonly ItemRow[],
+  unavailable: ReadonlySet<string>,
+  job: string
+): string | null => {
+  const level = job_level_of(character, job)
+  const holds = (item_type: string): boolean =>
+    inventory.some((row) => row.item_type === item_type && !unavailable.has(row.id))
+  return (
+    [...job_recipes(job)]
+      .filter((detail) => !is_craft_blacklisted(detail.output_type))
+      .filter((detail) => level >= craft_required_level(detail.ingredients.length))
+      .filter((detail) => craft_xp_at_level(detail.ingredients.length, level) > 0)
+      .sort(better_recipe(holds))[0]?.output_type ?? null
+  )
+}
+
 /** The next recipe to craft so a blocked `detail` climbs one step closer to craftable.
  *
  *  `plan_recipe` only proposes what the inventory already holds, so a trade whose recipes are built
@@ -266,7 +290,9 @@ const craft_prerequisite = (
 export const select_craft_target = (
   ctx: ActionContext,
   also_unavailable: ReadonlySet<string> = EMPTY_IDS,
-  priority_outputs: readonly string[] = EMPTY_OUTPUTS
+  priority_outputs: readonly string[] = EMPTY_OUTPUTS,
+  job_focus: string | null = null,
+  objective_attempt_cap = OBJECTIVE_BATCH_ATTEMPT_CAP
 ): CraftPlan | null => {
   const state = ctx.state()
   const character = select_character(state, ctx.character_id)
@@ -285,7 +311,15 @@ export const select_craft_target = (
     const role = config.chore_plan[member.name?.toLowerCase() ?? '']
     return role?.kind === 'craft' || role?.kind === 'gather_craft' || role?.kind === 'gather_all_craft'
   })
-  const craft_team = configured_crafters.length > 0 ? configured_crafters : team_members
+  // Focused modules assign exactly one runtime as crafter. The static general chore plan may name a
+  // different historical crafter, so consulting it here would make the selected module character
+  // wait forever for a teammate whose specialized runtime is idle.
+  const craft_team =
+    config.module.kind === 'job' || config.module.kind === 'craft'
+      ? [character]
+      : configured_crafters.length > 0
+        ? configured_crafters
+        : team_members
   const team_job_level = (job: string): number =>
     Math.max(0, ...craft_team.map((member) => job_level_of(member, job)))
   const team_job_trainer = (job: string): string =>
@@ -315,7 +349,7 @@ export const select_craft_target = (
     const detail = recipe_detail(recipe)
     focused_goal = true
     const job = detail.job
-    const plan = plan_recipe(character, detail, inventory, unavailable, true)
+    const plan = plan_recipe(character, detail, inventory, unavailable, true, objective_attempt_cap)
     if (plan) return plan
     const level = job_level_of(character, detail.job)
     if (level < craft_required_level(detail.ingredients.length)) {
@@ -348,7 +382,10 @@ export const select_craft_target = (
 
   const job_order: string[] = []
   for (const job of goal_jobs) if (!job_order.includes(job)) job_order.push(job)
-  if (!focused_goal) for (const job of rotation_order(character)) if (!job_order.includes(job)) job_order.push(job)
+  if (!focused_goal) {
+    const jobs = job_focus ? [job_focus] : rotation_order(character)
+    for (const job of jobs) if (!job_order.includes(job)) job_order.push(job)
+  }
 
   for (const job of job_order) {
     const recipes = [...job_recipes(job)].sort(better_recipe(holds))
@@ -400,7 +437,8 @@ export const craft_gather_demand = (
   character: CharacterRow,
   inventory: readonly ItemRow[],
   unavailable: ReadonlySet<string>,
-  extra_outputs: readonly string[] = []
+  extra_outputs: readonly string[] = [],
+  job_focus: string | null = null
 ): ReadonlyMap<string, number> => {
   /** leaf -> summed one-craft requirement over every eligible recipe that resolves to it. */
   const leverage = new Map<string, number>()
@@ -417,6 +455,14 @@ export const craft_gather_demand = (
   const focus = select_craft_focus(character, extra_outputs)
   if (focus?.ready) note(focus.goal, true)
   else if (focus?.training) note(focus.training)
+  else if (job_focus) {
+    const holds = (item_type: string): boolean =>
+      inventory.some((row) => row.item_type === item_type && !unavailable.has(row.id))
+    const training = [...job_recipes(job_focus)].sort(better_recipe(holds)).find((detail) =>
+      craftable_by_level(character, detail)
+    )
+    if (training) note(training)
+  }
 
   const demand = new Map<string, number>()
   for (const [item_type, rank] of leverage) {
@@ -489,9 +535,11 @@ export const craft_once = async (ctx: ActionContext, plan: CraftPlan): Promise<C
 export const drive_craft = async (
   ctx: ActionContext,
   also_unavailable: ReadonlySet<string> = EMPTY_IDS,
-  priority_outputs: readonly string[] = EMPTY_OUTPUTS
+  priority_outputs: readonly string[] = EMPTY_OUTPUTS,
+  job_focus: string | null = null,
+  objective_attempt_cap = OBJECTIVE_BATCH_ATTEMPT_CAP
 ): Promise<CraftResult> => {
-  const plan = select_craft_target(ctx, also_unavailable, priority_outputs)
+  const plan = select_craft_target(ctx, also_unavailable, priority_outputs, job_focus, objective_attempt_cap)
   if (!plan) return { success: false, outcome: 'nothing_craftable', output_type: '', successes: 0, input_item_ids: [] }
   return await craft_once(ctx, plan)
 }

@@ -80,6 +80,9 @@ const follower_diag_due = (id: string, now: number): boolean => {
   return true
 }
 const potion_cooldown_until = new Map<string, number>()
+/** A potion must save at least this many Chebyshev blocks (~4 minutes on foot) to be worth
+ * consuming. Exported so dungeon logistics uses the exact same threshold as execution. */
+export const TRAVEL_POTION_MIN_SAVINGS = 2_500
 const CITY_POTIONS = Object.freeze({
   potion_of_thebes: 'thebes',
   potion_of_the_ruins: 'the_ruins',
@@ -89,11 +92,12 @@ const CITY_POTIONS = Object.freeze({
 /** Use a carried travel potion only when its authored destination saves a substantial walk to this
  * rendezvous. City destinations come from the same world seed used by the game; recall returns to
  * the authored world centre. The chain still enforces roots and dungeon confinement atomically. */
-const try_rendezvous_potion = async (
+export const try_travel_potion = async (
   ctx: ActionContext,
   character: CharacterRow,
   target: Readonly<{ world: string; x: number; z: number }>,
-  pose: Readonly<{ x: number; z: number }>
+  pose: Readonly<{ x: number; z: number }>,
+  purpose = 'rendezvous'
 ): Promise<boolean> => {
   if (
     character.active_fight ||
@@ -107,7 +111,7 @@ const try_rendezvous_potion = async (
   const distance = (point: Readonly<{ x: number; z: number }>): number =>
     Math.max(Math.abs(point.x - target.x), Math.abs(point.z - target.z))
   const current_distance = distance(pose)
-  if (current_distance < 4_000) return false
+  if (current_distance < TRAVEL_POTION_MIN_SAVINGS) return false
 
   const candidates: { item_id: string; item_type: string; world?: string; destination: { x: number; z: number }; gain: number }[] = []
   const unavailable = unavailable_item_ids(ctx.state())
@@ -127,7 +131,8 @@ const try_rendezvous_potion = async (
       potion_world = target.world
     }
     const gain = current_distance - distance(destination)
-    if (gain >= 4_000) candidates.push({ item_id: item.id, item_type: item.item_type, world: potion_world, destination, gain })
+    if (gain >= TRAVEL_POTION_MIN_SAVINGS)
+      candidates.push({ item_id: item.id, item_type: item.item_type, world: potion_world, destination, gain })
   }
   candidates.sort((a, b) => b.gain - a.gain)
   const potion = candidates[0]
@@ -141,12 +146,12 @@ const try_rendezvous_potion = async (
       custody: custody_of(character),
     })
     potion_cooldown_until.set(character.id, Date.now() + 120_000)
-    log_info('party', `${character.name}: used ${potion.item_type} for rendezvous — saves ${Math.round(potion.gain)} blocks`)
+    log_info('party', `${character.name}: used ${potion.item_type} for ${purpose} — saves ${Math.round(potion.gain)} blocks`)
     return true
   } catch (error) {
     // The transaction is atomic: a rooted character or other chain restriction does not consume it.
     potion_cooldown_until.set(character.id, Date.now() + 30_000)
-    log_warn('party', `${character.name}: rendezvous potion unavailable: ${error instanceof Error ? error.message : String(error)}`)
+    log_warn('party', `${character.name}: ${purpose} potion unavailable: ${error instanceof Error ? error.message : String(error)}`)
     return false
   }
 }
@@ -739,7 +744,7 @@ export const follower_group_step = async (
     // progress, also RE-ANCHOR at the new pose (`search_zone`). The checkpoint then hops toward the
     // group instead of being stranded at wherever this character last acted.
     const before = mover.pose()
-    if (await try_rendezvous_potion(ctx, character, target, before)) {
+    if (await try_travel_potion(ctx, character, target, before)) {
       // The teleport transaction writes the new authoritative checkpoint; let the roster/mover
       // sync that position before planning its next legal travel hop.
       await mover.refresh_anchor(true)
